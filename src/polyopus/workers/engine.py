@@ -12,16 +12,19 @@ and only talks to domains via their services; it never imports api.
 
 from __future__ import annotations
 
+import json
 import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 from polyopus.domains.agents import models as agents_registry
 from polyopus.domains.attention import service as attention
 from polyopus.kernel.models import FakeModel
 from polyopus.kernel.models import gateway as gateway_types
+from polyopus.kernel.tools import FS_READ_SPEC, ToolError, execute_fs_read, internal_name
 from polyopus.platform.errors import AppError
 from polyopus.platform.events import projection
 from polyopus.platform.events.store import EventStore
@@ -35,6 +38,8 @@ class EngineConfig:
     chunk_words: int = 4
     delay_seconds: float = 0.0
     model_hint: str | None = None
+    workspace: Path | None = None
+    max_tool_rounds: int = 2
 
 
 def _now() -> int:
@@ -91,12 +96,12 @@ async def run_turn(
     tenant_id = str(turn["tenant_id"])
 
     existing = conn.execute(
-        "SELECT status FROM runs WHERE turn_id = ? ORDER BY attempt DESC LIMIT 1",
+        "SELECT status, attempt FROM runs WHERE turn_id = ? ORDER BY attempt DESC LIMIT 1",
         (turn_id,),
     ).fetchone()
     if existing is not None and str(existing[0]) in ("leased", "running", "waiting"):
         raise AppError("TURN_ACTIVE", details={"turn_id": turn_id, "status": str(existing[0])})
-    attempt = 1 if existing is None else 2  # retry after a finished run keeps history
+    attempt = 1 if existing is None else int(existing[1]) + 1  # keep retry history
 
     run_id = "run_" + secrets.token_hex(8)
     now = _now()
@@ -132,13 +137,9 @@ async def run_turn(
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
         ),
     )
-    request = gateway_types.ModelRequest(
-        model=resolved.model,
-        messages=(gateway_types.ChatMessage(role="user", content=_user_content(conn, turn_id)),),
-        max_output_tokens=2048,
-        tenant_id=tenant_id,
-        trace_id=trace_id,
-    )
+    messages: list[gateway_types.ChatMessage] = [
+        gateway_types.ChatMessage(role="user", content=_user_content(conn, turn_id))
+    ]
     text = ""
     index = 0
     input_tokens = output_tokens = cached_tokens = 0
@@ -151,22 +152,116 @@ async def run_turn(
         source = FakeModel(chunk_words=cfg.chunk_words, delay_seconds=cfg.delay_seconds)
     else:
         source = resolved.gateway
-    async for delta in source.stream(request):
-        if isinstance(delta, gateway_types.TextDelta):
-            if first_token_ms is None:
-                first_token_ms = int((time.monotonic() - started) * 1000)
-            text += delta.text
+
+    tool_round = 0
+    while True:
+        request = gateway_types.ModelRequest(
+            model=resolved.model,
+            messages=tuple(messages),
+            max_output_tokens=2048,
+            tools=(FS_READ_SPEC,) if cfg.workspace is not None else (),
+            tenant_id=tenant_id,
+            trace_id=trace_id,
+        )
+        calls: list[gateway_types.ToolCallDelta] = []
+        async for delta in source.stream(request):
+            if isinstance(delta, gateway_types.TextDelta):
+                if first_token_ms is None:
+                    first_token_ms = int((time.monotonic() - started) * 1000)
+                text += delta.text
+                store.append(
+                    thread_id,
+                    "message.delta",
+                    {"message_id": message_id, "index": index, "text": delta.text},
+                    tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+                )
+                index += 1
+            elif isinstance(delta, gateway_types.ToolCallDelta):
+                calls.append(delta)
+            elif isinstance(delta, gateway_types.UsageDelta):
+                input_tokens += delta.input_tokens
+                output_tokens += delta.output_tokens
+                cached_tokens += delta.cached_tokens
+
+        if not calls or tool_round >= cfg.max_tool_rounds:
+            break
+        tool_round += 1
+
+        # execute read-only tools; results feed the next model round
+        for call in calls:
+            call_id = call.id or f"tc_{tool_round}"
+            tool_name = internal_name(call.name)
             store.append(
                 thread_id,
-                "message.delta",
-                {"message_id": message_id, "index": index, "text": delta.text},
+                "tool.started",
+                {
+                    "tool_call_id": call_id,
+                    "name": tool_name,
+                    "source": "builtin",
+                    "risk": "low",
+                    "args_digest": str(len(call.arguments_json)),
+                    "args_preview": call.arguments_json[:200],
+                },
                 tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
             )
-            index += 1
-        elif isinstance(delta, gateway_types.UsageDelta):
-            input_tokens += delta.input_tokens
-            output_tokens += delta.output_tokens
-            cached_tokens += delta.cached_tokens
+            now_tool = _now()
+            try:
+                assert cfg.workspace is not None  # guarded by tools=() above
+                result = execute_fs_read(cfg.workspace, call.arguments_json)
+                output_json = json.dumps(result.output, ensure_ascii=False)
+                store.append(
+                    thread_id,
+                    "tool.completed",
+                    {"tool_call_id": call_id, "output": result.output},
+                    tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+                )
+            except ToolError as exc:
+                output_json = json.dumps({"error": exc.code, "message": str(exc)})
+                store.append(
+                    thread_id,
+                    "tool.failed",
+                    {
+                        "tool_call_id": call_id,
+                        "code": exc.code,
+                        "message": str(exc),
+                        "retryable": False,
+                    },
+                    tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+                )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO steps
+                  (tenant_id, step_id, run_id, idx, kind, status, input_json,
+                   output_json, started_at, finished_at)
+                VALUES (?, ?, ?, ?, 'tool', 'completed', ?, ?, ?, ?)
+                """,
+                (tenant_id, f"st_{run_id}_tool{tool_round}", run_id, tool_round,
+                 call.arguments_json[:500], output_json[:4000], now_tool, _now()),
+            )
+            conn.commit()
+            messages.append(
+                gateway_types.ChatMessage(
+                    role="tool",
+                    content=output_json[:4000],
+                    tool_call_id=call_id,
+                )
+            )
+        # the assistant's tool request must precede the tool result on the wire
+        messages.insert(
+            len(messages) - len(calls),
+            gateway_types.ChatMessage(
+                role="assistant",
+                content="",
+                tool_calls=tuple(
+                    gateway_types.ToolCallMessagePart(
+                        id=c.id or f"tc_{tool_round}",
+                        name=internal_name(c.name),
+                        arguments_json=c.arguments_json,
+                    )
+                    for c in calls
+                ),
+            ),
+        )
     projection.apply(
         conn,
         store.append(

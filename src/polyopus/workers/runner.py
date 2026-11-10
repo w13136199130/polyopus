@@ -27,6 +27,14 @@ def requires_approval(content: str) -> bool:
     return bool(HIGH_RISK.search(content))
 
 
+def _workspace() -> Path:
+    from polyopus.config import load_settings
+
+    path = load_settings().workspace_dir
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def launch_turn(
     db_path_factory: Callable[[], Path],
     turn_id: str,
@@ -48,6 +56,7 @@ def launch_turn(
                     config=engine.EngineConfig(
                         require_approval=requires_approval(content),
                         chunk_words=2,
+                        workspace=_workspace(),
                     ),
                 )
             )

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from polyopus.kernel.models import gateway as gt
 from polyopus.kernel.models.gateway import (
     FinishDelta,
     ModelCaps,
@@ -20,6 +21,7 @@ from polyopus.kernel.models.gateway import (
     ModelRequest,
     ModelUnavailableError,
     TextDelta,
+    ToolCallDelta,
     UsageDelta,
 )
 
@@ -50,11 +52,26 @@ class OpenAICompatProvider:
         self._caps[model] = caps
 
     async def stream(self, req: ModelRequest) -> AsyncIterator[ModelDelta]:
+        def to_wire(m: gt.ChatMessage) -> dict[str, object]:
+            body: dict[str, object] = {"role": m.role, "content": m.content}
+            if m.tool_calls:
+                body["tool_calls"] = [
+                    {
+                        "id": c.id,
+                        "type": "function",
+                        "function": {"name": c.name.replace(".", "_"),
+                                     "arguments": c.arguments_json},
+                    }
+                    for c in m.tool_calls
+                ]
+                body["content"] = m.content or None
+            if m.tool_call_id is not None:
+                body["tool_call_id"] = m.tool_call_id
+            return body
+
         payload = {
             "model": req.model,
-            "messages": [
-                {"role": m.role, "content": m.content} for m in req.messages
-            ],
+            "messages": [to_wire(m) for m in req.messages],
             "temperature": req.temperature,
             "max_tokens": req.max_output_tokens,
             "stream": True,
@@ -62,6 +79,20 @@ class OpenAICompatProvider:
         }
         if req.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
+        if req.tools:
+            # OpenAI wire names only allow [a-zA-Z0-9_-]; internal names use dots
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name.replace(".", "_"),
+                        "description": t.description,
+                        **({"parameters": t.parameters_json_schema}
+                           if t.parameters_json_schema else {}),
+                    },
+                }
+                for t in req.tools
+            ]
 
         body = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json"}
@@ -103,6 +134,7 @@ class OpenAICompatProvider:
                 "MODEL_NOT_AVAILABLE", str(exc), retryable=True
             ) from exc
 
+        calls: dict[int, dict[str, str]] = {}
         with response:
             for raw_line in response:
                 line = raw_line.decode("utf-8", errors="replace").strip()
@@ -110,14 +142,23 @@ class OpenAICompatProvider:
                     continue
                 data = line[len("data:") :].strip()
                 if data == "[DONE]":
-                    return
+                    break
                 try:
                     chunk = json.loads(data)
                 except json.JSONDecodeError:
                     continue
-                yield from self._parse_chunk(chunk)
+                yield from self._parse_chunk(chunk, calls)
+            for index in sorted(calls):
+                frag = calls[index]
+                yield ToolCallDelta(
+                    id=frag.get("id") or f"tc_{index}",
+                    name=frag.get("name", ""),
+                    arguments_json=frag.get("arguments", ""),
+                )
 
-    def _parse_chunk(self, chunk: dict[str, object]) -> Iterator[ModelDelta]:
+    def _parse_chunk(
+        self, chunk: dict[str, object], calls: dict[int, dict[str, str]]
+    ) -> Iterator[ModelDelta]:
         choices = chunk.get("choices") or []
         if isinstance(choices, list) and choices and isinstance(choices[0], dict):
             choice = choices[0]
@@ -126,6 +167,23 @@ class OpenAICompatProvider:
                 text = delta.get("content")
                 if text:
                     yield TextDelta(text=str(text))
+                fragments = delta.get("tool_calls")
+                if isinstance(fragments, list):
+                    for frag in fragments:
+                        if not isinstance(frag, dict):
+                            continue
+                        index = int(frag.get("index", 0))
+                        slot = calls.setdefault(index, {})
+                        if frag.get("id"):
+                            slot["id"] = str(frag["id"])
+                        fn = frag.get("function")
+                        if isinstance(fn, dict):
+                            if fn.get("name"):
+                                slot["name"] = slot.get("name", "") + str(fn["name"])
+                            if fn.get("arguments"):
+                                slot["arguments"] = slot.get("arguments", "") + str(
+                                    fn["arguments"]
+                                )
             finish = choice.get("finish_reason")
             if finish:
                 reason = finish if finish in ("stop", "length", "tool_calls") else "stop"

@@ -4,7 +4,8 @@
 > 结论先行：**条件通过（GO）**，L-5 已于 2026-11-10 清偿：**deepseek-flash 已接入实测**。
 > 四条机制判据全部有命令级证据；真模型实测：首字 1750ms / in=34 out=97 tokens / 11 delta 帧；
 > 审批链实测 228 帧流式 → approval.requested → approve → turn.resumed → turn.finished。
-> 字面场景"读文件改一行"仍差一个只读工具（L-1 收窄为"仅缺 fs.read"）。
+> 字面场景"读文件改一行"**已闭环**（2026-11-10 第二次更新）：fs.read 上线，deepseek-flash
+> 真实调用工具读取 config.yml、给出改后全文、并如实说明自身无写权限（写动作由审批闸门拦截）。
 
 ---
 
@@ -43,7 +44,7 @@ POST /attentions/{id}/answer approve
 
 | # | 项 | 去向 |
 |---|---|---|
-| L-1 | **字面场景差最后一步**：真模型已接，仅缺一个只读 `fs.read` 工具 | M2 工具执行器首批 |
+| ~~L-1~~ | ~~仅缺 fs.read~~ **已清偿**：`kernel/tools/fs_read`（jail/行号/64KB 上限）+ provider 工具名点→下划线映射 + 工具环（≤2 轮，tool.* 契约事件） | — |
 | L-2 | **服务器级重启**：turn 暂停中重启 `poly serve` 再 answer 的完整演练未单测 | M2 引入 turn_worker 进程时补 e2e |
 | L-3 | engine 为线程内单进程启动（`workers/runner.py` 自认 demo 级） | M2 换队列 worker |
 | L-4 | SSE `follow` 为 0.2s 轮询，非推送 | v1.1（多实例/Redis）再议 |

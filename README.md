@@ -20,9 +20,9 @@ uv sync
 uv run poly migrate         # 首次会打印一次性 admin 口令
 uv run poly doctor          # 6 项自检（迁移后除 model 外全 OK）
 uv run poly serve           # 打开 http://127.0.0.1:8000 —— 聊天 + 审批卡界面
-uv run pytest               # 70 个用例，含 kill -9 恢复、审批暂停/恢复、模型网关
+uv run pytest               # 78 个用例，含 kill -9 恢复、审批暂停/恢复、真模型工具调用
 uv run python scripts/demo_kill9.py
-```
+工作区文件（`fs.read` 只读工具可访问）：放 `data/workspace/` 下即可，模型能真实读取。
 
 没有 `make` 也能跑；装了 make 可用 `make check`（等价于 `uv run python scripts/check.py`）。
 

@@ -14,9 +14,20 @@ type FinishReason = Literal["stop", "length", "tool_calls", "error", "cancelled"
 
 
 @dataclass(frozen=True)
+class ToolCallMessagePart:
+    """Assistant-message tool call (OpenAI shape)."""
+
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True)
 class ChatMessage:
     role: Literal["system", "user", "assistant", "tool"]
     content: str
+    tool_calls: tuple[ToolCallMessagePart, ...] = ()
+    tool_call_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +46,15 @@ class ModelCaps:
 
 
 @dataclass(frozen=True)
+class ToolSpec:
+    """OpenAI function-tool shape; providers translate as needed."""
+
+    name: str
+    description: str
+    parameters_json_schema: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ModelRequest:
     model: str
     messages: tuple[ChatMessage, ...]
@@ -42,6 +62,7 @@ class ModelRequest:
     max_output_tokens: int = 2_048
     response_format: Literal["text", "json_object"] | None = None
     reasoning: ReasoningConfig | None = None
+    tools: tuple[ToolSpec, ...] = ()
     tenant_id: str = "default"
     trace_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -51,6 +72,16 @@ class ModelRequest:
 class TextDelta:
     text: str
     kind: ClassVar[str] = "text"
+
+
+@dataclass(frozen=True)
+class ToolCallDelta:
+    """One complete tool call (providers accumulate streamed fragments)."""
+
+    id: str
+    name: str
+    arguments_json: str
+    kind: ClassVar[str] = "tool_call"
 
 
 @dataclass(frozen=True)
@@ -67,7 +98,7 @@ class FinishDelta:
     kind: ClassVar[str] = "finish"
 
 
-type ModelDelta = TextDelta | UsageDelta | FinishDelta
+type ModelDelta = TextDelta | ToolCallDelta | UsageDelta | FinishDelta
 
 
 class ModelGateway(Protocol):
