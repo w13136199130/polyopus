@@ -212,9 +212,40 @@ def cmd_recover(args: argparse.Namespace) -> int:
     return 0
 
 
+def _migrate_and_seed() -> int:
+    """docs/16 §6: auto-migrate at startup; first boot seeds the owner."""
+    from polyopus.platform.db.seed import ensure_admin
+
+    settings = load_settings()
+    try:
+        migrations = discover(MIGRATIONS_DIR)
+        fresh = not settings.resolved_db_path().exists()
+        conn = connect(settings.resolved_db_path())
+        try:
+            applied = apply(conn, migrations)
+            if fresh and applied:
+                created, password = ensure_admin(
+                    conn, password=os.environ.get("POLY_ADMIN_PASSWORD")
+                )
+                if created:
+                    print(f"admin created: username=admin password={password}")
+                    print("store this password now; it will not be shown again")
+        finally:
+            conn.close()
+    except MigratorError as exc:
+        print(f"{exc.code}: {exc.message}", file=sys.stderr)
+        print("server not started; fix the database above (docs/16 §6)", file=sys.stderr)
+        return 1
+    if applied:
+        print("migrated: " + ", ".join(m.path.name for m in applied))
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
+    if _migrate_and_seed() != 0:
+        return 1
     uvicorn.run("polyopus.api.app:app", host=args.host, port=args.port, reload=args.reload)
     return 0
 
