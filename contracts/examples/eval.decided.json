@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "event_id": "ev_01J9Z8Q3K7Y2N5M4P6R8S0T2VD",
+  "stream_id": "src:src_01J9Z8Q3K7Y2N5M4P6R8S0T2V9",
+  "seq": 812,
+  "type": "eval.decided",
+  "ts": "2026-11-05T13:21:02.000Z",
+  "tenant_id": "default",
+  "actor": { "kind": "system", "id": "intake" },
+  "causation_id": "ev_01J9Z8Q3K7Y2N5M4P6R8S0T2VE",
+  "correlation_id": "eval_01J9Z8Q3K7Y2N5M4P6R8S0T2VC",
+  "refs": {
+    "event_thread_id": "et_01J9Z8Q3K7Y2N5M4P6R8S0T2VA",
+    "source_id": "src_01J9Z8Q3K7Y2N5M4P6R8S0T2V9"
+  },
+  "payload": {
+    "eval_id": "eval_01J9Z8Q3K7Y2N5M4P6R8S0T2VC",
+    "decision": "accept",
+    "strength": "explicit",
+    "scope": ["repo:acme/api", "path:src/auth"],
+    "confidence": 0.86,
+    "policy_version": 7,
+    "reasons": ["allow-assigned", "explicit_mention"]
+  }
+}

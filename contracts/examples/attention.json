@@ -1,0 +1,10 @@
+{
+  "id": "at_01J9Z8Q3K7Y2N5M4P6R8S0T2V7",
+  "kind": "approval",
+  "question": "是否允许修改 .github/workflows/ci.yml？",
+  "options": ["允许", "拒绝", "本会话允许"],
+  "status": "pending",
+  "expiresAt": "2026-11-05T10:43:00.000Z",
+  "ticketId": "tk_01J9Z8Q3K7Y2N5M4P6R8S0T2V5",
+  "ticketTitle": "修复登录超时"
+}

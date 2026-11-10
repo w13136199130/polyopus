@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "id": "tk_01J9Z8Q3K7Y2N5M4P6R8S0T2V5",
+      "title": "修复登录超时",
+      "bucket": "attention",
+      "state": "open",
+      "source": {
+        "id": "src_01J9Z8Q3K7Y2N5M4P6R8S0T2V9",
+        "kind": "github",
+        "name": "acme/api",
+        "status": "active"
+      },
+      "actor": { "id": "u_123", "name": "alice" },
+      "createdAt": "2026-11-05T10:02:11.000Z",
+      "updatedAt": "2026-11-05T10:13:00.000Z",
+      "strength": "explicit",
+      "policyVersion": 7,
+      "executor": "builtin",
+      "summary": "已定位到 auth.ts:88，需要确认 CI 配置改动",
+      "progress": 0.6,
+      "costMicros": 42000,
+      "badges": [
+        { "kind": "strength", "label": "明确请求", "tone": "info" },
+        { "kind": "executor", "label": "内置", "tone": "neutral" }
+      ]
+    }
+  ]
+}

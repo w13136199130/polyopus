@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "event_id": "ev_01J9Z8Q3K7Y2N5M4P6R8S0T2V4",
+  "stream_id": "conv:th_01J9Z8Q3K7Y2N5M4P6R8S0T2V1",
+  "seq": 41,
+  "type": "message.delta",
+  "ts": "2026-11-05T13:20:00.123Z",
+  "tenant_id": "default",
+  "actor": { "kind": "agent", "id": "ag_01J9Z8Q3K7Y2N5M4P6R8S0T2V2" },
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "causation_id": "ev_01J9Z8Q3K7Y2N5M4P6R8S0T2V3",
+  "correlation_id": "tu_01J9Z8Q3K7Y2N5M4P6R8S0T2V5",
+  "refs": {
+    "thread_id": "th_01J9Z8Q3K7Y2N5M4P6R8S0T2V1",
+    "turn_id": "tu_01J9Z8Q3K7Y2N5M4P6R8S0T2V5",
+    "run_id": "rn_01J9Z8Q3K7Y2N5M4P6R8S0T2V3"
+  },
+  "payload": {
+    "message_id": "msg_01J9Z8Q3K7Y2N5M4P6R8S0T2V8",
+    "index": 0,
+    "text": "先看一下 ",
+    "coalesced": true
+  },
+  "meta": { "coalesced": true, "producer": "kernel" }
+}

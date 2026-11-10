@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyOpus · 记忆复核原型</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="feature-prototype.css">
+<style>
+.mem{display:flex;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.mem:hover{background:var(--surface-2)}
+.mem.on{background:var(--primary-soft)}
+.mem .t{font-size:12.5px;line-height:1.45}
+.mem .m{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.ev{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:11.5px;background:var(--surface-2)}
+.ev .src{color:var(--text-3);margin-top:3px}
+.conflict{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.conflict .side{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--surface-2);font-size:12px}
+.conflict .side.old{border-color:var(--red-border);background:var(--red-soft)}
+.conflict .side.new{border-color:var(--green-border);background:var(--green-soft)}
+.pausebar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--amber-soft);color:var(--amber);font-size:12px}
+</style>
+</head>
+<body>
+<div class="proto">
+  <div class="proto-head">
+    <div>
+      <h1>记忆 · 复核与用户控制</h1>
+      <p>每条记忆可解释、可纠正、可删除；冲突不静默覆盖；暂停写入可见。</p>
+    </div>
+  </div>
+
+  <div class="proto-tabs" id="scenes">
+    <button class="proto-tab on" data-scene="normal">全部</button>
+    <button class="proto-tab" data-scene="review">待复核</button>
+    <button class="proto-tab" data-scene="conflict">冲突对比</button>
+    <button class="proto-tab" data-scene="paused">已暂停写入</button>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <span class="chip">tenant: default</span><span class="chip">agent: ops-expert</span>
+      <span class="spacer"></span>
+      <button class="btn" onclick="alert('导出 JSONL（含证据与时间区间）')">导出</button>
+      <button class="btn" id="pauseBtn">暂停写入</button>
+    </div>
+    <div class="pausebar" id="pauseBar" style="display:none">记忆写入已暂停 · 范围：当前 Agent · 至 18:00 · <button class="link-btn" style="border:0;background:none;color:var(--amber);text-decoration:underline" onclick="alert('恢复写入')">恢复</button></div>
+    <div class="split">
+      <div class="list" id="list"></div>
+      <div class="detail" id="detail"></div>
+    </div>
+  </div>
+
+  <p class="footer-note">删除会写审计；证据可跳到 turn/trigger/tool_call；TTL 到期不检索；画像（profile）走同一套 atom + 用户确认。</p>
+</div>
+
+<script>
+const mem=[];
+function add(id, kind, text, source, conf, status, date, evidence){ mem.push({id,kind,text,source,conf,status,date,evidence}); }
+add('ma_01','fact','生产库在 ap-southeast-1，主库只读副本在 ap-southeast-2','explicit_user',0.98,'active','2026-10-12',[['turn','tu_88','用户明确说：生产库在新加坡']]);
+add('ma_02','preference','回答用中文，先给结论再给依据','explicit_user',0.96,'active','2026-10-20',[['turn','tu_102','用户要求：中文、简洁']]);
+add('ma_03','episode','10-12 修了登录超时，根因是 token 刷新失败','assistant_inferred',0.86,'active','2026-10-12',[['turn','tu_120','工具日志显示 REFRESH_TIMEOUT'],['tool_call','tc_44','日志检索']]);
+add('ma_04','fact','发布窗口是周三 20:00','explicit_user',0.91,'pending_review','2026-06-01',[['turn','tu_70','旧发布流程说明']]);
+add('ma_05','fact','发布窗口改为周四 20:00','explicit_user',0.95,'active','2026-09-01',[['turn','tu_91','用户更新了发布窗口']]);
+add('ma_06','skill','部署走 make deploy，先跑 smoke 再切流量','assistant_inferred',0.88,'active','2026-09-18',[['ticket','tk_55','成功部署记录']]);
+let scene='normal', current='ma_04';
+
+function listData(){
+  if(scene==='review') return mem.filter(m=>m.status==='pending_review');
+  if(scene==='conflict') return mem.filter(m=>['ma_04','ma_05'].includes(m.id));
+  return mem;
+}
+function renderList(){
+  const rows=listData();
+  document.getElementById('list').innerHTML=rows.length?rows.map(m=>`
+    <div class="mem ${m.id===current?'on':''}" data-id="${m.id}">
+      <div class="ico">${m.kind==='preference'?'⚙️':m.kind==='episode'?'🗓️':m.kind==='skill'?'🧰':'📌'}</div>
+      <div style="min-width:0;flex:1">
+        <div class="t">${m.text}</div>
+        <div class="m"><span class="chip">${m.kind}</span><span class="chip">${m.source}</span>${m.status==='pending_review'?'<span class="chip amber">待复核</span>':'<span class="chip green">active</span>'}</div>
+      </div>
+    </div>`).join(''):`<div class="empty">没有待复核记忆</div>`;
+}
+function renderDetail(){
+  const m=mem.find(x=>x.id===current)||mem[0];
+  const conflict=scene==='conflict';
+  document.getElementById('detail').innerHTML=`
+    <h2>${m.text}</h2>
+    <div class="sub">${m.kind} · ${m.source} · 置信 ${m.conf} · 创建 ${m.date}</div>
+    ${conflict?`<div class="conflict">
+      <div class="side old"><b>旧 atom · ma_04</b><div style="margin-top:5px">发布窗口是周三 20:00</div><div class="note" style="margin-top:6px">valid 2026-01 → 2026-09 · 证据 tu_70</div></div>
+      <div class="side new"><b>新 atom · ma_05</b><div style="margin-top:5px">发布窗口改为周四 20:00</div><div class="note" style="margin-top:6px">valid 2026-09 → 至今 · supersedes ma_04 · 证据 tu_91</div></div>
+    </div>
+    <div class="section-title">处理</div>
+    <div class="row" style="flex-wrap:wrap">
+      <button class="btn primary" onclick="alert('保留新 atom，旧 atom 标记 retired + superseded_by')">保留新版本</button>
+      <button class="btn" onclick="alert('合并为一条，写新版本')">合并</button>
+      <button class="btn" onclick="alert('搁置：保持双方 pending_review')">搁置待定</button>
+    </div>`:`<div class="section-title">证据</div>
+    ${m.evidence.map(([kind,id,note])=>`<div class="ev"><b>${kind}</b> <span class="mono">${id}</span> · ${note}<div class="src">点击可跳到原始 turn / tool_call</div></div>`).join('')}
+    <div class="section-title">时间与来源</div>
+    <div class="kv"><div class="k">valid_from</div><div class="v">${m.date}</div><div class="k">valid_to</div><div class="v">—</div><div class="k">supersedes</div><div class="v">${m.id==='ma_05'?'ma_04':'—'}</div><div class="k">写入来源</div><div class="v">${m.source}</div></div>
+    <div class="section-title">用户控制</div>
+    <div class="row" style="flex-wrap:wrap"><button class="btn primary">编辑/纠错</button><button class="btn">退休</button><button class="btn danger">删除</button><button class="btn">查看历史版本</button></div>`}
+  `;
+}
+document.getElementById('list').addEventListener('click',e=>{const r=e.target.closest('[data-id]');if(r){current=r.dataset.id;renderList();renderDetail();}});
+document.getElementById('scenes').addEventListener('click',e=>{const b=e.target.closest('[data-scene]');if(!b)return;scene=b.dataset.scene;document.querySelectorAll('#scenes .proto-tab').forEach(x=>x.classList.toggle('on',x.dataset.scene===scene));document.getElementById('pauseBar').style.display=scene==='paused'?'flex':'none';renderList();renderDetail();});
+document.getElementById('pauseBtn').onclick=()=>{document.getElementById('pauseBar').style.display='flex';alert('暂停写入：范围当前 Agent，默认 1 小时；可改为全局或按时长');};
+renderList();renderDetail();
+</script>
+</body>
+</html>

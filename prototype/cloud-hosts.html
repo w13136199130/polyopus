@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyOpus · 云主机原型</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="feature-prototype.css">
+<style>
+.cloud-head{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid var(--line)}
+.cloud-head .t{font-size:15px;font-weight:650}.cloud-head .s{font-size:11.5px;color:var(--text-3);margin-top:4px}
+.auth-card{padding:22px;max-width:720px;margin:20px auto;text-align:center}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+.step{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface-2);text-align:left;font-size:12px}
+.step b{display:block;margin-bottom:4px}.step .n{font-size:10px;color:var(--text-3)}
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px 16px}
+.metric{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface-2)}
+.metric .k{font-size:10.5px;color:var(--text-3)}.metric .v{font-size:18px;font-weight:650;margin-top:3px}
+.heat{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;padding:0 16px 14px}
+.heat i{height:16px;border-radius:3px;background:var(--primary-soft)}
+.heat i.w1{background:#bae0ff}.heat i.w2{background:#69b1ff}.heat i.w3{background:var(--primary)}.heat i.w4{background:#0958d9}
+.ai{border:1px solid var(--line);border-radius:10px;margin:0 16px 16px;padding:12px;background:var(--surface-2)}
+.ai .msg{font-size:12px;line-height:1.6;margin:6px 0}
+.modal{border:1px solid var(--red-border);background:var(--red-soft);border-radius:10px;margin:16px;padding:14px}
+</style>
+</head>
+<body>
+<div class="proto">
+  <div class="proto-head">
+    <div><h1>云主机 · 授权 / 实例 / 指标 / 操作</h1><p>首版只接腾讯云 CVM；未授权只显示引导，凭证过期禁用操作。</p></div>
+  </div>
+
+  <div class="proto-tabs" id="tabs">
+    <button class="proto-tab on" data-s="unauth">未授权</button>
+    <button class="proto-tab" data-s="instances">已授权 · 实例</button>
+    <button class="proto-tab" data-s="metrics">指标 / 集群</button>
+    <button class="proto-tab" data-s="action">操作确认</button>
+    <button class="proto-tab" data-s="expired">凭证过期</button>
+  </div>
+
+  <div class="panel" id="panel"></div>
+  <p class="footer-note">授权三步：打开云登录 → 复制验证码 → 回填；或从本机 CLI 导入。所有启停先写 cloud_ops 再调云 API。</p>
+</div>
+<script>
+const instances=[
+  ['cvm-01','ap-guangzhou','running','2C4G','10.0.1.12','Ubuntu 22.04'],
+  ['cvm-02','ap-guangzhou','running','4C8G','10.0.1.13','Ubuntu 22.04'],
+  ['cvm-03','ap-shanghai','stopped','2C4G','10.0.2.9','CentOS 7'],
+  ['cvm-04','ap-shanghai','error','4C8G','—','Ubuntu 20.04']
+];
+function shell(title,sub,body){return `<div class="cloud-head"><div><div class="t">${title}</div><div class="s">${sub}</div></div><div style="margin-left:auto"><span class="chip green">已授权</span> <button class="btn">续期</button> <button class="btn danger">退出授权</button></div></div>${body}`}
+function table(){return `<div style="padding:0 16px 14px"><table class="grid"><thead><tr><th>实例</th><th>地域</th><th>状态</th><th>规格</th><th>地址</th><th>OS</th><th>操作</th></tr></thead><tbody>
+${instances.map(([n,r,s,sp,ip,os])=>`<tr><td class="mono">${n}</td><td>${r}</td><td><span class="chip ${s==='running'?'green':s==='error'?'red':''}">${s}</span></td><td>${sp}</td><td class="mono">${ip}</td><td>${os}</td><td><button class="btn">详情</button> <button class="btn" ${s==='error'?'disabled':''}>启停</button></td></tr>`).join('')}
+</tbody></table></div>`}
+function render(s){
+  const p=document.getElementById('panel');
+  if(s==='unauth'){
+    p.innerHTML=`<div class="auth-card"><div style="font-size:15px;font-weight:650">尚未授权腾讯云</div><div class="note" style="margin:6px 0 0">授权后即可查看 CVM 实例与监控，并交给运维专家排查异常。</div>
+      <div class="steps"><div class="step"><span class="n">STEP 1</span><b>打开云登录</b>点击一键授权，在浏览器完成登录；不用填密钥。</div><div class="step"><span class="n">STEP 2</span><b>复制验证码</b>登录成功后复制页面验证码。</div><div class="step"><span class="n">STEP 3</span><b>回填 / 导入</b>回到这里粘贴，或从本机 tccli 导入。</div></div>
+      <div class="row" style="justify-content:center"><button class="btn primary">一键授权</button><button class="btn">从本机导入</button><button class="btn">了解权限</button></div></div>`;
+  } else if(s==='instances'){
+    p.innerHTML=shell('云服务器 · 腾讯云 CVM','4 个实例 · 最后同步 10:22 · 地域：全部',`<div class="toolbar" style="border-top:0"><select class="input"><option>全部地域</option><option>ap-guangzhou</option><option>ap-shanghai</option></select><select class="input"><option>全部状态</option><option>running</option><option>stopped</option></select><input class="input" placeholder="搜索实例名 / IP"><span class="spacer"></span><button class="btn">刷新</button></div>`+table()+`<div class="ai"><b>AI 运维面板</b><div class="msg">cvm-04 处于 error，最近 10 分钟 CPU 100%、磁盘 96%。建议先扩容磁盘再重启；需要我生成处置步骤吗？</div><div class="row"><button class="btn primary">生成诊断</button><button class="btn">查看历史</button><span class="note">只读建议，不自动执行</span></div></div>`);
+  } else if(s==='metrics'){
+    p.innerHTML=shell('指标 · cvm-01','ap-guangzhou · 最近 1 小时 · 5 分钟粒度',`<div class="metric-grid"><div class="metric"><div class="k">CPU</div><div class="v">42%</div></div><div class="metric"><div class="k">内存</div><div class="v">68%</div></div><div class="metric"><div class="k">磁盘</div><div class="v">51%</div></div><div class="metric"><div class="k">网络</div><div class="v">12 MB/s</div></div></div>
+      <div style="padding:0 16px 6px" class="note">CPU 热力图（24 个 5 分钟窗口）</div><div class="heat">${Array.from({length:24},(_,i)=>`<i class="${i%7===0?'w4':i%5===0?'w3':i%3===0?'w2':i%2===0?'w1':''}"></i>`).join('')}</div>
+      <div style="padding:0 16px 14px" class="note">集群趋势最多 12 条曲线；超过提示缩小选择。指标超时降级为快照并标注 stale。</div>`);
+  } else if(s==='action'){
+    p.innerHTML=shell('操作确认 · cvm-04','error 状态 · 最近心跳 10:22',`<div class="modal"><b>确认重启 cvm-04？</b><div class="note" style="margin:6px 0 10px">这会中断实例上的进程；操作会写 cloud_ops 与审计，不能撤销。</div><div class="row"><input class="input" placeholder="填写原因（必填）" style="flex:1"><button class="btn danger">确认重启</button><button class="btn">取消</button></div></div><div style="padding:0 16px 16px" class="note">提交后：pending → running → succeeded/failed；失败也落终态。</div>`);
+  } else {
+    p.innerHTML=shell('云服务器 · 凭证过期','最后同步 09:40 · 操作已禁用',`<div class="modal" style="border-color:var(--amber-border);background:var(--amber-soft);color:var(--amber)"><b>凭证已过期，无法刷新实例</b><div class="note" style="margin:6px 0 10px">刷新令牌已失效；请重新授权。当前展示最后快照（09:40）。</div><button class="btn primary">重新授权</button></div>`+table().replace(/<button class="btn" disabled>启停<\/button>/g,'<button class="btn" disabled>启停</button>'));
+  }
+  document.querySelectorAll('.proto-tab').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
+}
+document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-s]');if(b)render(b.dataset.s);});
+render('unauth');
+</script>
+</body>
+</html>

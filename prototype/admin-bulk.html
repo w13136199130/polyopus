@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyOpus · 管理端批量 / 配额 / 审计原型</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="feature-prototype.css">
+<style>
+.bulkbar{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--primary-soft);border-bottom:1px solid var(--primary-border);font-size:12px}
+.check{width:14px;height:14px;accent-color:var(--primary)}
+.importbox{border:1px dashed var(--line-2);border-radius:10px;padding:16px;margin:12px 16px;background:var(--surface-2)}
+.importbox h4{margin:0 0 6px;font-size:12.5px}
+.result{border:1px solid var(--line);border-radius:9px;margin:10px 16px 16px;overflow:hidden}
+.result .rh{padding:8px 10px;background:var(--surface-2);font-size:11.5px;color:var(--text-3)}
+.quota-row{display:grid;grid-template-columns:160px 100px 1fr 120px;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12px}
+.quota-row .inp{border:1px solid var(--line-2);border-radius:6px;padding:4px 7px;font-size:12px;width:100px;text-align:right}
+</style>
+</head>
+<body>
+<div class="proto">
+  <div class="proto-head"><div><h1>管理端 · 批量 / 配额 / 审计</h1><p>CSV 导入先 dry-run；配额三层可改；审计可导出且不可修改。</p></div></div>
+
+  <div class="proto-tabs" id="tabs">
+    <button class="proto-tab on" data-v="users">用户 / 导入</button>
+    <button class="proto-tab" data-v="quota">配额</button>
+    <button class="proto-tab" data-v="audit">审计 / 导出</button>
+  </div>
+
+  <div class="panel" id="users">
+    <div class="toolbar"><button class="btn primary">新建用户</button><button class="btn">邀请</button><button class="btn">CSV 导入</button><span class="spacer"></span><input class="input" placeholder="搜索用户名 / 邮箱"><select class="input"><option>全部角色</option><option>admin</option><option>member</option></select></div>
+    <div class="bulkbar"><input type="checkbox" class="check" checked> 已选 2 项 <button class="btn">启用</button><button class="btn">禁用</button><button class="btn danger">删除</button><span class="note">逐项返回成功/失败</span></div>
+    <table class="grid"><thead><tr><th></th><th>用户</th><th>角色</th><th>状态</th><th>最后登录</th></tr></thead><tbody>
+      <tr><td><input type="checkbox" class="check" checked></td><td>alice</td><td>admin</td><td><span class="chip green">active</span></td><td>10:02</td></tr>
+      <tr><td><input type="checkbox" class="check" checked></td><td>bob</td><td>member</td><td><span class="chip green">active</span></td><td>昨天</td></tr>
+      <tr><td><input type="checkbox" class="check"></td><td>carol</td><td>auditor</td><td><span class="chip">disabled</span></td><td>—</td></tr>
+    </tbody></table>
+    <div class="importbox"><h4>CSV 导入 · dry-run</h4><div class="note">列：username,display_name,role,email；重复/非法行不写入，先给预览。</div><div class="row" style="margin-top:10px"><button class="btn">选择 CSV</button><button class="btn primary">开始 dry-run</button></div></div>
+    <div class="result"><div class="rh">Dry-run 结果：可创建 8 · 跳过 2（重复）· 失败 1（角色非法）</div>
+      <table class="grid"><thead><tr><th>行</th><th>用户</th><th>结果</th><th>原因</th></tr></thead><tbody>
+        <tr><td>3</td><td>dave</td><td><span class="chip green">create</span></td><td>—</td></tr>
+        <tr><td>5</td><td>alice</td><td><span class="chip">skip</span></td><td>用户名已存在</td></tr>
+        <tr><td>7</td><td>eve</td><td><span class="chip red">fail</span></td><td>role=superuser 不存在</td></tr>
+      </tbody></table></div>
+  </div>
+
+  <div class="panel" id="quota" style="display:none">
+    <div class="toolbar"><span class="chip blue">租户</span><span class="chip">用户</span><span class="chip">Agent</span><span class="spacer"></span><button class="btn primary">保存</button></div>
+    <div class="quota-row" style="font-size:10.5px;color:var(--text-3);background:var(--surface-2)"><div>范围</div><div>指标</div><div>上限 / 窗口</div><div>操作</div></div>
+    <div class="quota-row"><div>tenant: default</div><div>tokens</div><div>5,000,000 / 月 <input class="inp" value="5000000"></div><div><button class="btn">编辑</button></div></div>
+    <div class="quota-row"><div>user: alice</div><div>cost</div><div>¥200 / 月 <input class="inp" value="200"></div><div><button class="btn">编辑</button></div></div>
+    <div class="quota-row"><div>agent: ops-expert</div><div>concurrency</div><div>4 / 绝对 <input class="inp" value="4"></div><div><button class="btn">编辑</button></div></div>
+    <div class="note" style="padding:12px">超限返回 QUOTA_EXCEEDED；租户上限是硬顶，用户/Agent 只能更小。</div>
+  </div>
+
+  <div class="panel" id="audit" style="display:none">
+    <div class="toolbar"><input class="input" type="date"><input class="input" type="date"><select class="input"><option>全部 actor</option><option>alice</option></select><select class="input"><option>全部结果</option><option>denied</option><option>failed</option></select><span class="spacer"></span><button class="btn primary">导出 CSV</button><button class="btn">导出 JSON</button></div>
+    <table class="grid"><thead><tr><th>时间</th><th>Actor</th><th>Action</th><th>资源</th><th>结果</th></tr></thead><tbody>
+      <tr><td class="mono">10:21</td><td>alice</td><td>user.delete</td><td>user:carol</td><td><span class="chip green">ok</span></td></tr>
+      <tr><td class="mono">10:18</td><td>system</td><td>tool.call</td><td>tool:write_file</td><td><span class="chip green">ok</span></td></tr>
+      <tr><td class="mono">10:15</td><td>bob</td><td>policy.update</td><td>policy:r_12</td><td><span class="chip red">denied</span></td></tr>
+    </tbody></table>
+    <div class="note" style="padding:12px">审计只追加；导出生成有时效的下载链接；过期链接需重新导出。</div>
+  </div>
+
+  <p class="footer-note">批量操作逐项结果；CSV 先 dry-run；配额租户硬顶；审计不可改，导出有 TTL。</p>
+</div>
+<script>
+document.getElementById('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('[data-v]'); if(!b) return;
+  const v=b.dataset.v;
+  document.querySelectorAll('#tabs .proto-tab').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
+  ['users','quota','audit'].forEach(k=>document.getElementById(k).style.display=k===v?'block':'none');
+});
+</script>
+</body>
+</html>

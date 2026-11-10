@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyopus.dev/schemas/events/sys/workspace.file.changed.schema.json",
+  "title": "workspace.file.changed",
+  "description": "workspace.file.changed",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "event_id",
+    "stream_id",
+    "seq",
+    "type",
+    "ts",
+    "tenant_id",
+    "actor",
+    "refs",
+    "payload"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "stream_id": {
+      "type": "string",
+      "pattern": "^(conv|ticket|src|user|sys):.+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "const": "workspace.file.changed"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "$ref": "../common.schema.json#/$defs/Actor"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "causation_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "refs": {
+      "$ref": "../common.schema.json#/$defs/Refs"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": "string",
+          "x-id-prefix": "th"
+        },
+        "path": {
+          "type": "string"
+        },
+        "change": {
+          "type": "string",
+          "enum": [
+            "created",
+            "updated",
+            "deleted"
+          ]
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_id",
+        "path",
+        "change"
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

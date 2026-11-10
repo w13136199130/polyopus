@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyopus.dev/schemas/events/conv/artifact.created.schema.json",
+  "title": "artifact.created",
+  "description": "artifact.created",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "event_id",
+    "stream_id",
+    "seq",
+    "type",
+    "ts",
+    "tenant_id",
+    "actor",
+    "refs",
+    "payload"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "stream_id": {
+      "type": "string",
+      "pattern": "^(conv|ticket|src|user|sys):.+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "const": "artifact.created"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "$ref": "../common.schema.json#/$defs/Actor"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "causation_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "refs": {
+      "$ref": "../common.schema.json#/$defs/Refs"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "x-id-prefix": "art"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "image",
+            "pdf",
+            "pr",
+            "diff",
+            "report",
+            "link"
+          ]
+        },
+        "mime": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "ticket_id": {
+          "type": "string",
+          "x-id-prefix": "tk"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "ref"
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,14 @@
+[importlinter]
+root_package = polyopus
+
+[importlinter:contract:kernel-is-pure]
+name = kernel must not import platform/domains
+type = forbidden
+source_modules =
+    polyopus.kernel
+forbidden_modules =
+    polyopus.platform
+    polyopus.domains
+
+# NOTE: the full layer contract (kernel <- platform <- domains <- api/workers/cli)
+# is enabled in M1, once those packages exist. See docs/47 M0-24.

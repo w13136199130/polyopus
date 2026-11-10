@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyopus.dev/schemas/events/common.schema.json",
+  "title": "PolyOpus shared event objects",
+  "$defs": {
+    "Actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "user",
+            "agent",
+            "system",
+            "executor",
+            "source"
+          ],
+          "description": "who produced it"
+        },
+        "id": {
+          "type": "string",
+          "description": "user id / agent id / executor kind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "on_behalf_of": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ]
+    },
+    "Refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "thread_id": {
+          "type": "string",
+          "x-id-prefix": "th"
+        },
+        "turn_id": {
+          "type": "string",
+          "x-id-prefix": "tu"
+        },
+        "run_id": {
+          "type": "string",
+          "x-id-prefix": "rn"
+        },
+        "ticket_id": {
+          "type": "string",
+          "x-id-prefix": "tk"
+        },
+        "assignment_id": {
+          "type": "string",
+          "x-id-prefix": "as"
+        },
+        "event_thread_id": {
+          "type": "string",
+          "x-id-prefix": "et"
+        },
+        "source_id": {
+          "type": "string",
+          "x-id-prefix": "src"
+        }
+      }
+    },
+    "ArtifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "image",
+            "pdf",
+            "pr",
+            "diff",
+            "report",
+            "link"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "description": "storage ref or URL"
+        },
+        "mime": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ]
+    },
+    "Action": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "args_preview": {
+          "type": "string",
+          "description": "redacted, <=500 chars"
+        },
+        "risk": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "tool",
+        "args_preview",
+        "risk"
+      ]
+    },
+    "Block": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "text",
+            "image",
+            "file",
+            "reference"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    "Step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "active",
+            "done",
+            "skipped",
+            "failed"
+          ]
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status"
+      ]
+    },
+    "Mandate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy_version": {
+          "type": "integer"
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "strength": {
+          "type": "string",
+          "enum": [
+            "explicit",
+            "inferred"
+          ]
+        },
+        "matched_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "granted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "policy_version",
+        "scope",
+        "strength",
+        "matched_rules",
+        "actor",
+        "granted_at"
+      ]
+    },
+    "Usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "type": "integer"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "cached_tokens": {
+          "type": "integer"
+        },
+        "cost_micros": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "cost_micros"
+      ]
+    },
+    "Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "model",
+            "tool",
+            "executor",
+            "intake",
+            "platform"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "source"
+      ]
+    }
+  }
+}

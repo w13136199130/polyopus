@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "event_id": "ev_01J9Z8Q3K7Y2N5M4P6R8S0T2VF",
+  "stream_id": "ticket:tk_01J9Z8Q3K7Y2N5M4P6R8S0T2V5",
+  "seq": 9,
+  "type": "assignment.reported",
+  "ts": "2026-11-05T13:32:00.000Z",
+  "tenant_id": "default",
+  "actor": { "kind": "executor", "id": "builtin" },
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "correlation_id": "as_01J9Z8Q3K7Y2N5M4P6R8S0T2V6",
+  "refs": {
+    "ticket_id": "tk_01J9Z8Q3K7Y2N5M4P6R8S0T2V5",
+    "assignment_id": "as_01J9Z8Q3K7Y2N5M4P6R8S0T2V6"
+  },
+  "payload": {
+    "assignment_id": "as_01J9Z8Q3K7Y2N5M4P6R8S0T2V6",
+    "state": "ready",
+    "progress": 1.0,
+    "summary": "已修复并提交 PR #418",
+    "facts": { "files_changed": 3, "tests": "passing" },
+    "artifacts": [{ "kind": "pr", "ref": "https://github.com/acme/api/pull/418" }],
+    "usage": {
+      "input_tokens": 18000,
+      "output_tokens": 2200,
+      "cached_tokens": 9000,
+      "cost_micros": 52000,
+      "model": "deepseek-v4"
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyopus.dev/schemas/events/ticket/ticket.ended.schema.json",
+  "title": "ticket.ended",
+  "description": "ticket.ended",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "event_id",
+    "stream_id",
+    "seq",
+    "type",
+    "ts",
+    "tenant_id",
+    "actor",
+    "refs",
+    "payload"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "stream_id": {
+      "type": "string",
+      "pattern": "^(conv|ticket|src|user|sys):.+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "const": "ticket.ended"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "$ref": "../common.schema.json#/$defs/Actor"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "causation_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "refs": {
+      "$ref": "../common.schema.json#/$defs/Refs"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticket_id": {
+          "type": "string",
+          "x-id-prefix": "tk"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "completed",
+            "stopped_by_human",
+            "policy_revoked",
+            "abandoned",
+            "merged"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "x-id-prefix": "u"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket_id",
+        "reason"
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

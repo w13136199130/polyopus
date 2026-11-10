@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyOpus · 知识库评测与检索调试原型</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="feature-prototype.css">
+</head>
+<body>
+<div class="proto">
+  <div class="proto-head">
+    <div>
+      <h1>知识库 · 评测与检索调试</h1>
+      <p>检索链路可解释：dense / BM25 / RRF / rerank / ACL；评测用黄金集，不靠感觉。</p>
+    </div>
+  </div>
+
+  <div class="proto-tabs" id="tabs">
+    <button class="proto-tab on" data-view="search">检索调试</button>
+    <button class="proto-tab" data-view="eval">评测</button>
+    <button class="proto-tab" data-view="ingest">摄取队列</button>
+  </div>
+
+  <div class="panel" id="searchView">
+    <div class="toolbar">
+      <input class="input" id="q" value="登录超时怎么排查" style="min-width:260px">
+      <select class="input" id="mode"><option>hybrid（dense + BM25）</option><option>dense</option><option>BM25</option></select>
+      <button class="btn primary" id="run">检索</button>
+      <span class="spacer"></span>
+      <span class="chip" id="scenarioLabel">正常</span>
+    </div>
+    <div class="toolbar" style="border-top:0">
+      <span class="chip">k=8</span><span class="chip">候选 60</span><span class="chip">ACL 后 42</span><span class="chip">rerank 8</span><span class="chip green" id="latency">86ms</span>
+      <span class="spacer"></span>
+      <button class="btn" data-scene="normal">正常</button>
+      <button class="btn" data-scene="acl">ACL 过滤</button>
+      <button class="btn" data-scene="empty">无命中</button>
+      <button class="btn" data-scene="fallback">rerank 超时</button>
+    </div>
+    <div id="searchBody"></div>
+  </div>
+
+  <div class="panel" id="evalView" style="display:none">
+    <div class="toolbar">
+      <span class="chip blue">黄金集：kb-ops-50</span>
+      <span class="chip">最近运行 10:20</span>
+      <span class="spacer"></span>
+      <button class="btn" onclick="alert('选择黄金集与阈值')">设置</button>
+      <button class="btn primary" onclick="alert('已排队：跑 50 条；完成后通知')">运行评测</button>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">recall@5</div><div class="v">0.86</div><div class="s">阈值 ≥0.80 · 通过</div></div>
+      <div class="card"><div class="k">faithfulness</div><div class="v">0.92</div><div class="s">阈值 ≥0.90 · 通过</div></div>
+      <div class="card"><div class="k">MRR</div><div class="v">0.78</div><div class="s">较上次 +0.03</div></div>
+      <div class="card"><div class="k">p95 延迟</div><div class="v">95ms</div><div class="s">检索 + 重排</div></div>
+    </div>
+    <table class="grid">
+      <thead><tr><th>时间</th><th>黄金集</th><th>recall@5</th><th>faithfulness</th><th>状态</th><th>失败样本</th></tr></thead>
+      <tbody>
+        <tr><td class="num">10:20</td><td>kb-ops-50</td><td class="num">0.86</td><td class="num">0.92</td><td><span class="chip green">pass</span></td><td>7 条见详情</td></tr>
+        <tr><td class="num">昨天</td><td>kb-ops-50</td><td class="num">0.84</td><td class="num">0.90</td><td><span class="chip green">pass</span></td><td>8 条</td></tr>
+        <tr><td class="num">10-31</td><td>kb-ops-50</td><td class="num">0.71</td><td class="num">0.82</td><td><span class="chip red">fail</span></td><td>切片过大导致</td></tr>
+      </tbody>
+    </table>
+    <div class="note" style="padding:0 14px 14px">失败样本会给出：问题、期望文档、实际 top5、原因分类（切片/embedding/ACL/rerank）。</div>
+  </div>
+
+  <div class="panel" id="ingestView" style="display:none">
+    <div class="toolbar">
+      <span class="chip">队列 12</span><span class="chip amber">处理中 2</span><span class="chip red">失败 1</span>
+      <span class="spacer"></span>
+      <button class="btn" onclick="alert('重试全部失败项')">重试失败</button>
+    </div>
+    <table class="grid">
+      <thead><tr><th>文档</th><th>状态</th><th>切片</th><th>错误</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td>runbook/auth.md</td><td><span class="chip green">ready</span></td><td class="num">42</td><td>—</td><td><button class="btn">重建</button></td></tr>
+        <tr><td>handbook/oncall.pdf</td><td><span class="chip amber">processing</span></td><td class="num">—</td><td>解析中 68%</td><td><button class="btn">查看</button></td></tr>
+        <tr><td>faq/login.docx</td><td><span class="chip red">failed</span></td><td class="num">0</td><td class="mono">EMBED_TIMEOUT</td><td><button class="btn">重试</button></td></tr>
+        <tr><td>old/spec.md</td><td><span class="chip">pending</span></td><td class="num">—</td><td>—</td><td><button class="btn">取消</button></td></tr>
+      </tbody>
+    </table>
+    <div class="note" style="padding:0 14px 14px">失败重试 + 死信；不静默失败。SQLite 单机走 FTS5 + sqlite-vec；PG 走 pgvector + tsvector。</div>
+  </div>
+
+  <p class="footer-note">检索空结果必须区分：无文档 / 被 ACL 过滤 / 分数过低 / embedding 不可用 / rerank 超时回退。引用到 chunk 的 page、char_start、char_end。</p>
+</div>
+
+<script>
+const results = [
+  {rank:1, doc:'runbook/auth.md', chunk:'#12', text:'登录超时先查网关 504 与 auth 服务 p95…', dense:.82, bm25:.74, rrf:.79, rerank:.91, final:.91},
+  {rank:2, doc:'faq/login.md', chunk:'#4', text:'token 刷新失败会导致重复登录…', dense:.78, bm25:.61, rrf:.70, rerank:.84, final:.84},
+  {rank:3, doc:'handbook/oncall.pdf', chunk:'p.18 #3', text:'auth 告警分级与升级路径…', dense:.74, bm25:.52, rrf:.63, rerank:.77, final:.77},
+  {rank:4, doc:'adr/0007-timeout.md', chunk:'#2', text:'统一超时预算：网关 3s、下游 2s…', dense:.69, bm25:.58, rrf:.64, rerank:.72, final:.72},
+  {rank:5, doc:'runbook/db.md', chunk:'#31', text:'连接池耗尽也会表现为认证超时…', dense:.66, bm25:.41, rrf:.54, rerank:.61, final:.61}
+];
+let scene='normal';
+
+function table(rows) {
+  return `<table class="grid"><thead><tr><th>#</th><th>文档 / chunk</th><th>文本</th><th>dense</th><th>BM25</th><th>RRF</th><th>rerank</th><th>final</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td class="num">${r.rank}</td><td><div class="mono">${r.doc}</div><div class="chip">${r.chunk}</div></td><td>${r.text}<div class="hitbar"><i style="width:${Math.round(r.final*100)}%"></i></div></td><td class="num">${r.dense.toFixed(2)}</td><td class="num">${r.bm25.toFixed(2)}</td><td class="num">${r.rrf.toFixed(2)}</td><td class="num">${r.rerank.toFixed(2)}</td><td class="num"><b>${r.final.toFixed(2)}</b></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function renderSearch() {
+  const body = document.getElementById('searchBody');
+  const label = document.getElementById('scenarioLabel');
+  if (scene === 'normal') {
+    label.textContent='正常'; label.className='chip green'; document.getElementById('latency').textContent='86ms';
+    body.innerHTML = table(results) + `<div class="note" style="padding:10px 14px 14px">耗时：embed 18ms · 检索 22ms · ACL 4ms · rerank 38ms · 组装 4ms。引用：runbook/auth.md#12（page 4, char 120–480）。</div>`;
+  } else if (scene === 'acl') {
+    label.textContent='ACL 过滤 18 条'; label.className='chip amber'; document.getElementById('latency').textContent='81ms';
+    body.innerHTML = table(results.slice(0,3)) + `<div class="note" style="padding:10px 14px 14px;color:var(--amber)">命中被 ACL 过滤 18 条：当前用户不在 KB 的 SRE 组；过滤发生在 embedding 之后、rerank 之前。若这是误配，去「设置 → 共享」检查组 grant。</div>`;
+  } else if (scene === 'empty') {
+    label.textContent='无命中'; label.className='chip red'; document.getElementById('latency').textContent='64ms';
+    body.innerHTML = `<div class="empty">没有命中。原因：分数低于阈值 0.35（最高 0.28）。<br><span class="small">不是“没有文档”；KB 内有 1,284 个 chunk，ACL 后 1,102 个。</span><div style="margin-top:10px"><button class="btn">降低阈值重试</button> <button class="btn">查看切片</button></div></div>`;
+  } else {
+    label.textContent='rerank 超时 → 回退 RRF'; label.className='chip amber'; document.getElementById('latency').textContent='120ms';
+    body.innerHTML = table(results.map(r=>({...r, rerank:r.rrf, final:r.rrf}))) + `<div class="note" style="padding:10px 14px 14px;color:var(--amber)">rerank 超时 100ms，已回退到 RRF 排序；结果仍可用，但排序质量下降。已记 warning 与指标。</div>`;
+  }
+  document.querySelectorAll('[data-scene]').forEach(b=>b.classList.toggle('on', b.dataset.scene===scene));
+  document.querySelectorAll('[data-scene]').forEach(b=>b.style.borderColor = b.dataset.scene===scene ? 'var(--primary-border)' : '');
+}
+
+document.getElementById('run').onclick = () => renderSearch();
+document.querySelectorAll('[data-scene]').forEach(b => b.onclick = () => { scene=b.dataset.scene; renderSearch(); });
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const b=e.target.closest('[data-view]'); if(!b) return;
+  const v=b.dataset.view;
+  document.querySelectorAll('#tabs .proto-tab').forEach(x=>x.classList.toggle('on',x.dataset.view===v));
+  document.getElementById('searchView').style.display = v==='search'?'block':'none';
+  document.getElementById('evalView').style.display = v==='eval'?'block':'none';
+  document.getElementById('ingestView').style.display = v==='ingest'?'block':'none';
+});
+renderSearch();
+</script>
+</body>
+</html>

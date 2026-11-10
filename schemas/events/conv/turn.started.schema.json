@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyopus.dev/schemas/events/conv/turn.started.schema.json",
+  "title": "turn.started",
+  "description": "Execution of a turn started.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "event_id",
+    "stream_id",
+    "seq",
+    "type",
+    "ts",
+    "tenant_id",
+    "actor",
+    "refs",
+    "payload"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "stream_id": {
+      "type": "string",
+      "pattern": "^(conv|ticket|src|user|sys):.+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "const": "turn.started"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "$ref": "../common.schema.json#/$defs/Actor"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "causation_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "refs": {
+      "$ref": "../common.schema.json#/$defs/Refs"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "turn_id": {
+          "type": "string",
+          "x-id-prefix": "tu"
+        },
+        "run_id": {
+          "type": "string",
+          "x-id-prefix": "rn"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn_id",
+        "run_id",
+        "attempt",
+        "model"
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

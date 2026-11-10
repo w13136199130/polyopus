@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyOpus · 任务时间线原型</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="task-prototype.css">
+</head>
+<body>
+<div class="proto">
+  <div class="proto-head">
+    <div>
+      <h1>任务时间线 · 工单详情</h1>
+      <p>统一阶段、状态与“为什么在这”；切换场景看等待/失败/完成的解释。</p>
+    </div>
+  </div>
+
+  <div class="proto-tabs" id="tabs">
+    <button class="proto-tab on" data-scene="running">运行中</button>
+    <button class="proto-tab" data-scene="approval">等待审批</button>
+    <button class="proto-tab" data-scene="budget">预算告警</button>
+    <button class="proto-tab" data-scene="stalled">执行器离线</button>
+    <button class="proto-tab" data-scene="completed">已完成</button>
+    <button class="proto-tab" data-scene="failed">失败</button>
+  </div>
+
+  <div class="panel ticket">
+    <div class="tk-head">
+      <div>
+        <div class="tk-title" id="ticketTitle">#tk_01J8K3 · 修复登录超时</div>
+        <div class="tk-sub" id="ticketSub"></div>
+      </div>
+      <div class="tk-actions">
+        <button class="btn" onclick="alert('只停止 Assignment，不删除 Ticket')">停止</button>
+        <button class="btn" onclick="alert('选择执行器并填写原因')">改派</button>
+        <button class="btn" onclick="alert('输入新的预算上限')">追加预算</button>
+      </div>
+    </div>
+    <div class="tk-body">
+      <div class="why" id="why"></div>
+      <div class="summary" id="summary"></div>
+      <div class="budget" style="margin:0 0 18px">
+        <div class="budget-top"><span>预算</span><span id="budgetText"></span></div>
+        <div class="bar" id="budgetBar"><i style="width:0%"></i></div>
+      </div>
+      <ul class="tl" id="timeline"></ul>
+    </div>
+  </div>
+
+  <p class="footer-note">阶段固定为 Trigger → Gate → Eval → Ticket → Assignment → Execution → Report → Attention；每个阶段都显示状态、时间、actor 与可展开的 payload。</p>
+</div>
+<script>
+const scenes = {
+  running: {
+    sub: ['来源 Web · 发起人 @alice', '授权 explicit · 策略 v7', '执行器 builtin · 运行 7m'],
+    why: { title: '正在执行 npm test · 已完成 3/5 步', sub: '预计还需 2 分钟；可停止，已生成内容会保留', tone: 'blue', action: '查看当前步骤' },
+    kpi: [['状态','运行中'],['进度','60%'],['成本','¥0.09'],['重试','0']],
+    budget: [48, '24k / 50k tokens'],
+    items: [
+      ['10:02','done','Trigger','issue_comment #412 “登录 502”','来源 Web · 去重键 acme/api#412'],
+      ['10:02','done','Gate','passed（actor allowed, explicit request）','规则 r_12 命中'],
+      ['10:02','done','Eval','accept / explicit / scope=[repo:acme/api]','模型 cheap-1 · 置信 0.91'],
+      ['10:03','done','Ticket','opened（mandate: policy v7）','预算 50k/¥0.20'],
+      ['10:03','done','Assignment','builtin → session s_88','workdir /data/workspaces/t_412'],
+      ['10:07','active','Execution','运行 npm test · 3/5','当前步骤：test auth.spec.ts'],
+    ]
+  },
+  approval: {
+    sub: ['来源 Web · 发起人 @alice', '授权 explicit · 策略 v7', '等待 2m'],
+    why: { title: '等待审批：write_file 需要你批准', sub: '已等待 2m · 30 分钟后自动拒绝', tone: 'amber', action: '去处理' },
+    kpi: [['状态','待审批'],['进度','40%'],['成本','¥0.04'],['等待','2m']],
+    budget: [40, '20k / 50k tokens'],
+    items: [
+      ['10:02','done','Trigger','issue_comment #412 “登录 502”',''],
+      ['10:02','done','Gate','passed',''],
+      ['10:02','done','Eval','accept / explicit',''],
+      ['10:03','done','Ticket','opened（policy v7）',''],
+      ['10:03','done','Assignment','builtin → s_88',''],
+      ['10:06','done','Execution','读取 auth.ts','read_file'],
+      ['10:07','wait','Attention','等待批准 write_file(auth.ts)','批准 / 拒绝 / 本会话允许'],
+    ]
+  },
+  budget: {
+    sub: ['来源 Web · 发起人 @alice', '授权 explicit · 策略 v7', '预算告警'],
+    why: { title: '预算已用 92% · 再加 20k 可继续', sub: '当前 46k / 50k tokens；停止会保留已完成内容', tone: 'amber', action: '追加预算' },
+    kpi: [['状态','预算告警'],['进度','82%'],['成本','¥0.18'],['上限','¥0.20']],
+    budget: [92, '46k / 50k tokens'],
+    items: [
+      ['10:02','done','Trigger','issue_comment #412',''],
+      ['10:03','done','Ticket','opened（policy v7）',''],
+      ['10:03','done','Assignment','builtin → s_88',''],
+      ['10:07','done','Execution','读取 + 写入 auth.ts',''],
+      ['10:12','wait','Execution','npm test 运行中','预算 92%'],
+      ['10:12','wait','Report','waiting：预算接近上限','等待用户决定'],
+    ]
+  },
+  stalled: {
+    sub: ['来源 cron · 定时任务 #cj_7', '授权 inferred · 策略 v7', '心跳超时'],
+    why: { title: '执行器心跳超时 2m · Watchdog 已告警', sub: '最近一次心跳 10:11；可停止或重派', tone: 'red', action: '停止 / 重派' },
+    kpi: [['状态','Stalled'],['进度','—'],['成本','¥0.02'],['心跳','2m']],
+    budget: [18, '9k / 50k tokens'],
+    items: [
+      ['09:00','done','Trigger','cron.fired（weekly-report）',''],
+      ['09:00','done','Gate','passed',''],
+      ['09:00','done','Eval','accept / inferred',''],
+      ['09:01','done','Ticket','opened',''],
+      ['09:01','done','Assignment','builtin → s_91',''],
+      ['09:11','done','Execution','最后心跳',''],
+      ['09:13','fail','Watchdog','stalled：心跳超时 2m','已告警'],
+    ]
+  },
+  completed: {
+    sub: ['来源 Web · 发起人 @alice', '授权 explicit · 策略 v7', '耗时 18m'],
+    why: { title: '已完成 · 产物 2 个', sub: 'auth.ts diff · test.log；成本 ¥0.14', tone: 'green', action: '查看报告' },
+    kpi: [['状态','完成'],['进度','100%'],['成本','¥0.14'],['重试','1']],
+    budget: [31, '15k / 50k tokens'],
+    items: [
+      ['10:02','done','Trigger','issue_comment #412',''],
+      ['10:03','done','Ticket','opened（policy v7）',''],
+      ['10:03','done','Assignment','builtin → s_88',''],
+      ['10:07','done','Execution','读取 + 写入 auth.ts',''],
+      ['10:12','fail','Execution','第一次 test 失败：2 个用例',''],
+      ['10:13','done','Assignment','重试 → s_89',''],
+      ['10:20','done','Execution','test 通过',''],
+      ['10:21','done','Report','ready：diff + test.log',''],
+      ['10:21','done','Ticket','ended（completed）',''],
+    ]
+  },
+  failed: {
+    sub: ['来源 Web · 发起人 @alice', '授权 explicit · 策略 v7', '耗时 6m'],
+    why: { title: '失败：TEST_FAILED · 2 个用例未通过', sub: '已写入 auth.ts；未提交、未推送；可重试', tone: 'red', action: '重试' },
+    kpi: [['状态','失败'],['进度','55%'],['成本','¥0.03'],['重试','0']],
+    budget: [22, '11k / 50k tokens'],
+    items: [
+      ['10:02','done','Trigger','issue_comment #412',''],
+      ['10:03','done','Ticket','opened',''],
+      ['10:03','done','Assignment','builtin → s_88',''],
+      ['10:06','done','Execution','读取 + 写入 auth.ts',''],
+      ['10:07','fail','Execution','npm test 失败：2 个用例','TEST_FAILED'],
+      ['10:07','fail','Report','blocked：需要人工判断',''],
+      ['10:08','fail','Ticket','ended（failed）',''],
+    ]
+  }
+};
+
+const host = document.getElementById('timeline');
+
+function whyHtml(w) {
+  return `<div style="min-width:0"><div class="w-title">${w.title}</div><div class="w-sub">${w.sub}</div></div>
+    <div class="w-actions"><span class="tl-pill ${w.tone}">${w.tone === 'red' ? '阻塞' : w.tone === 'amber' ? '等待' : '进行中'}</span><button class="btn primary">${w.action}</button></div>`;
+}
+
+function render(sceneKey) {
+  const s = scenes[sceneKey];
+  document.getElementById('ticketSub').innerHTML = s.sub.map(x => `<span>${x}</span>`).join('');
+  document.getElementById('why').innerHTML = whyHtml(s.why);
+  document.getElementById('summary').innerHTML = s.kpi.map(([k,v]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  document.getElementById('budgetText').textContent = s.budget[1];
+  const bar = document.getElementById('budgetBar');
+  bar.className = 'bar' + (s.budget[0] >= 90 ? ' warn' : '');
+  bar.innerHTML = `<i style="width:${s.budget[0]}%"></i>`;
+  host.innerHTML = s.items.map(([t, st, title, desc, pill]) => `
+    <li class="tl-item ${st}">
+      <div class="tl-time">${t}</div>
+      <div class="tl-dot"></div>
+      <div class="tl-main">
+        <div class="tl-title">${title} ${pill ? `<span class="tl-pill ${st === 'fail' ? 'red' : st === 'wait' ? 'amber' : st === 'active' ? 'blue' : 'green'}">${pill}</span>` : ''}</div>
+        ${desc ? `<div class="tl-desc">${desc}</div>` : ''}
+        ${st === 'wait' ? '<div class="tl-actions"><button class="btn primary">处理</button><button class="btn">查看详情</button></div>' : ''}
+        ${st === 'fail' ? '<div class="tl-actions"><button class="btn">重试</button><button class="btn">查看日志</button></div>' : ''}
+      </div>
+    </li>`).join('');
+  document.querySelectorAll('.proto-tab').forEach(b => b.classList.toggle('on', b.dataset.scene === sceneKey));
+}
+
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-scene]');
+  if (b) render(b.dataset.scene);
+});
+
+render('running');
+</script>
+</body>
+</html>

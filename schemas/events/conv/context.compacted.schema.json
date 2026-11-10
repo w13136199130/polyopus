@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyopus.dev/schemas/events/conv/context.compacted.schema.json",
+  "title": "context.compacted",
+  "description": "context.compacted",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "event_id",
+    "stream_id",
+    "seq",
+    "type",
+    "ts",
+    "tenant_id",
+    "actor",
+    "refs",
+    "payload"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "stream_id": {
+      "type": "string",
+      "pattern": "^(conv|ticket|src|user|sys):.+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "const": "context.compacted"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "$ref": "../common.schema.json#/$defs/Actor"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "causation_id": {
+      "type": "string",
+      "pattern": "^[a-z]{1,4}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "refs": {
+      "$ref": "../common.schema.json#/$defs/Refs"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "before": {
+          "type": "integer"
+        },
+        "after": {
+          "type": "integer"
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "summary",
+            "truncate",
+            "evict"
+          ]
+        }
+      },
+      "required": [
+        "before",
+        "after",
+        "strategy"
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

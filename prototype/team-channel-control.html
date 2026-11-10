@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyOpus · 团队 / 渠道 / 控制面原型</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="feature-prototype.css">
+<style>
+.member{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:8px 0}
+.member .ava{width:30px;height:30px;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;font-size:12px}
+.member .nm{font-size:12.5px;font-weight:600}
+.member .sub{font-size:11px;color:var(--text-3);margin-top:2px}
+.member .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.stepper{display:flex;gap:0;margin:12px 0 16px}
+.step{flex:1;padding:8px 10px;border:1px solid var(--line);background:var(--surface-2);font-size:11.5px;color:var(--text-3)}
+.step:first-child{border-radius:8px 0 0 8px}.step:last-child{border-radius:0 8px 8px 0}
+.step.on{background:var(--primary-soft);border-color:var(--primary-border);color:var(--primary);font-weight:600}
+.step.done{color:var(--green);border-color:var(--green-border);background:var(--green-soft)}
+.sec{padding:14px 16px}
+.sec h3{font-size:13px;margin:0 0 10px}
+.sec .desc{font-size:11.5px;color:var(--text-3);margin:-4px 0 12px;line-height:1.6}
+.banner{border:1px solid var(--amber-border);background:var(--amber-soft);color:var(--amber);border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px}
+.banner.red{border-color:var(--red-border);background:var(--red-soft);color:var(--red)}
+</style>
+</head>
+<body>
+<div class="proto">
+  <div class="proto-head">
+    <div>
+      <h1>团队 / 渠道 / 控制面</h1>
+      <p>成员忙碌、派工重试、渠道探测与身份、终端/浏览器会话；v1.1 但先把交互定死。</p>
+    </div>
+  </div>
+
+  <div class="proto-tabs" id="tabs">
+    <button class="proto-tab on" data-view="team">团队</button>
+    <button class="proto-tab" data-view="channel">渠道</button>
+    <button class="proto-tab" data-view="control">控制面</button>
+  </div>
+
+  <div class="panel">
+    <div id="teamView" class="sec">
+      <div class="row" style="margin-bottom:10px">
+        <div><div style="font-size:15px;font-weight:650">运维小组</div><div class="note">协调者 @ops-lead · 3 名成员 · 房间 ops-room</div></div>
+        <span class="spacer"></span>
+        <button class="btn" onclick="alert('选择：只停协调者 / 停止整个房间')">停止房间</button>
+        <button class="btn">房间设置</button>
+      </div>
+      <div class="banner">成员忙碌时不能移除；停止房间要选范围——停协调者 ≠ 停成员。</div>
+      <h3>成员</h3>
+      <div class="member"><div class="ava">A</div><div><div class="nm">@ops-lead</div><div class="sub">协调者 · idle</div></div><div class="right"><button class="btn" disabled>移除</button></div></div>
+      <div class="member"><div class="ava">B</div><div><div class="nm">@sre-1</div><div class="sub">成员 · busy · 当前派工 dg_88：排查 502</div></div><div class="right"><span class="chip amber">busy</span><button class="btn" disabled>移除</button></div></div>
+      <div class="member"><div class="ava">C</div><div><div class="nm">@sre-2</div><div class="sub">成员 · idle</div></div><div class="right"><button class="btn">移除</button></div></div>
+      <h3 style="margin-top:16px">派工时间线</h3>
+      <table class="grid">
+        <thead><tr><th>派工</th><th>成员</th><th>状态</th><th>尝试</th><th>动作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">dg_88</td><td>@sre-1</td><td><span class="chip green">running</span></td><td class="num">1</td><td><button class="btn">查看</button></td></tr>
+          <tr><td class="mono">dg_87</td><td>@sre-2</td><td><span class="chip">ended</span></td><td class="num">2</td><td><button class="btn">查看</button></td></tr>
+          <tr><td class="mono">dg_86</td><td>@sre-1</td><td><span class="chip red">dead</span></td><td class="num">3</td><td><button class="btn">重试</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div id="channelView" class="sec" style="display:none">
+      <div class="stepper"><div class="step done">1 账号</div><div class="step on">2 探测</div><div class="step">3 绑定 Agent</div></div>
+      <h3>飞书 · ops-bot</h3>
+      <div class="banner">探测结果：缺少 <span class="mono">app_secret</span> 与 <span class="mono">verification_token</span>；补齐后才能绑定。<br>凭证只写不回显；测试连接不创建任务。</div>
+      <div class="row" style="flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn primary">去补凭证</button><button class="btn">重新探测</button><button class="btn">从模板导入</button>
+      </div>
+      <h3>入站调试</h3>
+      <table class="grid">
+        <thead><tr><th>external_id</th><th>thread</th><th>状态</th><th>actor</th><th>动作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">om_91a2</td><td class="mono">th_204</td><td><span class="chip green">received</span></td><td>feishu:u_88（source_actor）</td><td><button class="btn">重放</button></td></tr>
+          <tr><td class="mono">om_91a1</td><td class="mono">th_204</td><td><span class="chip">filtered</span></td><td>feishu:u_77</td><td><button class="btn">查看原因</button></td></tr>
+          <tr><td class="mono">om_91a0</td><td class="mono">th_203</td><td><span class="chip red">failed</span></td><td>feishu:u_88</td><td><button class="btn">重试</button></td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:10px">身份规则：外部消息归属 <span class="mono">source_actor</span>，不继承 Agent owner；入站按 <span class="mono">(channel_id, external_id)</span> 幂等。</div>
+    </div>
+
+    <div id="controlView" class="sec" style="display:none">
+      <div class="banner red">终端默认禁用；启用需管理员开启 + 二次确认，所有输入写审计。</div>
+      <h3>会话</h3>
+      <table class="grid">
+        <thead><tr><th>会话</th><th>类型</th><th>状态</th><th>归属</th><th>动作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">cs_01</td><td>terminal</td><td><span class="chip">disabled</span></td><td>@ops-lead</td><td><button class="btn" disabled>打开</button></td></tr>
+          <tr><td class="mono">cs_02</td><td>browser</td><td><span class="chip green">running</span></td><td>@sre-1</td><td><button class="btn">接管</button> <button class="btn danger">关闭</button></td></tr>
+          <tr><td class="mono">cs_03</td><td>browser</td><td><span class="chip amber">starting</span></td><td>@sre-2</td><td><button class="btn" disabled>接管</button></td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:10px">关闭终端要说明“进程会被终止”；浏览器 profile 隔离，CDP 仅本地；断流退化为 JPEG 帧。</div>
+    </div>
+  </div>
+
+  <p class="footer-note">团队/渠道/控制面属 v1.1：表与 API 已就绪，v1.0 不启用；这里先把交互、空错态和审计规则定死。</p>
+</div>
+
+<script>
+document.getElementById('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('[data-view]'); if(!b) return;
+  const v=b.dataset.view;
+  document.querySelectorAll('#tabs .proto-tab').forEach(x=>x.classList.toggle('on',x.dataset.view===v));
+  document.getElementById('teamView').style.display=v==='team'?'block':'none';
+  document.getElementById('channelView').style.display=v==='channel'?'block':'none';
+  document.getElementById('controlView').style.display=v==='control'?'block':'none';
+});
+</script>
+</body>
+</html>

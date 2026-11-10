@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyOpus · 任务卡原型</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="task-prototype.css">
+</head>
+<body>
+<div class="proto">
+  <div class="proto-head">
+    <div>
+      <h1>任务卡 · 懒 Ticket</h1>
+      <p>写工具 / 审批 / 预算 / 异步触发；只读问答不出现卡片。切换状态看交互与文案。</p>
+    </div>
+  </div>
+
+  <div class="proto-tabs" id="tabs">
+    <button class="proto-tab on" data-state="suggested">建议创建</button>
+    <button class="proto-tab" data-state="creating">创建中</button>
+    <button class="proto-tab" data-state="active">运行中</button>
+    <button class="proto-tab" data-state="approval">待审批</button>
+    <button class="proto-tab" data-state="budget">预算告警</button>
+    <button class="proto-tab" data-state="failed">失败</button>
+    <button class="proto-tab" data-state="completed">完成</button>
+    <button class="proto-tab" data-state="cancelled">已取消</button>
+  </div>
+
+  <div class="panel chat">
+    <div class="msg">
+      <div class="avatar">你</div>
+      <div class="bubble">把 <span class="mono">auth.ts</span> 里登录超时的重试次数改成 3，然后跑一下测试。</div>
+    </div>
+    <div class="msg">
+      <div class="avatar">AI</div>
+      <div class="bubble">我先看一下文件，然后需要写入并运行测试。写入属于有副作用的操作，需要创建一个任务来承载授权、预算和审计。</div>
+    </div>
+    <div id="cardHost"></div>
+    <div class="msg" id="after" style="display:none">
+      <div class="avatar">AI</div>
+      <div class="bubble" id="afterText"></div>
+    </div>
+  </div>
+
+  <p class="footer-note">规则：任务卡不跳页；审批/预算/失败都在卡内更新；取消必须明确“不会执行任何工具”。</p>
+</div>
+<script>
+const host = document.getElementById('cardHost');
+const after = document.getElementById('after');
+const afterText = document.getElementById('afterText');
+let state = 'suggested';
+let timer = null;
+
+const meta = {
+  suggested: { title: '这一步需要创建任务', reason: '调用 write_file（写入工作区）', status: '待确认', tone: 'blue' },
+  creating:  { title: '正在创建任务…', reason: '正在登记授权、预算与审计', status: '创建中', tone: 'blue' },
+  active:    { title: '任务 #tk_01J8K3 运行中', reason: '已写入 auth.ts，正在运行测试', status: '运行中', tone: 'green' },
+  approval:  { title: '等待你批准：write_file', reason: '该工具会修改工作区文件', status: '待审批', tone: 'amber' },
+  budget:    { title: '任务 #tk_01J8K3 预算告警', reason: '已使用 92% 预算，继续执行可能超限', status: '预算告警', tone: 'amber' },
+  failed:    { title: '任务 #tk_01J8K3 失败', reason: 'TEST_FAILED：2 个用例未通过', status: '失败', tone: 'red' },
+  completed: { title: '任务 #tk_01J8K3 已完成', reason: '已改 1 个文件，测试通过；产物 2 个', status: '完成', tone: 'green' },
+  cancelled: { title: '已取消，未执行工具', reason: '任务未创建，工作区没有变化', status: '已取消', tone: 'blue' }
+};
+
+function bar(pct, cls='') {
+  const w = Math.min(100, Math.max(0, pct));
+  return `<div class="bar ${cls}"><i style="width:${w}%"></i></div>`;
+}
+
+function actions(s) {
+  if (s === 'suggested') return `<button class="btn primary" data-act="start">开始任务</button><button class="btn" data-act="cancel">取消</button><button class="link-btn" data-act="why">为什么需要任务？</button>`;
+  if (s === 'creating') return `<button class="btn" disabled>正在创建…</button>`;
+  if (s === 'active') return `<button class="btn primary" data-act="view">查看任务</button><button class="btn danger" data-act="stop">停止</button>`;
+  if (s === 'approval') return `<button class="btn primary" data-act="approve">批准</button><button class="btn danger" data-act="deny">拒绝</button><button class="btn" data-act="session">本会话允许</button>`;
+  if (s === 'budget') return `<button class="btn primary" data-act="add">追加预算</button><button class="btn danger" data-act="stop">停止</button>`;
+  if (s === 'failed') return `<button class="btn primary" data-act="retry">重试</button><button class="btn" data-act="trace">查看轨迹</button>`;
+  if (s === 'completed') return `<button class="btn primary" data-act="report">查看报告</button><button class="btn" data-act="trace">查看轨迹</button>`;
+  if (s === 'cancelled') return `<button class="btn primary" data-act="restart">重新发起</button>`;
+  return '';
+}
+
+function body(s) {
+  if (s === 'suggested') return `
+    <div class="tc-line"><b>原因</b><span>调用 <code class="mono">write_file</code>，会修改工作区文件</span></div>
+    <div class="tc-line"><b>范围</b><span>fs:workspace · 仅当前任务工作区</span></div>
+    <div class="tc-line"><b>预算</b><span>50k tokens / ¥0.20 · 预计 1–3 分钟</span></div>
+    <div class="chips"><span class="chip blue">fs:workspace</span><span class="chip">内置执行器</span><span class="chip">可停止</span></div>`;
+  if (s === 'creating') return `<div class="tc-line"><span>正在写入 Ticket、Mandate 与预算…</span></div><div class="budget">${bar(30)}</div>`;
+  if (s === 'active') return `
+    <div class="tc-line"><b>当前</b><span>运行 <code class="mono">npm test</code> · 进度 3/5</span></div>
+    <div class="budget"><div class="budget-top"><span>预算</span><span>24k / 50k tokens</span></div>${bar(48)}</div>
+    <div class="chips"><span class="chip green">运行中</span><span class="chip">内置执行器</span><span class="chip">可停止</span></div>`;
+  if (s === 'approval') return `
+    <div class="tc-line"><b>待批准</b><span><code class="mono">write_file</code> · path=auth.ts</span></div>
+    <div class="tc-line"><b>影响</b><span>修改 1 个文件；批准后继续执行，不会回滚</span></div>
+    <div class="chips"><span class="chip amber">30 分钟后自动拒绝</span></div>`;
+  if (s === 'budget') return `
+    <div class="budget"><div class="budget-top"><span>已用 92%</span><span>46k / 50k tokens</span></div>${bar(92,'warn')}</div>
+    <div class="tc-line"><b>选项</b><span>追加 20k 继续，或停止并保留已完成内容</span></div>`;
+  if (s === 'failed') return `
+    <div class="tc-line"><b>错误</b><span><code class="mono">TEST_FAILED</code> · 2 个用例未通过</span></div>
+    <div class="tc-line"><b>已完成</b><span>写入 auth.ts；未提交、未推送</span></div>
+    <div class="chips"><span class="chip red">可重试</span><span class="chip">日志已保留</span></div>`;
+  if (s === 'completed') return `
+    <div class="tc-line"><b>结论</b><span>重试次数已改为 3，测试通过</span></div>
+    <div class="tc-line"><b>产物</b><span>auth.ts diff · test.log</span></div>
+    <div class="chips"><span class="chip green">已结束</span><span class="chip">成本 ¥0.14</span></div>`;
+  if (s === 'cancelled') return `
+    <div class="tc-line"><b>结果</b><span>没有创建 Ticket，没有调用工具，工作区未变化</span></div>
+    <div class="chips"><span class="chip">可重新发起</span></div>`;
+  return '';
+}
+
+function render() {
+  const m = meta[state];
+  host.innerHTML = `
+    <div class="task-card">
+      <div class="tc-top">
+        <div class="tc-icon">⚑</div>
+        <div class="tc-title">${m.title}</div>
+        <span class="tl-pill ${m.tone}" style="margin-left:auto">${m.status}</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-line" style="margin-top:0"><span>${m.reason}</span></div>
+        ${body(state)}
+      </div>
+      <div class="tc-actions">${actions(state)}<span class="small-note">任务卡不跳页</span></div>
+    </div>`;
+  after.style.display = (state === 'cancelled' || state === 'completed') ? 'flex' : 'none';
+  afterText.textContent = state === 'cancelled'
+    ? '好的，已取消。需要我改为只读分析，或者你手动改？'
+    : '任务完成了：auth.ts 已更新，测试通过。要我把 diff 发出来吗？';
+  document.querySelectorAll('.proto-tab').forEach(b => b.classList.toggle('on', b.dataset.state === state));
+}
+
+function go(s) { state = s; render(); }
+
+host.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (!act) return;
+  if (act === 'start') { state = 'creating'; render(); timer = setTimeout(() => go('active'), 900); }
+  else if (act === 'cancel') go('cancelled');
+  else if (act === 'stop') go('cancelled');
+  else if (act === 'approve' || act === 'session') go('active');
+  else if (act === 'deny') go('cancelled');
+  else if (act === 'add') go('active');
+  else if (act === 'retry') go('active');
+  else if (act === 'restart') go('suggested');
+  else if (act === 'view' || act === 'trace' || act === 'report') {
+    window.open('task-timeline.html', '_blank');
+  } else if (act === 'why') {
+    alert('因为这一步会修改工作区文件。任务卡用来记录：谁授权、能做什么、预算多少、出了事怎么审计。');
+  }
+});
+
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-state]');
+  if (!b) return;
+  clearTimeout(timer);
+  go(b.dataset.state);
+});
+
+render();
+</script>
+</body>
+</html>

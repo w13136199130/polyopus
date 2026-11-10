@@ -1,0 +1,495 @@
+{
+  "version": 1,
+  "generated_from": "contracts/spec/events.py",
+  "count": 61,
+  "events": [
+    {
+      "type": "turn.queued",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "conversations",
+      "retention": "90d",
+      "schema": "schemas/events/conv/turn.queued.schema.json"
+    },
+    {
+      "type": "turn.started",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "worker",
+      "retention": "90d",
+      "schema": "schemas/events/conv/turn.started.schema.json"
+    },
+    {
+      "type": "turn.resumed",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "worker",
+      "retention": "90d",
+      "schema": "schemas/events/conv/turn.resumed.schema.json"
+    },
+    {
+      "type": "turn.finished",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "worker",
+      "retention": "forever",
+      "schema": "schemas/events/conv/turn.finished.schema.json"
+    },
+    {
+      "type": "message.started",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/message.started.schema.json"
+    },
+    {
+      "type": "message.delta",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/message.delta.schema.json"
+    },
+    {
+      "type": "message.completed",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "forever",
+      "schema": "schemas/events/conv/message.completed.schema.json"
+    },
+    {
+      "type": "reasoning.delta",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "30d",
+      "schema": "schemas/events/conv/reasoning.delta.schema.json"
+    },
+    {
+      "type": "reasoning.summary",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/reasoning.summary.schema.json"
+    },
+    {
+      "type": "tool.started",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/tool.started.schema.json"
+    },
+    {
+      "type": "tool.delta",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "executor",
+      "retention": "30d",
+      "schema": "schemas/events/conv/tool.delta.schema.json"
+    },
+    {
+      "type": "tool.completed",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/tool.completed.schema.json"
+    },
+    {
+      "type": "tool.failed",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/tool.failed.schema.json"
+    },
+    {
+      "type": "tool.async_started",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/tool.async_started.schema.json"
+    },
+    {
+      "type": "tool.async_completed",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/tool.async_completed.schema.json"
+    },
+    {
+      "type": "tool.async_cancelled",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/tool.async_cancelled.schema.json"
+    },
+    {
+      "type": "approval.requested",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "forever",
+      "schema": "schemas/events/conv/approval.requested.schema.json"
+    },
+    {
+      "type": "approval.resolved",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "conversations",
+      "retention": "forever",
+      "schema": "schemas/events/conv/approval.resolved.schema.json"
+    },
+    {
+      "type": "steer.queued",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "conversations",
+      "retention": "30d",
+      "schema": "schemas/events/conv/steer.queued.schema.json"
+    },
+    {
+      "type": "steer.drained",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "30d",
+      "schema": "schemas/events/conv/steer.drained.schema.json"
+    },
+    {
+      "type": "steer.removed",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "conversations",
+      "retention": "30d",
+      "schema": "schemas/events/conv/steer.removed.schema.json"
+    },
+    {
+      "type": "steer.rejected",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "conversations",
+      "retention": "30d",
+      "schema": "schemas/events/conv/steer.rejected.schema.json"
+    },
+    {
+      "type": "context.updated",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "30d",
+      "schema": "schemas/events/conv/context.updated.schema.json"
+    },
+    {
+      "type": "context.compacted",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/context.compacted.schema.json"
+    },
+    {
+      "type": "plan.updated",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "kernel",
+      "retention": "90d",
+      "schema": "schemas/events/conv/plan.updated.schema.json"
+    },
+    {
+      "type": "artifact.created",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "tools",
+      "retention": "forever",
+      "schema": "schemas/events/conv/artifact.created.schema.json"
+    },
+    {
+      "type": "artifact.updated",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "tools",
+      "retention": "forever",
+      "schema": "schemas/events/conv/artifact.updated.schema.json"
+    },
+    {
+      "type": "error",
+      "group": "conv",
+      "stream": "conv",
+      "producer": "any",
+      "retention": "90d",
+      "schema": "schemas/events/conv/error.schema.json"
+    },
+    {
+      "type": "trigger.received",
+      "group": "intake",
+      "stream": "src",
+      "producer": "intake",
+      "retention": "30d",
+      "schema": "schemas/events/intake/trigger.received.schema.json"
+    },
+    {
+      "type": "trigger.filtered",
+      "group": "intake",
+      "stream": "src",
+      "producer": "intake",
+      "retention": "30d",
+      "schema": "schemas/events/intake/trigger.filtered.schema.json"
+    },
+    {
+      "type": "trigger.fanned_out",
+      "group": "intake",
+      "stream": "src",
+      "producer": "intake",
+      "retention": "30d",
+      "schema": "schemas/events/intake/trigger.fanned_out.schema.json"
+    },
+    {
+      "type": "eval.started",
+      "group": "intake",
+      "stream": "src",
+      "producer": "intake",
+      "retention": "90d",
+      "schema": "schemas/events/intake/eval.started.schema.json"
+    },
+    {
+      "type": "eval.decided",
+      "group": "intake",
+      "stream": "src",
+      "producer": "intake",
+      "retention": "180d",
+      "schema": "schemas/events/intake/eval.decided.schema.json"
+    },
+    {
+      "type": "cron.fired",
+      "group": "intake",
+      "stream": "src",
+      "producer": "scheduler",
+      "retention": "1y",
+      "schema": "schemas/events/intake/cron.fired.schema.json"
+    },
+    {
+      "type": "channel.inbound",
+      "group": "intake",
+      "stream": "src",
+      "producer": "channels",
+      "retention": "30d",
+      "schema": "schemas/events/intake/channel.inbound.schema.json"
+    },
+    {
+      "type": "ticket.opened",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "forever",
+      "schema": "schemas/events/ticket/ticket.opened.schema.json"
+    },
+    {
+      "type": "ticket.resumed",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "forever",
+      "schema": "schemas/events/ticket/ticket.resumed.schema.json"
+    },
+    {
+      "type": "ticket.ended",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "forever",
+      "schema": "schemas/events/ticket/ticket.ended.schema.json"
+    },
+    {
+      "type": "ticket.mandate_invalidated",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "forever",
+      "schema": "schemas/events/ticket/ticket.mandate_invalidated.schema.json"
+    },
+    {
+      "type": "ticket.merged",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "forever",
+      "schema": "schemas/events/ticket/ticket.merged.schema.json"
+    },
+    {
+      "type": "assignment.started",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/assignment.started.schema.json"
+    },
+    {
+      "type": "assignment.reported",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "executor",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/assignment.reported.schema.json"
+    },
+    {
+      "type": "assignment.ended",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/assignment.ended.schema.json"
+    },
+    {
+      "type": "assignment.dead",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/assignment.dead.schema.json"
+    },
+    {
+      "type": "delegation.started",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "orchestration",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/delegation.started.schema.json"
+    },
+    {
+      "type": "delegation.ended",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "orchestration",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/delegation.ended.schema.json"
+    },
+    {
+      "type": "attention.requested",
+      "group": "user",
+      "stream": "user",
+      "producer": "intake",
+      "retention": "forever",
+      "schema": "schemas/events/user/attention.requested.schema.json"
+    },
+    {
+      "type": "attention.resolved",
+      "group": "user",
+      "stream": "user",
+      "producer": "user",
+      "retention": "forever",
+      "schema": "schemas/events/user/attention.resolved.schema.json"
+    },
+    {
+      "type": "watchdog.alert",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "watchdog",
+      "retention": "90d",
+      "schema": "schemas/events/sys/watchdog.alert.schema.json"
+    },
+    {
+      "type": "channel.sent",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "channels",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/channel.sent.schema.json"
+    },
+    {
+      "type": "channel.failed",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "channels",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/channel.failed.schema.json"
+    },
+    {
+      "type": "memory.written",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "memory",
+      "retention": "forever",
+      "schema": "schemas/events/sys/memory.written.schema.json"
+    },
+    {
+      "type": "memory.updated",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "memory",
+      "retention": "forever",
+      "schema": "schemas/events/sys/memory.updated.schema.json"
+    },
+    {
+      "type": "plugin.installed",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "capabilities",
+      "retention": "1y",
+      "schema": "schemas/events/sys/plugin.installed.schema.json"
+    },
+    {
+      "type": "plugin.failed",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "capabilities",
+      "retention": "1y",
+      "schema": "schemas/events/sys/plugin.failed.schema.json"
+    },
+    {
+      "type": "notification.created",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "notifications",
+      "retention": "90d",
+      "schema": "schemas/events/sys/notification.created.schema.json"
+    },
+    {
+      "type": "workspace.changed",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "capabilities",
+      "retention": "90d",
+      "schema": "schemas/events/sys/workspace.changed.schema.json"
+    },
+    {
+      "type": "control.started",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "control",
+      "retention": "90d",
+      "schema": "schemas/events/sys/control.started.schema.json"
+    },
+    {
+      "type": "control.ended",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "control",
+      "retention": "90d",
+      "schema": "schemas/events/sys/control.ended.schema.json"
+    },
+    {
+      "type": "subscription.created",
+      "group": "ticket",
+      "stream": "ticket",
+      "producer": "intake",
+      "retention": "1y",
+      "schema": "schemas/events/ticket/subscription.created.schema.json"
+    },
+    {
+      "type": "usage.recorded",
+      "group": "sys",
+      "stream": "sys",
+      "producer": "any",
+      "retention": "1y",
+      "schema": "schemas/events/sys/usage.recorded.schema.json"
+    }
+  ]
+}
