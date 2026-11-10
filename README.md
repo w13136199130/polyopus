@@ -19,7 +19,7 @@ cd polyopus
 uv sync
 uv run poly migrate         # 首次会打印一次性 admin 口令
 uv run poly doctor          # 5 项自检（迁移后应为全 OK）
-uv run pytest               # 62 个用例，含真实 kill -9 恢复与审批暂停/恢复
+uv run pytest               # 67 个用例，含 kill -9 恢复、审批暂停/恢复、模型网关
 uv run python scripts/demo_kill9.py
 ```
 
@@ -27,7 +27,8 @@ uv run python scripts/demo_kill9.py
 
 | 命令 | 作用 |
 |---|---|
-| `poly doctor` | 环境 + 迁移状态自检 |
+| `poly doctor` | 6 项自检（含模型探活） |
+| `POLY_MODEL_BASE_URL/_API_KEY/_NAME` | 接 OpenAI 兼容真模型；不配则 FakeModel |
 | `poly migrate` / `--check` / `--sql` | 应用 / 只检查 / 只打印迁移 |
 | `poly recover` | 恢复租约过期的 run |
 | `poly serve` | 启动 HTTP API（`/healthz`、`/api/v1`） |

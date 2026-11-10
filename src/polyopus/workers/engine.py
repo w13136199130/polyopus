@@ -18,8 +18,10 @@ import time
 from dataclasses import dataclass
 from typing import cast
 
+from polyopus.domains.agents import models as agents_registry
 from polyopus.domains.attention import service as attention
 from polyopus.kernel.models import FakeModel
+from polyopus.kernel.models import gateway as gateway_types
 from polyopus.platform.errors import AppError
 from polyopus.platform.events import projection
 from polyopus.platform.events.store import EventStore
@@ -32,6 +34,7 @@ class EngineConfig:
     approval_tool: str = "fs.write"
     chunk_words: int = 4
     delay_seconds: float = 0.0
+    model_hint: str | None = None
 
 
 def _now() -> int:
@@ -73,13 +76,16 @@ async def run_turn(
     owner: str = "engine",
     config: EngineConfig | None = None,
     model: FakeModel | None = None,
+    registry: agents_registry.Registry | None = None,
+    trace_id: str | None = None,
 ) -> str:
     """Run one queued turn to completion or to an approval pause.
 
     Returns "completed" or "waiting_approval".
     """
     cfg = config or EngineConfig()
-    fake = model or FakeModel(chunk_words=cfg.chunk_words, delay_seconds=cfg.delay_seconds)
+    registry = registry or agents_registry.Registry(conn)
+    resolved = registry.resolve(cfg.model_hint)
     turn = _turn(conn, turn_id)
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
@@ -101,7 +107,7 @@ async def run_turn(
     store.append(
         thread_id,
         "turn.started",
-        {"turn_id": turn_id, "run_id": run_id, "attempt": 1, "model": "fake"},
+        {"turn_id": turn_id, "run_id": run_id, "attempt": 1, "model": resolved.model},
         tenant_id=tenant_id,
         turn_id=turn_id,
         run_id=run_id,
@@ -118,18 +124,35 @@ async def run_turn(
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
         ),
     )
+    request = gateway_types.ModelRequest(
+        model=resolved.model,
+        messages=(gateway_types.ChatMessage(role="user", content=_user_content(conn, turn_id)),),
+        max_output_tokens=2048,
+        tenant_id=tenant_id,
+        trace_id=trace_id,
+    )
     text = ""
     index = 0
-
-    async for chunk in fake.stream(_user_content(conn, turn_id)):
-        text += chunk
-        store.append(
-            thread_id,
-            "message.delta",
-            {"message_id": message_id, "index": index, "text": chunk},
-            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
-        )
-        index += 1
+    input_tokens = output_tokens = cached_tokens = 0
+    first_token_ms: int | None = None
+    started = time.monotonic()
+    source = model if model is not None else resolved.gateway
+    async for delta in source.stream(request):
+        if isinstance(delta, gateway_types.TextDelta):
+            if first_token_ms is None:
+                first_token_ms = int((time.monotonic() - started) * 1000)
+            text += delta.text
+            store.append(
+                thread_id,
+                "message.delta",
+                {"message_id": message_id, "index": index, "text": delta.text},
+                tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+            )
+            index += 1
+        elif isinstance(delta, gateway_types.UsageDelta):
+            input_tokens += delta.input_tokens
+            output_tokens += delta.output_tokens
+            cached_tokens += delta.cached_tokens
     projection.apply(
         conn,
         store.append(
@@ -146,6 +169,14 @@ async def run_turn(
     conn.commit()
     conn.execute("UPDATE runs SET last_step_idx = 0 WHERE run_id = ?", (run_id,))
     conn.commit()
+
+    _record_usage(
+        conn, store,
+        tenant_id=tenant_id, thread_id=thread_id, turn_id=turn_id,
+        model=resolved.model,
+        input_tokens=input_tokens, output_tokens=output_tokens,
+        cached_tokens=cached_tokens, first_token_ms=first_token_ms,
+    )
 
     # step 1: optional tool gate
     if cfg.require_approval:
@@ -208,6 +239,49 @@ def resume_after_approval(
             turn_id=turn_id, run_id=run_id, status=status,
             note=f"approval {decision}")
     return status
+
+
+def _record_usage(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    turn_id: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cached_tokens: int,
+    first_token_ms: int | None,
+) -> None:
+    entry_id = "us_" + secrets.token_hex(8)
+    conn.execute(
+        """
+        INSERT INTO usage_ledger
+          (tenant_id, entry_id, turn_id, model, input_tokens, output_tokens,
+           cache_read, latency_ms, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (tenant_id, entry_id, turn_id, model, input_tokens, output_tokens,
+         cached_tokens, first_token_ms, _now()),
+    )
+    conn.commit()
+    store.append(
+        thread_id,
+        "usage.recorded",
+        {
+            "scope": "turn",
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_tokens": cached_tokens,
+            "cost_micros": 0,
+            "currency": "CNY",
+            "price_version": "unpriced",
+        },
+        tenant_id=tenant_id,
+        turn_id=turn_id,
+    )
 
 
 def _finish(

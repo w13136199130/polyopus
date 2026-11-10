@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     db_path: Path = Path("data/polyopus.db")
     secret_key: str = "dev-insecure-change-me"
+    model_base_url: str = ""
+    model_api_key: str = ""
+    model_name: str = ""
     access_ttl_seconds: int = 8 * 3600
     session_ttl_seconds: int = 30 * 86400
 

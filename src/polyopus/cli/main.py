@@ -88,6 +88,25 @@ def _check_clock() -> tuple[str, str]:
     return CHECK_OK, f"clock utc={now.isoformat(timespec='seconds')}"
 
 
+def _check_model(settings: object) -> tuple[str, str]:
+    from polyopus.domains.agents import Registry
+    from polyopus.platform.db.migrator import connect
+
+    db_path = settings.resolved_db_path()  # type: ignore[attr-defined]
+    conn = connect(db_path) if db_path.exists() else None
+    try:
+        registry = Registry(
+            conn,
+            env_base_url=settings.model_base_url,  # type: ignore[attr-defined]
+            env_api_key=settings.model_api_key,  # type: ignore[attr-defined]
+            env_model=settings.model_name,  # type: ignore[attr-defined]
+        )
+        return registry.probe()
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def cmd_doctor(_: argparse.Namespace) -> int:
     settings = load_settings()
     db_path = settings.resolved_db_path()
@@ -97,6 +116,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         ("sqlite", _check_sqlite()),
         ("migrations", _check_migrations(db_path)),
         ("clock", _check_clock()),
+        ("model", _check_model(settings)),
     ]
     width = max(len(name) for name, _ in checks)
     failed = 0
