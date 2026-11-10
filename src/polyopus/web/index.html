@@ -102,9 +102,11 @@ const $ = (id) => document.getElementById(id);
 const state = { threadId: null, lastSeq: 0, es: null, user: null, streaming: null };
 
 const api = async (path, opts = {}) => {
+  const { headers, ...rest } = opts;
   const res = await fetch("/api/v1" + path, {
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-    ...opts,
+    ...rest,
+    // spread order matters: merging after rest so callers cannot drop Content-Type
+    headers: { "Content-Type": "application/json", ...(headers || {}) },
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body.error?.code || res.status),
