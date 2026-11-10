@@ -84,8 +84,8 @@ def recover_expired(
             {
                 "turn_id": turn_id,
                 "run_id": new_run_id,
-                "attempt": attempt,
                 "from_step": int(run["last_step_idx"]) + 1,
+                "reason": "lease_expired",
             },
             tenant_id=str(run["tenant_id"]),
             turn_id=turn_id,

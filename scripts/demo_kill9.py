@@ -27,13 +27,13 @@ from polyopus.workers.recovery import recover_and_resume  # noqa: E402
 STEPS = 12
 DELAY = 0.3
 LEASE = 2
-KILL_AFTER = 3
+KILL_AFTER = 2
 
 
 def _count(db: Path) -> int:
     conn = sqlite3.connect(str(db), timeout=5)
     try:
-        return int(conn.execute("SELECT count(*) FROM events").fetchone()[0])
+        return int(conn.execute("SELECT count(*) FROM steps").fetchone()[0])
     finally:
         conn.close()
 
@@ -73,7 +73,7 @@ def main() -> int:
             deadline = time.time() + 20
             while time.time() < deadline and _count(db) < KILL_AFTER:
                 time.sleep(0.05)
-            print(f"[2/4] events before kill: {_count(db)} — killing pid {proc.pid}")
+            print(f"[2/4] steps before kill: {_count(db)} — killing pid {proc.pid}")
         finally:
             proc.kill()
             proc.wait(timeout=10)

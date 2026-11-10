@@ -1,7 +1,7 @@
 """Minimal projection: events -> messages (M0-15).
 
-Only message events are projected in M0. Rebuild is idempotent: delete the
-thread's messages, replay all events.
+Payloads follow docs/11: `message.started` carries role/index; text arrives as
+blocks on `message.completed`.
 """
 
 from __future__ import annotations
@@ -15,6 +15,17 @@ from polyopus.platform.events.store import Event, EventStore
 MESSAGE_EVENTS = {"message.started", "message.completed", "message.failed"}
 
 
+def _text_of(blocks: Any) -> str:
+    if not isinstance(blocks, list):
+        return ""
+    parts = [
+        str(b.get("text", ""))
+        for b in blocks
+        if isinstance(b, dict) and b.get("type") == "text"
+    ]
+    return "".join(parts)
+
+
 def apply(conn: sqlite3.Connection, event: Event) -> bool:
     """Apply one event; returns True when it touched a projection."""
     if event.type not in MESSAGE_EVENTS:
@@ -24,14 +35,19 @@ def apply(conn: sqlite3.Connection, event: Event) -> bool:
     if not message_id:
         return False
 
-    role = str(payload.get("role", "assistant"))
-    content = str(payload.get("content", ""))
-    status = {
-        "message.started": "streaming",
-        "message.completed": "completed",
-        "message.failed": "failed",
-    }[event.type]
+    role = payload.get("role")
+    if event.type == "message.completed":
+        content = _text_of(payload.get("blocks"))
+        status = "completed"
+    elif event.type == "message.started":
+        content = ""
+        status = "streaming"
+    else:
+        content = _text_of(payload.get("blocks"))
+        status = "failed"
     now = int(time.time())
+    # messages.seq is unique per thread; the event seq already guarantees that.
+    seq = event.seq
 
     conn.execute(
         """
@@ -42,6 +58,7 @@ def apply(conn: sqlite3.Connection, event: Event) -> bool:
         ON CONFLICT(message_id) DO UPDATE SET
           content = excluded.content,
           status = excluded.status,
+          role = COALESCE(excluded.role, messages.role),
           updated_at = excluded.updated_at
         """,
         (
@@ -49,10 +66,10 @@ def apply(conn: sqlite3.Connection, event: Event) -> bool:
             message_id,
             event.thread_id,
             event.turn_id,
-            role,
+            role or "assistant",
             content,
             status,
-            event.seq,
+            seq,
             now,
             now,
         ),

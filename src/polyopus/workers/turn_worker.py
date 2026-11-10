@@ -54,6 +54,11 @@ def start_run(
     tenant_id: str = DEFAULT_TENANT,
 ) -> str:
     ensure_turn(conn, thread_id, turn_id, tenant_id)
+    conn.execute(
+        "UPDATE turns SET budget_json = ? WHERE turn_id = ?",
+        (json.dumps({"fake_steps": steps}), turn_id),
+    )
+    conn.commit()
     run_id = "run_" + secrets.token_hex(8)
     now = _now()
     conn.execute(
@@ -72,7 +77,7 @@ def start_run(
     store.append(
         thread_id,
         "turn.started",
-        {"turn_id": turn_id, "run_id": run_id, "steps": steps},
+        {"turn_id": turn_id, "run_id": run_id, "attempt": 1, "model": "fake"},
         tenant_id=tenant_id,
         turn_id=turn_id,
         run_id=run_id,
@@ -89,15 +94,11 @@ def _latest_run(conn: sqlite3.Connection, turn_id: str) -> sqlite3.Row:
     return cast(sqlite3.Row, row)
 
 
-def _steps_from_thread(conn: sqlite3.Connection, thread_id: str) -> int:
-    row = conn.execute(
-        "SELECT payload_json FROM events WHERE thread_id = ? AND type = 'turn.started' "
-        "ORDER BY seq LIMIT 1",
-        (thread_id,),
-    ).fetchone()
-    if row is None:
-        raise LookupError(f"thread {thread_id} has no turn.started event")
-    return int(json.loads(row[0]).get("steps", 0))
+def _steps_from_turn(conn: sqlite3.Connection, turn_id: str) -> int:
+    row = conn.execute("SELECT budget_json FROM turns WHERE turn_id = ?", (turn_id,)).fetchone()
+    if row is None or not row[0]:
+        raise LookupError(f"turn {turn_id} has no fake step plan")
+    return int(json.loads(row[0]).get("fake_steps", 0))
 
 
 def execute(
@@ -122,28 +123,40 @@ def execute(
         )
         conn.commit()
         tlog.log(logger, logging.INFO, "step.completed", turn_id=turn_id, idx=idx)
-        store.append(
-            thread_id,
-            "step.completed",
-            {"idx": idx, "kind": "model"},
-            tenant_id=tenant_id,
-            turn_id=turn_id,
-            run_id=run_id,
+        now_step = _now()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO steps
+              (tenant_id, step_id, run_id, idx, kind, status, started_at, finished_at)
+            VALUES (?, ?, ?, ?, 'model', 'completed', ?, ?)
+            """,
+            (tenant_id, f"st_{run_id}_{idx}", run_id, idx, now_step, now_step),
         )
+        conn.commit()
 
-    event = store.append(
+    message_id = "msg_" + secrets.token_hex(8)
+    started = store.append(
+        thread_id,
+        "message.started",
+        {"message_id": message_id, "role": "assistant", "index": 0},
+        tenant_id=tenant_id,
+        turn_id=turn_id,
+        run_id=run_id,
+    )
+    projection.apply(conn, started)
+    completed = store.append(
         thread_id,
         "message.completed",
         {
-            "message_id": "msg_" + secrets.token_hex(8),
-            "role": "assistant",
-            "content": f"fake answer for {turn_id} ({steps} steps)",
+            "message_id": message_id,
+            "blocks": [{"type": "text", "text": f"fake answer for {turn_id} ({steps} steps)"}],
+            "finish_reason": "stop",
         },
         tenant_id=tenant_id,
         turn_id=turn_id,
         run_id=run_id,
     )
-    projection.apply(conn, event)
+    projection.apply(conn, completed)
     conn.commit()
 
     now = _now()
@@ -159,10 +172,18 @@ def execute(
     )
     conn.commit()
     tlog.log(logger, logging.INFO, "turn.completed", turn_id=turn_id, steps=steps)
+    row = conn.execute("SELECT started_at FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+    duration_ms = max(0, (now - int(row[0])) * 1000) if row else 0
     store.append(
         thread_id,
-        "turn.completed",
-        {"turn_id": turn_id, "run_id": run_id, "steps": steps},
+        "turn.finished",
+        {
+            "turn_id": turn_id,
+            "run_id": run_id,
+            "status": "completed",
+            "duration_ms": duration_ms,
+            "finish_reason": "stop",
+        },
         tenant_id=tenant_id,
         turn_id=turn_id,
         run_id=run_id,
@@ -183,7 +204,7 @@ def resume_turn(
     run_id = str(run["run_id"])
     if not lease.claim(conn, run_id, owner, lease_ttl):
         raise RuntimeError(f"cannot claim run {run_id}")
-    steps = _steps_from_thread(conn, thread_id)
+    steps = _steps_from_turn(conn, turn_id)
     from_idx = int(run["last_step_idx"]) + 1
     execute(
         conn, store, thread_id, turn_id, run_id, steps, from_idx, delay,

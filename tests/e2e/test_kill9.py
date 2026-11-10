@@ -17,6 +17,14 @@ MIGRATIONS = ROOT / "migrations"
 STEPS = 12
 
 
+def _step_count(db: Path) -> int:
+    conn = sqlite3.connect(str(db), timeout=5)
+    try:
+        return int(conn.execute("SELECT count(*) FROM steps").fetchone()[0])
+    finally:
+        conn.close()
+
+
 def _event_count(db: Path) -> int:
     for _ in range(20):
         try:
@@ -76,10 +84,13 @@ def test_kill9_then_recover(tmp_path: Path) -> None:
 
     try:
         deadline = time.time() + 20
-        while time.time() < deadline and _event_count(db) < 3:
+        while time.time() < deadline and _step_count(db) < 2:
             time.sleep(0.05)
-        assert _event_count(db) >= 3, "worker did not emit events"
-        assert _event_count(db) < 1 + STEPS, "worker finished before the kill"
+        assert _step_count(db) >= 2, "worker made no progress"
+        status = sqlite3.connect(str(db)).execute(
+            "SELECT status FROM turns WHERE turn_id='tu1'"
+        ).fetchone()
+        assert status is None or status[0] != "completed", "worker finished before the kill"
     finally:
         proc.kill()
         proc.wait(timeout=10)
@@ -91,13 +102,19 @@ def test_kill9_then_recover(tmp_path: Path) -> None:
         recovered = recover_and_resume(conn, EventStore(conn), owner="recovery", delay=0)
         assert len(recovered) == 1
 
-        store = EventStore(conn)
-        steps = [e.payload["idx"] for e in store.read("t1") if e.type == "step.completed"]
+        steps = [
+            int(r[0])
+            for r in conn.execute(
+                "SELECT idx FROM steps WHERE run_id IN "
+                "(SELECT run_id FROM runs WHERE turn_id='tu1') ORDER BY idx"
+            )
+        ]
         assert steps == list(range(STEPS))
+        store = EventStore(conn)
 
         types = [e.type for e in store.read("t1")]
-        assert types.count("turn.completed") == 1
-        assert types[-1] == "turn.completed"
+        assert types.count("turn.finished") == 1
+        assert types[-1] == "turn.finished"
 
         assert conn.execute("SELECT status FROM turns WHERE turn_id='tu1'").fetchone()[0] == (
             "completed"

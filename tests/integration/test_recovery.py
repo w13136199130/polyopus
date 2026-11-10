@@ -34,9 +34,13 @@ def _crash_after(conn: sqlite3.Connection, done: int) -> tuple[str, str]:
         conn, store, thread, turn, STEPS, owner="w1", lease_ttl=60
     )
     for idx in range(done):
-        store.append(
-            thread, "step.completed", {"idx": idx}, turn_id=turn, run_id=run_id
+        conn.execute(
+            "INSERT OR REPLACE INTO steps "
+            "(tenant_id, step_id, run_id, idx, kind, status, started_at, finished_at) "
+            "VALUES ('default', ?, ?, ?, 'model', 'completed', 1, 1)",
+            (f"st_{run_id}_{idx}", run_id, idx),
         )
+    conn.commit()
     conn.execute(
         "UPDATE runs SET last_step_idx = ?, lease_until = ? WHERE run_id = ?",
         (done - 1, int(time.time()) - 10, run_id),
@@ -73,14 +77,21 @@ def test_resume_finishes_without_duplicating_steps(conn: sqlite3.Connection) -> 
     status = conn.execute("SELECT status FROM turns WHERE turn_id = ?", (turn,)).fetchone()[0]
     assert status == "completed"
 
-    store = EventStore(conn)
-    steps = [e.payload["idx"] for e in store.read(thread) if e.type == "step.completed"]
+    steps = [
+        int(r[0])
+        for r in conn.execute(
+            "SELECT idx FROM steps WHERE run_id IN "
+            "(SELECT run_id FROM runs WHERE turn_id = ?) ORDER BY idx",
+            (turn,),
+        )
+    ]
     assert steps == list(range(STEPS))
 
+    store = EventStore(conn)
     types = [e.type for e in store.read(thread)]
     assert types.count("turn.resumed") == 1
-    assert types.count("turn.completed") == 1
-    assert types[-1] == "turn.completed"
+    assert types.count("turn.finished") == 1
+    assert types[-1] == "turn.finished"
 
     messages = conn.execute("SELECT count(*) FROM messages WHERE thread_id = ?", (thread,)).fetchone()
     assert messages[0] == 1

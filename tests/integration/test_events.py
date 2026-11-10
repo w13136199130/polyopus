@@ -65,10 +65,16 @@ def test_payload_roundtrip(conn: sqlite3.Connection) -> None:
 def test_projection_upsert_and_rebuild(conn: sqlite3.Connection) -> None:
     store = EventStore(conn)
     store.append(
-        "t1", "message.started", {"message_id": "m1", "role": "assistant", "content": ""}
+        "t1", "message.started", {"message_id": "m1", "role": "assistant", "index": 0}
     )
     store.append(
-        "t1", "message.completed", {"message_id": "m1", "role": "assistant", "content": "hi"}
+        "t1",
+        "message.completed",
+        {
+            "message_id": "m1",
+            "blocks": [{"type": "text", "text": "hi"}],
+            "finish_reason": "stop",
+        },
     )
     assert projection.rebuild(conn, store, "t1") == 2
 
