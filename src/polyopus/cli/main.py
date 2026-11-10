@@ -166,6 +166,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
 def cmd_recover(args: argparse.Namespace) -> int:
     from polyopus.platform.events.store import EventStore
     from polyopus.platform.telemetry import log as tlog
+    from polyopus.platform.telemetry import tracing
     from polyopus.workers.recovery import recover_and_resume
 
     tlog.configure()
@@ -173,9 +174,10 @@ def cmd_recover(args: argparse.Namespace) -> int:
     settings = load_settings()
     conn = connect(settings.resolved_db_path())
     try:
-        recovered = recover_and_resume(
-            conn, EventStore(conn), owner=args.owner, delay=args.delay
-        )
+        with tracing.span("run.recover", owner=args.owner):
+            recovered = recover_and_resume(
+                conn, EventStore(conn), owner=args.owner, delay=args.delay
+            )
     finally:
         conn.close()
 

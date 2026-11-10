@@ -18,6 +18,7 @@ from polyopus.platform.events import projection
 from polyopus.platform.events.store import EventStore
 from polyopus.platform.queue import lease
 from polyopus.platform.telemetry import log as tlog
+from polyopus.platform.telemetry import tracing
 
 DEFAULT_TENANT = "default"
 logger = tlog.get_logger("polyopus.turn")
@@ -212,13 +213,14 @@ def main(argv: list[str] | None = None) -> int:
     conn = connect(Path(args.db))
     try:
         store = EventStore(conn)
-        run_id = start_run(
-            conn, store, args.thread, args.turn, args.steps, args.owner, args.lease
-        )
-        execute(
-            conn, store, args.thread, args.turn, run_id, args.steps, 0,
-            args.delay, args.owner, args.lease,
-        )
+        with tracing.span("turn.run", thread_id=args.thread, turn_id=args.turn):
+            run_id = start_run(
+                conn, store, args.thread, args.turn, args.steps, args.owner, args.lease
+            )
+            execute(
+                conn, store, args.thread, args.turn, run_id, args.steps, 0,
+                args.delay, args.owner, args.lease,
+            )
     finally:
         conn.close()
     return 0

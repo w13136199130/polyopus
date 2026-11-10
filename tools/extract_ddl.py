@@ -26,6 +26,7 @@ MIGRATIONS = ROOT / "migrations"
 MANIFEST = MIGRATIONS / "_manifest.json"
 CORE_SQL = MIGRATIONS / "0001_core.sql"
 INTAKE_SQL = MIGRATIONS / "0003_intake.sql"
+QUEUE_SQL = MIGRATIONS / "0004_queue.sql"
 
 # 8 names listed in docs/31 as deferred/merged: they must have no DDL.
 DEFERRED = [
@@ -38,6 +39,9 @@ DEFERRED = [
     "agent_storage_bindings",
     "feature_flags",
 ]
+
+# M1 queue subset (platform-level, used by Outbox).
+QUEUE_TABLES = ["outbox"]
 
 # M1 intake subset (tickets/assignments already ship in 0001).
 INTAKE_TABLES = [
@@ -203,6 +207,14 @@ def render_intake(manifest: dict[str, Any]) -> str:
     )
 
 
+def render_queue(manifest: dict[str, Any]) -> str:
+    return render_subset(
+        manifest,
+        QUEUE_TABLES,
+        ["M1 queue subset: transactional outbox (docs/31 §2.7)."],
+    )
+
+
 def _previous_manifest() -> dict[str, Any] | None:
     if not MANIFEST.is_file():
         return None
@@ -225,7 +237,11 @@ def check(manifest: dict[str, Any]) -> list[str]:
     if prev.get("indexes") != manifest["indexes"]:
         problems.append("manifest indexes out of sync; run --emit")
 
-    for path, render in ((CORE_SQL, render_core), (INTAKE_SQL, render_intake)):
+    for path, render in (
+        (CORE_SQL, render_core),
+        (INTAKE_SQL, render_intake),
+        (QUEUE_SQL, render_queue),
+    ):
         expected = render(manifest)
         if not path.is_file():
             problems.append(f"migrations/{path.name} missing; run --emit")
@@ -244,9 +260,11 @@ def emit(manifest: dict[str, Any]) -> None:
     )
     CORE_SQL.write_text(render_core(manifest), encoding="utf-8", newline="\n")
     INTAKE_SQL.write_text(render_intake(manifest), encoding="utf-8", newline="\n")
+    QUEUE_SQL.write_text(render_queue(manifest), encoding="utf-8", newline="\n")
     print(f"wrote {MANIFEST.relative_to(ROOT)} ({len(manifest['tables'])} tables)")
     print(f"wrote {CORE_SQL.relative_to(ROOT)} ({len(CORE_TABLES)} tables)")
     print(f"wrote {INTAKE_SQL.relative_to(ROOT)} ({len(INTAKE_TABLES)} tables)")
+    print(f"wrote {QUEUE_SQL.relative_to(ROOT)} ({len(QUEUE_TABLES)} tables)")
 
 
 def main(argv: list[str] | None = None) -> int:
