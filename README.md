@@ -7,6 +7,33 @@
 
 ---
 
+## 0. 10 分钟跑通（M0 骨架）
+
+> 当前仓库 = 设计文档 + M0 骨架。可运行的是 CLI、迁移、事件重放与崩溃恢复演示；**还没有 Web 界面**。
+
+前置：Python 3.12、[uv](https://docs.astral.sh/uv/)。Windows 用 Git Bash 或 PowerShell 均可。
+
+```bash
+git clone https://github.com/w13136199130/polyopus.git
+cd polyopus
+uv sync
+uv run poly doctor          # 5 项自检
+uv run poly migrate         # 首次会打印一次性 admin 口令
+uv run pytest               # 29 个用例，含真实 kill -9 恢复
+uv run python scripts/demo_kill9.py
+```
+
+没有 `make` 也能跑；装了 make 可用 `make check`（等价于 `uv run python scripts/check.py`）。
+
+| 命令 | 作用 |
+|---|---|
+| `poly doctor` | 环境 + 迁移状态自检 |
+| `poly migrate` / `--check` / `--sql` | 应用 / 只检查 / 只打印迁移 |
+| `poly recover` | 恢复租约过期的 run |
+| `scripts/check.py` | 本地全量门禁（lint/type/imports/schema/test/contracts/coverage） |
+
+---
+
 ## 1. 这个文档包是什么
 
 | 项 | 内容 |

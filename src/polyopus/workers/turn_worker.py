@@ -8,6 +8,7 @@ be demonstrated without an API key.
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 import sqlite3
 import time
@@ -16,8 +17,10 @@ from typing import cast
 from polyopus.platform.events import projection
 from polyopus.platform.events.store import EventStore
 from polyopus.platform.queue import lease
+from polyopus.platform.telemetry import log as tlog
 
 DEFAULT_TENANT = "default"
+logger = tlog.get_logger("polyopus.turn")
 
 
 def _now() -> int:
@@ -63,6 +66,8 @@ def start_run(
     )
     conn.commit()
     lease.claim(conn, run_id, owner, lease_ttl)
+    tlog.log(logger, logging.INFO, "turn.started", thread_id=thread_id,
+             turn_id=turn_id, run_id=run_id, steps=steps)
     store.append(
         thread_id,
         "turn.started",
@@ -115,6 +120,7 @@ def execute(
             "UPDATE runs SET last_step_idx = ? WHERE run_id = ?", (idx, run_id)
         )
         conn.commit()
+        tlog.log(logger, logging.INFO, "step.completed", turn_id=turn_id, idx=idx)
         store.append(
             thread_id,
             "step.completed",
@@ -151,6 +157,7 @@ def execute(
         (now, now, turn_id),
     )
     conn.commit()
+    tlog.log(logger, logging.INFO, "turn.completed", turn_id=turn_id, steps=steps)
     store.append(
         thread_id,
         "turn.completed",
@@ -200,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--owner", default="fake-worker")
     args = parser.parse_args(argv)
 
+    tlog.configure()
+    tlog.set_trace_id(tlog.new_trace_id())
     conn = connect(Path(args.db))
     try:
         store = EventStore(conn)

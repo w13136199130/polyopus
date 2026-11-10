@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 import sqlite3
 import time
@@ -9,7 +10,10 @@ from dataclasses import dataclass
 
 from polyopus.platform.events.store import EventStore
 from polyopus.platform.queue import lease
+from polyopus.platform.telemetry import log as tlog
 from polyopus.workers import turn_worker
+
+logger = tlog.get_logger("polyopus.recovery")
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,9 @@ def recover_expired(
         conn.commit()
         lease.claim(conn, new_run_id, owner, lease_ttl, now=ts)
 
+        tlog.log(logger, logging.WARNING, "run.recovered", turn_id=turn_id,
+                 old_run_id=str(run["run_id"]), new_run_id=new_run_id,
+                 attempt=attempt, from_step=int(run["last_step_idx"]) + 1)
         store.append(
             thread_id,
             "turn.resumed",
