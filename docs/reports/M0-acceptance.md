@@ -71,6 +71,7 @@ OK: 12 steps, no gaps, one turn.completed
 | `tools/extract_ddl.py --check` | 94 表 / 57 索引 / 8 延后 |
 | `contracts.check` | passed |
 | `coverage_check` | HARD 0 / WARN 157（测试未写，符合预期） |
+| 全新克隆跑通 | 47s（sync + migrate + doctor + pytest） |
 
 ---
 
