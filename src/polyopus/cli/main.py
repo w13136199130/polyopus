@@ -163,6 +163,30 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_recover(args: argparse.Namespace) -> int:
+    from polyopus.platform.events.store import EventStore
+    from polyopus.workers.recovery import recover_and_resume
+
+    settings = load_settings()
+    conn = connect(settings.resolved_db_path())
+    try:
+        recovered = recover_and_resume(
+            conn, EventStore(conn), owner=args.owner, delay=args.delay
+        )
+    finally:
+        conn.close()
+
+    if not recovered:
+        print("nothing to recover")
+        return 0
+    for item in recovered:
+        print(
+            f"recovered {item.turn_id}: attempt {item.attempt} "
+            f"from step {item.from_step} (run {item.new_run_id})"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poly", description="PolyOpus CLI")
     parser.add_argument("--version", action="version", version=f"poly {__version__}")
@@ -175,6 +199,11 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--sql", action="store_true", help="print SQL instead of applying")
     migrate.add_argument("--check", action="store_true", help="report pending migrations only")
     migrate.set_defaults(func=cmd_migrate)
+
+    recover = sub.add_parser("recover", help="resume runs whose lease expired")
+    recover.add_argument("--owner", default="cli")
+    recover.add_argument("--delay", type=float, default=0.0)
+    recover.set_defaults(func=cmd_recover)
 
     return parser
 
