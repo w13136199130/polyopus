@@ -1,4 +1,4 @@
-"""CLI entrypoint. M0 scope: `doctor` (5 checks) and `migrate` (stub)."""
+"""CLI entrypoint. M0 scope: `doctor` (5 checks) and `migrate` (forward-only)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,18 @@ from pathlib import Path
 
 from polyopus import __version__
 from polyopus.config import load_settings
+from polyopus.platform.db.migrator import (
+    Migration,
+    MigratorError,
+    apply,
+    connect,
+    discover,
+    pending,
+    render,
+)
+
+ROOT = Path(__file__).resolve().parents[3]
+MIGRATIONS_DIR = ROOT / "migrations"
 
 CHECK_OK = "OK"
 CHECK_WARN = "WARN"
@@ -47,15 +59,24 @@ def _check_sqlite() -> tuple[str, str]:
 
 
 def _check_migrations(db_path: Path) -> tuple[str, str]:
-    migrations = Path.cwd() / "migrations"
-    if not migrations.is_dir():
+    if not MIGRATIONS_DIR.is_dir():
         return CHECK_WARN, "migrations/ not found (M0-06..M0-10 pending)"
-    scripts = sorted(migrations.glob("*.sql"))
-    if not scripts:
+    try:
+        migrations = discover(MIGRATIONS_DIR)
+    except MigratorError as exc:
+        return CHECK_FAIL, f"{exc.code}: {exc.message}"
+    if not migrations:
         return CHECK_WARN, "migrations/ is empty (M0-08 pending)"
     if not db_path.exists():
-        return CHECK_WARN, f"{len(scripts)} migration(s) pending; database not created"
-    return CHECK_OK, f"{len(scripts)} migration file(s); db present: {db_path}"
+        return CHECK_WARN, f"{len(migrations)} migration(s) pending; database not created"
+    conn = connect(db_path)
+    try:
+        pend = pending(conn, migrations)
+    finally:
+        conn.close()
+    if pend:
+        return CHECK_WARN, f"{len(pend)} pending of {len(migrations)}; run poly migrate"
+    return CHECK_OK, f"{len(migrations)} migration(s) applied; db {db_path}"
 
 
 def _check_clock() -> tuple[str, str]:
@@ -82,11 +103,48 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _pending_migrations(db_path: Path) -> list[Migration]:
+    migrations = discover(MIGRATIONS_DIR)
+    if not db_path.exists():
+        return migrations
+    conn = connect(db_path)
+    try:
+        return pending(conn, migrations)
+    finally:
+        conn.close()
+
+
 def cmd_migrate(args: argparse.Namespace) -> int:
-    print("poly migrate: not implemented yet (M0-06..M0-10)")
-    if args.sql:
-        print("--sql: pending")
-    return 2
+    settings = load_settings()
+    db_path = settings.resolved_db_path()
+    try:
+        migrations = discover(MIGRATIONS_DIR)
+        if args.sql:
+            print(render(_pending_migrations(db_path)), end="")
+            return 0
+        if args.check:
+            pend = _pending_migrations(db_path)
+            if pend:
+                names = ", ".join(m.path.name for m in pend)
+                print(f"{len(pend)} pending: {names}")
+                return 1
+            print("up to date")
+            return 0
+
+        conn = connect(db_path)
+        try:
+            applied = apply(conn, migrations)
+        finally:
+            conn.close()
+    except MigratorError as exc:
+        print(f"{exc.code}: {exc.message}", file=sys.stderr)
+        return 1
+
+    if applied:
+        print("applied: " + ", ".join(m.path.name for m in applied))
+    else:
+        print("up to date")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:

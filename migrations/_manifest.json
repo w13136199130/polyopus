@@ -1,0 +1,901 @@
+{
+  "core": [
+    "tenants",
+    "users",
+    "threads",
+    "messages",
+    "turns",
+    "runs",
+    "steps",
+    "events",
+    "tickets",
+    "attentions",
+    "usage_ledger"
+  ],
+  "counts": {
+    "candidate": 102,
+    "first": 94,
+    "indexes": 57
+  },
+  "deferred": [
+    "workflows",
+    "workflow_runs",
+    "bridge_connections",
+    "acp_runners",
+    "thread_participants",
+    "source_cursors",
+    "agent_storage_bindings",
+    "feature_flags"
+  ],
+  "dialect_notes": {
+    "memory_atoms": [
+      "vector"
+    ]
+  },
+  "generated_by": "tools/extract_ddl.py",
+  "indexes": {
+    "idx_actor_link": {
+      "ddl": "CREATE INDEX idx_actor_link ON source_actors(tenant_id, linked_user_id);",
+      "sha256": "d126812670d06086cfbc59e4f54d62a19651d0ac734727e33453ac56bcead2ce",
+      "table": "source_actors"
+    },
+    "idx_actor_status": {
+      "ddl": "CREATE INDEX idx_actor_status ON source_actors(tenant_id, status);",
+      "sha256": "6cd8e5702d351a81e28b63a66d2bba541e6d37bf8f263992a5712c17899f75d1",
+      "table": "source_actors"
+    },
+    "idx_apikey_user": {
+      "ddl": "CREATE INDEX idx_apikey_user ON api_keys(tenant_id, user_id, revoked_at);",
+      "sha256": "db66f17cf4f58898dea78041fe2a6336f2ea00a678c8dad58c8968e9a46a5c55",
+      "table": "api_keys"
+    },
+    "idx_approvals_pending": {
+      "ddl": "CREATE INDEX idx_approvals_pending ON approvals(tenant_id, status, expires_at);",
+      "sha256": "66801b75c259dcd21f0317943c06aa44adaf3c86468e2dd5cc1288423553a953",
+      "table": "approvals"
+    },
+    "idx_artifact_scope": {
+      "ddl": "CREATE INDEX idx_artifact_scope ON artifacts(tenant_id, thread_id, turn_id);",
+      "sha256": "46420dcff454f4265f7a9617c2822fb949df53ae7f00e7d7e6e54dac4310d3a3",
+      "table": "artifacts"
+    },
+    "idx_assignments_claim": {
+      "ddl": "CREATE INDEX idx_assignments_claim ON assignments(state, lease_until);",
+      "sha256": "35167e77646a66b02a39bf622388286a9ccf07b979d25b39d14e7fb916aed4e9",
+      "table": "assignments"
+    },
+    "idx_attachments_thread": {
+      "ddl": "CREATE INDEX idx_attachments_thread ON attachments(tenant_id, thread_id);",
+      "sha256": "84a9faac7fd9bba2d60f85f0874fe7e7481c963e729fe9b722aa660000f3ab03",
+      "table": "attachments"
+    },
+    "idx_attentions_pending": {
+      "ddl": "CREATE INDEX idx_attentions_pending ON attentions(tenant_id, status, created_at);",
+      "sha256": "cb221eade244e4bcf45a76837df405b124146e0aaf18616258b3c3d865645cfe",
+      "table": "attentions"
+    },
+    "idx_audit_time": {
+      "ddl": "CREATE INDEX idx_audit_time ON audit_log(tenant_id, created_at DESC);",
+      "sha256": "e86e2f767c09cc7612070ef29d3e885e14a7c58a79bb7941979c14945e39a923",
+      "table": "audit_log"
+    },
+    "idx_backups_time": {
+      "ddl": "CREATE INDEX idx_backups_time ON backups(tenant_id, created_at DESC);",
+      "sha256": "e9fb001cac5c9b57911ef236e0e821d22ba727aa8e403bae450e115cd9a1844b",
+      "table": "backups"
+    },
+    "idx_branch_thread": {
+      "ddl": "CREATE INDEX idx_branch_thread ON thread_branches(thread_id, created_at);",
+      "sha256": "737b7a19b6b1a4c8a4ba8c8a7da3dcf74c6e89dea8009c84ab132a40a327ad0e",
+      "table": "thread_branches"
+    },
+    "idx_chmsg_actor": {
+      "ddl": "CREATE INDEX idx_chmsg_actor ON channel_messages(tenant_id, actor_id, created_at);",
+      "sha256": "7cc29e70a1fa229c53134cc38635f0509215ab7ca06ea0f3af65c674df5ac9f9",
+      "table": "channel_messages"
+    },
+    "idx_chmsg_thread": {
+      "ddl": "CREATE INDEX idx_chmsg_thread ON channel_messages(tenant_id, thread_id, created_at);",
+      "sha256": "ff188d91522b2f8d884dfc65499eb85509241fc969735e69d3a5ae1b749ef4c2",
+      "table": "channel_messages"
+    },
+    "idx_chunks_heading": {
+      "ddl": "CREATE INDEX idx_chunks_heading ON knowledge_chunks(tenant_id, kb_id, heading_path);",
+      "sha256": "ebee9429745fcc11fb66b0e5d4a2ee33a9ca299d652b829004b30a9ad00094ac",
+      "table": "knowledge_chunks"
+    },
+    "idx_chunks_kb": {
+      "ddl": "CREATE INDEX idx_chunks_kb ON knowledge_chunks(tenant_id, kb_id, doc_id);",
+      "sha256": "689e0724107449d2595431599f4891d75f3469b1d27249b2bad1db93c117d480",
+      "table": "knowledge_chunks"
+    },
+    "idx_cloud_acct": {
+      "ddl": "CREATE INDEX idx_cloud_acct ON cloud_accounts(tenant_id, status);",
+      "sha256": "120e73331dadd1203db78effe94215b835dc0a97cb7c185568ccbdcf300ec06e",
+      "table": "cloud_accounts"
+    },
+    "idx_cloud_inst": {
+      "ddl": "CREATE INDEX idx_cloud_inst ON cloud_instances(tenant_id, account_id, region, state);",
+      "sha256": "087bd4ba42621a6d3c14e9be8ae222496a13a6f1dcc510d51fdb1f375b1f4930",
+      "table": "cloud_instances"
+    },
+    "idx_cloud_ops": {
+      "ddl": "CREATE INDEX idx_cloud_ops ON cloud_ops(tenant_id, instance_id, created_at DESC);",
+      "sha256": "f9c90988000c04b3daaf5f3239fb988962a25938ed0289c8be60f699e132f3ab",
+      "table": "cloud_ops"
+    },
+    "idx_cron_due": {
+      "ddl": "CREATE INDEX idx_cron_due ON cron_jobs(enabled, next_run_at);",
+      "sha256": "e7c6d75d3a87755f1e4aefcec75ea03b1c8dc5335a54cce429bac1c85529b6f4",
+      "table": "cron_jobs"
+    },
+    "idx_cron_runs": {
+      "ddl": "CREATE INDEX idx_cron_runs ON cron_runs(cron_job_id, scheduled_at DESC);",
+      "sha256": "d61eedabcdf89426e0795c88288711e0dba8f1a649e81e13a61836ff791b1ec9",
+      "table": "cron_runs"
+    },
+    "idx_ctrl_active": {
+      "ddl": "CREATE INDEX idx_ctrl_active ON control_sessions(tenant_id, status, last_seen_at);",
+      "sha256": "dfe027c5199c59cde13234f63d9e0da32223c0b301c857133cad9853332367a2",
+      "table": "control_sessions"
+    },
+    "idx_ctx_snap": {
+      "ddl": "CREATE INDEX idx_ctx_snap ON context_snapshots(thread_id, created_at DESC);",
+      "sha256": "54d04849463823ce37d808687f972a75e83560d5d4c89756a2467b805699df12",
+      "table": "context_snapshots"
+    },
+    "idx_data_jobs": {
+      "ddl": "CREATE INDEX idx_data_jobs ON data_jobs(tenant_id, kind, status, created_at DESC);",
+      "sha256": "15080b47fe941f161efa02e14ffa7af78bf948eeca87b23a76cbdf7a8be0347c",
+      "table": "data_jobs"
+    },
+    "idx_deleg_lease": {
+      "ddl": "CREATE INDEX idx_deleg_lease ON delegations(state, lease_until);",
+      "sha256": "8b6937ab7e1033e804cb87c0a80576ec50e5dd85a324367c69bab7a9d253c641",
+      "table": "delegations"
+    },
+    "idx_deleg_state": {
+      "ddl": "CREATE INDEX idx_deleg_state ON delegations(tenant_id, state, created_at);",
+      "sha256": "71ca711de5ddceeaacb98e5ba302aebb0d888bfa03ff9cab32ef42061320605c",
+      "table": "delegations"
+    },
+    "idx_docs_kb_status": {
+      "ddl": "CREATE INDEX idx_docs_kb_status ON knowledge_docs(tenant_id, kb_id, status, updated_at);",
+      "sha256": "9912c8f216adf23b6ffff9ba69e28b12467c86dabf5a639b19fb59097c1bffe0",
+      "table": "knowledge_docs"
+    },
+    "idx_events_thread_seq": {
+      "ddl": "CREATE INDEX idx_events_thread_seq ON events(tenant_id, thread_id, seq);",
+      "sha256": "40cc748e304c4a345ca65de42a7c710582b0a816ec0b0937d71ca672ca7c3b3d",
+      "table": "events"
+    },
+    "idx_events_turn": {
+      "ddl": "CREATE INDEX idx_events_turn ON events(tenant_id, turn_id, seq);",
+      "sha256": "74e5f03ffa0ec03d24f9c6f26b98279f68e36d7506fbb1b1aebb71bdb46ebedc",
+      "table": "events"
+    },
+    "idx_group_members_user": {
+      "ddl": "CREATE INDEX idx_group_members_user ON group_members(user_id);",
+      "sha256": "5d08b4d7174d1107a3b3eb1012b84d1c51a66630e7e5dd43ddfd16e19b171184",
+      "table": "group_members"
+    },
+    "idx_instances_alive": {
+      "ddl": "CREATE INDEX idx_instances_alive ON instances(role, last_heartbeat_at);",
+      "sha256": "c43e2fd4f76480322f0b01c33152b2aed94683015ac2252e51effe232f32f48f",
+      "table": "instances"
+    },
+    "idx_memory_events": {
+      "ddl": "CREATE INDEX idx_memory_events ON memory_events(tenant_id, atom_id, created_at);",
+      "sha256": "8b80111ba0f82a2dc697254f2a0fb25d527a9861c271398481d2810eab5ea87d",
+      "table": "memory_events"
+    },
+    "idx_memory_ns": {
+      "ddl": "CREATE INDEX idx_memory_ns ON memory_atoms(tenant_id, agent_id, status);",
+      "sha256": "7dc9289ef0d26b836aaaf882febdb1a8a5774c302fb69b08d1ee878f18e1920a",
+      "table": "memory_atoms"
+    },
+    "idx_messages_thread": {
+      "ddl": "CREATE INDEX idx_messages_thread ON messages(tenant_id, thread_id, seq);",
+      "sha256": "8f996c43ebc4dce9b9210d4f084d7414857535b99a986b07fd366086b44b779c",
+      "table": "messages"
+    },
+    "idx_notif_unread": {
+      "ddl": "CREATE INDEX idx_notif_unread ON notifications(tenant_id, user_id, read_at, created_at DESC);",
+      "sha256": "9f6243e4203660abae66848598b8dab543ad6ff450334d2c7d0b53870f7fdf48",
+      "table": "notifications"
+    },
+    "idx_oauth_pending": {
+      "ddl": "CREATE INDEX idx_oauth_pending ON connector_oauth_states(tenant_id, status, expires_at);",
+      "sha256": "ebaa871ae2c021e45165f47614fe7f334a018bd03411f6c00d1efabb2ef55eeb",
+      "table": "connector_oauth_states"
+    },
+    "idx_outbox_pending": {
+      "ddl": "CREATE INDEX idx_outbox_pending ON outbox(status, next_retry_at);",
+      "sha256": "f23550f966db9e36f470e1a44cdfb6a8507f5ad42a310f409848e4792634454c",
+      "table": "outbox"
+    },
+    "idx_policy_bundle_active": {
+      "ddl": "CREATE INDEX idx_policy_bundle_active ON policy_bundles(tenant_id, status, version DESC);",
+      "sha256": "49dbf41d175407b31e2fb12d0cfd5d0b0b8daa766fd1c45a31e6597d6db3a8a5",
+      "table": "policy_bundles"
+    },
+    "idx_policy_eval": {
+      "ddl": "CREATE INDEX idx_policy_eval ON policy_rules(tenant_id, enabled, priority DESC);",
+      "sha256": "dd78334039f500f75c5d57f6e6f99f2c7c032ce06e8695884ff628bd1737751e",
+      "table": "policy_rules"
+    },
+    "idx_reports_ticket": {
+      "ddl": "CREATE INDEX idx_reports_ticket ON reports(ticket_id, created_at DESC);",
+      "sha256": "6026ee08c7b59c54014273ed9bcb78758e6573cd040ca89f79c6467dc4f57285",
+      "table": "reports"
+    },
+    "idx_rgg_expiry": {
+      "ddl": "CREATE INDEX idx_rgg_expiry ON resource_group_grants(expires_at);",
+      "sha256": "7010a5706c3a6c38e65926a83f1ed66631d3554ced18cf09975dd147695d7e08",
+      "table": "resource_group_grants"
+    },
+    "idx_rgg_group": {
+      "ddl": "CREATE INDEX idx_rgg_group ON resource_group_grants(tenant_id, group_id);",
+      "sha256": "9102169ad7379dfdeeeb6c268e7aebb97048f5e66442baee43827deb9effafe3",
+      "table": "resource_group_grants"
+    },
+    "idx_rgg_resource": {
+      "ddl": "CREATE INDEX idx_rgg_resource ON resource_group_grants(tenant_id, resource_type, resource_key);",
+      "sha256": "0a00ac83c1c3b9acccc32ae12a9e0eb7b7bf1a6d3092a6504f0f8ae01986dbdb",
+      "table": "resource_group_grants"
+    },
+    "idx_runs_claim": {
+      "ddl": "CREATE INDEX idx_runs_claim ON runs(status, lease_until);",
+      "sha256": "9df86e550f7079ff0b7079a9010755e64ceb5dbda4241e13491be8c7bf3bd745",
+      "table": "runs"
+    },
+    "idx_sessions_user": {
+      "ddl": "CREATE INDEX idx_sessions_user ON sessions(tenant_id, user_id, expires_at);",
+      "sha256": "6a6b9fbc92b3ff7e4a2cf2b3b9f6b14b9ffdc25a6fad5faabce23dce8a95fcad",
+      "table": "sessions"
+    },
+    "idx_steer_turn": {
+      "ddl": "CREATE INDEX idx_steer_turn ON steer_queue(turn_id, status, created_at);",
+      "sha256": "555a871bb877e1b34dcbc7a44df08bf03415aac1549469b3fa797ed121383723",
+      "table": "steer_queue"
+    },
+    "idx_threads_owner": {
+      "ddl": "CREATE INDEX idx_threads_owner ON threads(tenant_id, owner_id, pinned DESC, last_message_at DESC);",
+      "sha256": "29dc91d07a67fe585b2a099602a855aa2791c5efc0e386b96cf30b716f095bbf",
+      "table": "threads"
+    },
+    "idx_tickets_bucket": {
+      "ddl": "CREATE INDEX idx_tickets_bucket ON tickets(tenant_id, state, bucket, priority DESC, updated_at DESC);",
+      "sha256": "510048b348f6372fbd03e50829a4fb91d9b5b947af2df116f7902efa71e7d96e",
+      "table": "tickets"
+    },
+    "idx_timeline_ticket": {
+      "ddl": "CREATE INDEX idx_timeline_ticket ON timeline_events(ticket_id, created_at);",
+      "sha256": "a186f1760894725ff330619d28c7a5166854a121ff033af8922b026e07af27d3",
+      "table": "timeline_events"
+    },
+    "idx_toolcall_turn": {
+      "ddl": "CREATE INDEX idx_toolcall_turn ON tool_calls(tenant_id, turn_id, started_at);",
+      "sha256": "26d4d21fc620be74823e594d5171da8055f2707354f3cf78de6ed03aae5dd5cc",
+      "table": "tool_calls"
+    },
+    "idx_triggers_actor": {
+      "ddl": "CREATE INDEX idx_triggers_actor ON triggers(tenant_id, actor_id, received_at);",
+      "sha256": "5dfce8b36232230967467a7a02ff63913f18810317e18bb02226cbaea3d1e009",
+      "table": "triggers"
+    },
+    "idx_triggers_thread": {
+      "ddl": "CREATE INDEX idx_triggers_thread ON triggers(tenant_id, thread_key, received_at);",
+      "sha256": "6208b9834810dff359182b96a66f14afac0d2de307b81310a8aea9a7cdbdaa40",
+      "table": "triggers"
+    },
+    "idx_turns_status": {
+      "ddl": "CREATE INDEX idx_turns_status ON turns(tenant_id, status, updated_at);",
+      "sha256": "bb4493dc18b5c349bc127e81b8a9647da8eb54091f32ab7cc6f80e1814f2c014",
+      "table": "turns"
+    },
+    "idx_turns_thread": {
+      "ddl": "CREATE INDEX idx_turns_thread ON turns(tenant_id, thread_id, seq);",
+      "sha256": "f6c57482903dacc3bda30a980449365aca84fd5037cd5df9970662e1eceffbb2",
+      "table": "turns"
+    },
+    "idx_usage_scope": {
+      "ddl": "CREATE INDEX idx_usage_scope ON usage_ledger(tenant_id, created_at, agent_id, model);",
+      "sha256": "3dc876a26d2d466857fa481b1352937b293398153a259a40d21defda0c277c35",
+      "table": "usage_ledger"
+    },
+    "idx_users_tenant_status": {
+      "ddl": "CREATE INDEX idx_users_tenant_status ON users(tenant_id, status, created_at);",
+      "sha256": "5c1fb01d68f5f97df8eb2a653221da6eaa5f391df35ade95c742f9dd95fb3d58",
+      "table": "users"
+    },
+    "idx_watchdog_open": {
+      "ddl": "CREATE INDEX idx_watchdog_open ON watchdog_alerts(tenant_id, status, created_at DESC);",
+      "sha256": "7543f820a20000db2d943ac8969daf161045edf7ade003fb22b9b4582b6a3eef",
+      "table": "watchdog_alerts"
+    },
+    "uq_invites_pending": {
+      "ddl": "CREATE UNIQUE INDEX uq_invites_pending ON invites(tenant_id, email) WHERE status = 'pending';",
+      "sha256": "28983b3f7ae2c7918e3d0d9441e145789487da0d476bedb0e05110ffd1a8ca94",
+      "table": "invites"
+    }
+  },
+  "source": "docs/31-全量数据模型与DDL.md",
+  "tables": {
+    "agent_files": {
+      "ddl": "CREATE TABLE agent_files (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  agent_id      TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  content       TEXT NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (agent_id, name)\n);",
+      "indexes": [],
+      "sha256": "5a66b66374dfec5dfa4ec4caf9ee3fcf818a0e3a393b240802bca21cff332c91"
+    },
+    "agent_skills": {
+      "ddl": "-- 专家 / 能力（M1–M2）\nCREATE TABLE agent_skills (\n  agent_id      TEXT NOT NULL,\n  skill_id      TEXT NOT NULL,\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  config_json   TEXT,\n  PRIMARY KEY (agent_id, skill_id)\n);",
+      "indexes": [],
+      "sha256": "2ce77b335d0c9eb173e6f6bbce17f815c1fd24af8bc56709aa7c7072389422f4"
+    },
+    "agent_subagents": {
+      "ddl": "CREATE TABLE agent_subagents (\n  agent_id      TEXT NOT NULL,\n  subagent_id   TEXT NOT NULL,\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  config_json   TEXT,\n  PRIMARY KEY (agent_id, subagent_id)\n);",
+      "indexes": [],
+      "sha256": "cb67bc65fb8ad0abbc88234ee246f6f58b7175452f19e8a8240c2ac30495b1c1"
+    },
+    "agent_versions": {
+      "ddl": "CREATE TABLE agent_versions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  agent_id      TEXT NOT NULL,\n  version       INTEGER NOT NULL,\n  config_json   TEXT NOT NULL,\n  files_json    TEXT,\n  published_by  TEXT,\n  published_at  INTEGER NOT NULL,\n  is_current    INTEGER NOT NULL DEFAULT 0,\n  UNIQUE (agent_id, version)\n);",
+      "indexes": [],
+      "sha256": "0efe08b113593d7be35eec8d9e7b4418b8a1193f23138e18dd850dd1ed132664"
+    },
+    "agent_workspace_files": {
+      "ddl": "CREATE TABLE agent_workspace_files (\n  agent_id      TEXT NOT NULL,\n  path          TEXT NOT NULL,\n  kind          TEXT NOT NULL,\n  size          INTEGER,\n  sha256        TEXT,\n  updated_at    INTEGER NOT NULL,\n  PRIMARY KEY (agent_id, path)\n);",
+      "indexes": [],
+      "sha256": "cbd6c54d3ee48049d1b7b9be9addf1508838777ee90a63978fbc9bdb0332dd93"
+    },
+    "agents": {
+      "ddl": "CREATE TABLE agents (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  agent_id      TEXT NOT NULL UNIQUE,\n  name          TEXT NOT NULL,\n  description   TEXT,\n  avatar        TEXT,\n  model         TEXT,\n  backend       TEXT NOT NULL DEFAULT 'builtin',\n  status        TEXT NOT NULL DEFAULT 'idle', -- idle|running|disabled\n  visibility    TEXT NOT NULL DEFAULT 'private', -- private|team|public\n  draft_version INTEGER NOT NULL DEFAULT 0,\n  published_version INTEGER,\n  created_by    TEXT NOT NULL,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  deleted_at    INTEGER,\n  version       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "05150d5229071de2dbdce0e4d3eade0b7cf09a922d565d66e13262d63929332e"
+    },
+    "api_keys": {
+      "ddl": "CREATE TABLE api_keys (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  api_key_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  user_id       TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  prefix        TEXT NOT NULL UNIQUE,\n  key_hash      TEXT NOT NULL,\n  scopes_json   TEXT NOT NULL,\n  last_used_at  INTEGER,\n  expires_at    INTEGER,\n  revoked_at    INTEGER,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_apikey_user"
+      ],
+      "sha256": "fd1135d105cf965ea5d2d1e3761fa7c50a35b4e874863254e5774ae308d12142"
+    },
+    "approvals": {
+      "ddl": "CREATE TABLE approvals (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  approval_id   TEXT NOT NULL UNIQUE,\n  turn_id       TEXT NOT NULL,\n  run_id        TEXT NOT NULL,\n  step_idx      INTEGER NOT NULL,\n  request_json  TEXT NOT NULL,\n  decisions_json TEXT,\n  status        TEXT NOT NULL, -- pending|approved|denied|expired\n  expires_at    INTEGER,\n  created_at    INTEGER NOT NULL,\n  resolved_at   INTEGER,\n  UNIQUE (run_id, step_idx)\n);",
+      "indexes": [
+        "idx_approvals_pending"
+      ],
+      "sha256": "963354754aeb0f0061afa073b89d176c19d0de4064e9592b8f17dc0ac29a7373"
+    },
+    "artifacts": {
+      "ddl": "CREATE TABLE artifacts (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  artifact_id   TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  thread_id     TEXT,\n  turn_id       TEXT,\n  run_id        TEXT,\n  kind          TEXT NOT NULL,               -- file|image|pdf|pr|diff|report|link\n  ref           TEXT NOT NULL,               -- storage ref / URL\n  mime          TEXT,\n  size          INTEGER,\n  sha256        TEXT,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_artifact_scope"
+      ],
+      "sha256": "9359901504b6a6a9bdafcef5a43ec761d8242240f40c66dbcb5962b0f518f79c"
+    },
+    "assignments": {
+      "ddl": "CREATE TABLE assignments (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  assignment_id TEXT NOT NULL UNIQUE,\n  ticket_id     TEXT NOT NULL,\n  executor      TEXT NOT NULL, -- builtin|codex|claude_code|dsh\n  state         TEXT NOT NULL, -- pending|running|ended|dead\n  lease_owner   TEXT,\n  lease_until   INTEGER,\n  heartbeat_at  INTEGER,\n  progress      REAL,\n  cost_micros   INTEGER NOT NULL DEFAULT 0,\n  started_at    INTEGER,\n  ended_at      INTEGER,\n  UNIQUE (ticket_id, assignment_id)\n);",
+      "indexes": [
+        "idx_assignments_claim"
+      ],
+      "sha256": "fd9179dc342e76eb7b584f3baeb5d80f1f529477fe9daf63752c388eca1ba65d"
+    },
+    "attachments": {
+      "ddl": "CREATE TABLE attachments (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  attachment_id TEXT NOT NULL UNIQUE,\n  thread_id     TEXT,\n  message_id    TEXT,\n  filename      TEXT NOT NULL,\n  mime          TEXT NOT NULL,\n  size          INTEGER NOT NULL,\n  sha256        TEXT NOT NULL,\n  storage_key   TEXT NOT NULL,\n  status        TEXT NOT NULL DEFAULT 'ready', -- uploading|ready|failed|deleted\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_attachments_thread"
+      ],
+      "sha256": "f6ada370a16b7b4fd4b6fe747c2f865a03488bb0e42ed0eeb71dfd83167eb299"
+    },
+    "attentions": {
+      "ddl": "CREATE TABLE attentions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  attention_id  TEXT NOT NULL UNIQUE,\n  ticket_id     TEXT,\n  turn_id       TEXT,\n  kind          TEXT NOT NULL, -- approval|question|blocked\n  source_type   TEXT NOT NULL, -- approval|ticket|run\n  source_id     TEXT NOT NULL,\n  payload_json  TEXT NOT NULL,\n  status        TEXT NOT NULL DEFAULT 'pending',\n  expires_at    INTEGER,\n  created_at    INTEGER NOT NULL,\n  resolved_at   INTEGER\n);",
+      "indexes": [
+        "idx_attentions_pending"
+      ],
+      "sha256": "857993c0f6e46396cd9eee7190d92b4ddde3d9d8210cb0dff6a8a7985028b984"
+    },
+    "audit_log": {
+      "ddl": "CREATE TABLE audit_log (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  audit_id      TEXT NOT NULL UNIQUE,\n  actor_id      TEXT,\n  action        TEXT NOT NULL,\n  resource_type TEXT,\n  resource_id   TEXT,\n  result        TEXT NOT NULL, -- ok|denied|failed\n  detail_json   TEXT,\n  ip            TEXT,\n  trace_id      TEXT,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_audit_time"
+      ],
+      "sha256": "c8a0884ff956194c4279975f278b2b6de359b25f0fe086620e91eb7ddb0131cc"
+    },
+    "backup_settings": {
+      "ddl": "CREATE TABLE backup_settings (\n  tenant_id     TEXT PRIMARY KEY,\n  auto_enabled  INTEGER NOT NULL DEFAULT 0,\n  interval_hours INTEGER NOT NULL DEFAULT 24,\n  retention_count INTEGER NOT NULL DEFAULT 7,\n  includes_json TEXT NOT NULL,\n  updated_at    INTEGER NOT NULL\n);",
+      "indexes": [],
+      "sha256": "c0eb3df0ca771ca42a5bac40fa4bcec9ca377c115a660cf218950663fa0edb00"
+    },
+    "backups": {
+      "ddl": "CREATE TABLE backups (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  backup_id     TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,              -- 实例级备份用 'system'\n  kind          TEXT NOT NULL,              -- full|incremental\n  storage_ref   TEXT NOT NULL,\n  schema_version INTEGER NOT NULL,\n  manifest_json TEXT NOT NULL,              -- includes: config/db/workspace/skill_packages/plugins(可选 env)\n  checksum      TEXT NOT NULL,              -- sha256；恢复前强校验\n  size_bytes    INTEGER NOT NULL DEFAULT 0,\n  auto          INTEGER NOT NULL DEFAULT 0, -- 1=自动备份产物\n  status        TEXT NOT NULL,              -- creating|ready|failed|restoring|restored\n  created_at    INTEGER NOT NULL,\n  restored_at   INTEGER\n);",
+      "indexes": [
+        "idx_backups_time"
+      ],
+      "sha256": "f0a9cc83cd8c00d7b2cc9ea69132f6f69dcd5e0d41433f554feb3fb04bd450f8"
+    },
+    "channel_bindings": {
+      "ddl": "CREATE TABLE channel_bindings (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  binding_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  channel_id    TEXT NOT NULL REFERENCES channels(channel_id),\n  agent_id      TEXT,\n  external_key  TEXT NOT NULL,             -- 群/会话标识\n  config_json   TEXT,\n  status        TEXT NOT NULL DEFAULT 'active',\n  created_at    INTEGER NOT NULL,\n  UNIQUE (channel_id, external_key)\n);",
+      "indexes": [],
+      "sha256": "377e0c4704bf27f53ccb73bfed69eb95d64e778a8df0cc6b532f9ce10846f787"
+    },
+    "channel_messages": {
+      "ddl": "CREATE TABLE channel_messages (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  message_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  channel_id    TEXT NOT NULL,\n  direction     TEXT NOT NULL,             -- inbound|outbound\n  external_id   TEXT NOT NULL,             -- 平台 message_id\n  thread_id     TEXT,\n  actor_id      TEXT,                      -- inbound: source_actors.actor_id\n  actor_kind    TEXT,                      -- human|bot|system\n  payload_json  TEXT NOT NULL,\n  status        TEXT NOT NULL,             -- received|sent|failed\n  error_code    TEXT,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (channel_id, external_id)\n);",
+      "indexes": [
+        "idx_chmsg_thread",
+        "idx_chmsg_actor"
+      ],
+      "sha256": "ef38e51bc70c161741800cf8ede2db39ea30aecf18635110115f0f34878f7bdb"
+    },
+    "channels": {
+      "ddl": "-- 渠道：账号配置、绑定与消息（入站幂等）\nCREATE TABLE channels (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  channel_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  kind          TEXT NOT NULL,             -- feishu|dingtalk|wecom|qq|telegram|discord\n  display_name  TEXT NOT NULL,\n  config_json   TEXT,                      -- 非敏感配置（app_id、回调地址等）\n  credential_ref TEXT,                     -- secrets 引用，不存明文\n  status        TEXT NOT NULL DEFAULT 'disabled', -- active|disabled|error|expired\n  last_error    TEXT,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, display_name)\n);",
+      "indexes": [],
+      "sha256": "2f6b4f55e8d98b274fadb3a1ade0f62644d6966256b47c2435a7ca04d33fb331"
+    },
+    "cloud_accounts": {
+      "ddl": "CREATE TABLE cloud_accounts (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  account_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  provider      TEXT NOT NULL,             -- tencent|aws|aliyun（首版仅 tencent）\n  display_name  TEXT NOT NULL,\n  credential_enc TEXT NOT NULL,            -- 加密凭证，不存明文\n  scopes_json   TEXT,\n  status        TEXT NOT NULL,             -- active|expired|revoked|error\n  expires_at    INTEGER,\n  last_sync_at  INTEGER,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, provider, display_name)\n);",
+      "indexes": [
+        "idx_cloud_acct"
+      ],
+      "sha256": "3a71a1e32032bb1c31ce8102b76b25c2efa2221609c3daaf73773a2983579f97"
+    },
+    "cloud_instances": {
+      "ddl": "CREATE TABLE cloud_instances (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  instance_id   TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  account_id    TEXT NOT NULL REFERENCES cloud_accounts(account_id),\n  provider      TEXT NOT NULL,\n  region        TEXT NOT NULL,\n  zone          TEXT,\n  external_id   TEXT NOT NULL,             -- 云侧实例 ID\n  name          TEXT NOT NULL,\n  state         TEXT NOT NULL,             -- running|stopped|starting|stopping|rebooting|error|unknown\n  spec_json     TEXT,                      -- CPU/内存/磁盘/带宽\n  address_json  TEXT,                      -- 公网/内网 IP\n  os            TEXT,\n  tags_json     TEXT,\n  last_seen_at  INTEGER,\n  snapshot_at   INTEGER,\n  UNIQUE (account_id, region, external_id)\n);",
+      "indexes": [
+        "idx_cloud_inst"
+      ],
+      "sha256": "8f14aa7a8df3fc8c11cbea8056f78a28c1e8e98cad1e78664a40ba1f62e7fdad"
+    },
+    "cloud_ops": {
+      "ddl": "CREATE TABLE cloud_ops (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  op_id         TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  account_id    TEXT NOT NULL,\n  instance_id   TEXT NOT NULL,\n  action        TEXT NOT NULL,             -- start|stop|reboot\n  status        TEXT NOT NULL,             -- pending|running|succeeded|failed\n  requested_by  TEXT NOT NULL,\n  reason        TEXT,\n  result_json   TEXT,\n  created_at    INTEGER NOT NULL,\n  finished_at   INTEGER\n);",
+      "indexes": [
+        "idx_cloud_ops"
+      ],
+      "sha256": "d4030b5aa9bdf4eb9f59b914a6afa01fb60fd94ac83a4e0988775e4b22ca8ae6"
+    },
+    "config_versions": {
+      "ddl": "CREATE TABLE config_versions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  scope         TEXT NOT NULL,             -- settings|permissions|policy|plugins|acl\n  key           TEXT NOT NULL DEFAULT '',\n  version       INTEGER NOT NULL,\n  changed_by    TEXT,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (scope, key)\n);",
+      "indexes": [],
+      "sha256": "52b29493b5cdae2876230dc75bd23ae79b42d99b482ac24c143dfba775da52d3"
+    },
+    "connector_bindings": {
+      "ddl": "CREATE TABLE connector_bindings (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  binding_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  connector_instance_id TEXT NOT NULL,\n  agent_id      TEXT NOT NULL,\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  config_json   TEXT,\n  UNIQUE (connector_instance_id, agent_id)\n);",
+      "indexes": [],
+      "sha256": "ef0c6dbdfb6ceccc5e2e012d272f0395963bd7d9f0d74c54d1660f0808a2df8d"
+    },
+    "connector_catalog": {
+      "ddl": "-- 连接器 / 知识 / 记忆（M2）\nCREATE TABLE connector_catalog (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  catalog_id    TEXT NOT NULL UNIQUE,\n  kind          TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  auth_kind     TEXT NOT NULL,\n  config_json   TEXT\n);",
+      "indexes": [],
+      "sha256": "d30d30560d9ec37c2f1982251b22d02f1d934d082a435937de0c84893c0ac9aa"
+    },
+    "connector_instances": {
+      "ddl": "CREATE TABLE connector_instances (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  instance_id   TEXT NOT NULL UNIQUE,\n  kind          TEXT NOT NULL,\n  display_name  TEXT NOT NULL,\n  config_enc    TEXT,\n  auth_kind     TEXT NOT NULL, -- oauth|token|api_key|cookie|imap\n  status        TEXT NOT NULL DEFAULT 'active', -- active|expired|disabled|error\n  owner_id      TEXT NOT NULL,\n  shared        INTEGER NOT NULL DEFAULT 0,\n  default_open  INTEGER NOT NULL DEFAULT 0,\n  tools_count   INTEGER NOT NULL DEFAULT 0,\n  last_probe_at INTEGER,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  version       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (tenant_id, owner_id, display_name)\n);",
+      "indexes": [],
+      "sha256": "228b3ffa018965cc30066243231c24f698458f57ff3acb519a3c6f84153f333c"
+    },
+    "connector_oauth_states": {
+      "ddl": "CREATE TABLE connector_oauth_states (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  state_id      TEXT NOT NULL UNIQUE,\n  connector_kind TEXT NOT NULL,\n  instance_id   TEXT,\n  status        TEXT NOT NULL, -- pending|authorized|denied|expired|error\n  authorize_url TEXT,\n  verifier_enc  TEXT,\n  user_code     TEXT,\n  expires_at    INTEGER NOT NULL,\n  created_at    INTEGER NOT NULL,\n  finished_at   INTEGER\n);",
+      "indexes": [
+        "idx_oauth_pending"
+      ],
+      "sha256": "877937ffc4410b95cab32f40fe50f57ef3c65ce0f0266819d5ae001ed5eae0fe"
+    },
+    "context_snapshots": {
+      "ddl": "-- 对话（M1）\nCREATE TABLE context_snapshots (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  snapshot_id   TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  thread_id     TEXT NOT NULL,\n  turn_id       TEXT NOT NULL,\n  before_tokens INTEGER NOT NULL,\n  after_tokens  INTEGER NOT NULL,\n  strategy      TEXT NOT NULL,\n  payload_ref   TEXT NOT NULL,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_ctx_snap"
+      ],
+      "sha256": "7773de80c3384a3fda2100818d3db4282494efbd4abde077b1ee91d3f54930ab"
+    },
+    "control_sessions": {
+      "ddl": "-- 控制面：终端/浏览器会话\nCREATE TABLE control_sessions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  session_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  kind          TEXT NOT NULL,             -- terminal|browser\n  agent_id      TEXT,\n  status        TEXT NOT NULL,             -- starting|running|closed|error\n  profile_ref   TEXT,                      -- 浏览器 profile 目录\n  endpoint      TEXT,                      -- PTY/CDP 本地端点\n  meta_json     TEXT,\n  started_at    INTEGER NOT NULL,\n  last_seen_at  INTEGER,\n  ended_at      INTEGER\n);",
+      "indexes": [
+        "idx_ctrl_active"
+      ],
+      "sha256": "8ee5b646461823b29f654bd8afdc158e5deaab59d2920c4572c6f3b1a6c09d20"
+    },
+    "cron_jobs": {
+      "ddl": "-- Intake / 任务（M1）\nCREATE TABLE cron_jobs (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  cron_job_id   TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  schedule      TEXT NOT NULL,\n  timezone      TEXT NOT NULL,\n  action        TEXT NOT NULL,              -- notify|run_agent|run_workflow\n  payload_json  TEXT,\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  next_run_at   INTEGER,\n  last_run_at   INTEGER,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_cron_due"
+      ],
+      "sha256": "08a1cc72ee23dae1bd095cda8be6e047d88e27bf53f02551e9e9f72cbd722b2f"
+    },
+    "cron_runs": {
+      "ddl": "CREATE TABLE cron_runs (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  run_id        TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  cron_job_id   TEXT NOT NULL,\n  status        TEXT NOT NULL,              -- queued|running|succeeded|failed|skipped\n  scheduled_at  INTEGER NOT NULL,\n  started_at    INTEGER,\n  ended_at      INTEGER,\n  error         TEXT,\n  trigger_id    TEXT\n);",
+      "indexes": [
+        "idx_cron_runs"
+      ],
+      "sha256": "6e09f2d63bd3069855f7dc0a333ffe73222abb9792190932c987122981e6fcdd"
+    },
+    "data_jobs": {
+      "ddl": "-- 导出 / 删除任务\nCREATE TABLE data_jobs (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  job_id        TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  user_id       TEXT,\n  kind          TEXT NOT NULL,             -- export|delete\n  scope_json    TEXT NOT NULL,             -- tenant/user/thread/kb...\n  status        TEXT NOT NULL,             -- queued|running|ready|failed|done\n  progress      REAL NOT NULL DEFAULT 0,\n  storage_ref   TEXT,\n  error         TEXT,\n  created_at    INTEGER NOT NULL,\n  finished_at   INTEGER\n);",
+      "indexes": [
+        "idx_data_jobs"
+      ],
+      "sha256": "55d958d60f5b2c00b5a8311c0652abb7e5f18d92a57bc1fe008a3b3cc713ea6f"
+    },
+    "delegations": {
+      "ddl": "-- 编排：派工与事件订阅\nCREATE TABLE delegations (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  delegation_id TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  team_id       TEXT NOT NULL REFERENCES teams(team_id),\n  parent_ticket_id TEXT,\n  parent_run_id TEXT NOT NULL,\n  member_agent_id TEXT NOT NULL,\n  child_thread_id TEXT,\n  dedupe_key    TEXT NOT NULL,             -- hash(parent_run_id+member_id+task_id)\n  state         TEXT NOT NULL,             -- pending|running|ended|dead\n  payload_json  TEXT NOT NULL,\n  attempts      INTEGER NOT NULL DEFAULT 0,\n  max_attempts  INTEGER NOT NULL DEFAULT 3,\n  lease_until   INTEGER,\n  last_heartbeat_at INTEGER,\n  next_retry_at INTEGER,\n  created_at    INTEGER NOT NULL,\n  ended_at      INTEGER,\n  UNIQUE (tenant_id, dedupe_key)\n);",
+      "indexes": [
+        "idx_deleg_state",
+        "idx_deleg_lease"
+      ],
+      "sha256": "25a6063e15261ad434e0a1e1483e215fa78f4beb1c53c5bf816c5119e46d79d8"
+    },
+    "evals": {
+      "ddl": "CREATE TABLE evals (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  eval_id       TEXT NOT NULL UNIQUE,\n  trigger_id    TEXT NOT NULL,\n  status        TEXT NOT NULL, -- queued|running|decided|failed|unavailable\n  decision_json TEXT,\n  model         TEXT,\n  started_at    INTEGER,\n  finished_at   INTEGER\n);",
+      "indexes": [],
+      "sha256": "970d4db1ffe598afd194c17e919437a0b360daeae7177f52ba260bec6369e92e"
+    },
+    "events": {
+      "ddl": "CREATE TABLE events (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL DEFAULT 'default',\n  thread_id     TEXT NOT NULL,\n  seq           INTEGER NOT NULL,\n  turn_id       TEXT,\n  run_id        TEXT,\n  type          TEXT NOT NULL,\n  payload_json  TEXT NOT NULL,\n  ts            INTEGER NOT NULL,\n  trace_id      TEXT,\n  UNIQUE (thread_id, seq)\n);",
+      "indexes": [
+        "idx_events_thread_seq",
+        "idx_events_turn"
+      ],
+      "sha256": "a997d62b04f4a9602621ed82da7193a8e217c9f403985f7d39acc94d5751003c"
+    },
+    "expert_templates": {
+      "ddl": "CREATE TABLE expert_templates (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  template_id   TEXT NOT NULL UNIQUE,\n  name          TEXT NOT NULL,\n  version       TEXT NOT NULL,\n  manifest_json TEXT NOT NULL,             -- prompt_files/quick_prompts/task_examples\n  source        TEXT,                      -- builtin|import|git\n  installed_at  INTEGER NOT NULL\n);",
+      "indexes": [],
+      "sha256": "05c65aa8451342262115728c7303a0be95c827e3180fdf71d708611595281fe1"
+    },
+    "group_members": {
+      "ddl": "-- 身份 / 权限（M1）\nCREATE TABLE group_members (\n  group_id      TEXT NOT NULL,\n  user_id       TEXT NOT NULL,\n  created_at    INTEGER NOT NULL,\n  PRIMARY KEY (group_id, user_id)\n);",
+      "indexes": [
+        "idx_group_members_user"
+      ],
+      "sha256": "52aa3e97d7347d80736283a428fdae353519d2dda1414169bc552991fe848628"
+    },
+    "groups": {
+      "ddl": "CREATE TABLE groups (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  group_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  description   TEXT,\n  member_count  INTEGER NOT NULL DEFAULT 0,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "d1874e3c2f1cad5adf14fd19fe19146340d9bd23a93a5b2aad5b6f5dde31d1bd"
+    },
+    "idempotency_keys": {
+      "ddl": "CREATE TABLE idempotency_keys (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  key           TEXT NOT NULL,\n  user_id       TEXT NOT NULL,\n  route         TEXT NOT NULL,\n  request_hash  TEXT NOT NULL,\n  response_json TEXT,\n  status        TEXT NOT NULL DEFAULT 'processing', -- processing|done\n  expires_at    INTEGER NOT NULL,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, key)\n);",
+      "indexes": [],
+      "sha256": "c923ab826a55959a234e614800eee5c4614ebba8d89d2dacc6c4cf92635a41d5"
+    },
+    "instances": {
+      "ddl": "-- 多实例：注册与配置版本（v1.1 启用；v1.0 建表空转）\nCREATE TABLE instances (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  instance_id   TEXT NOT NULL UNIQUE,\n  role          TEXT NOT NULL,             -- api|worker|scheduler\n  version       TEXT NOT NULL,\n  hostname      TEXT,\n  started_at    INTEGER NOT NULL,\n  last_heartbeat_at INTEGER NOT NULL,\n  meta_json     TEXT\n);",
+      "indexes": [
+        "idx_instances_alive"
+      ],
+      "sha256": "ca28affb42f0737eaf3d582b178f5223f6e13e324042e0429dcf9126a24f38ed"
+    },
+    "invites": {
+      "ddl": "CREATE TABLE invites (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  invite_id     TEXT NOT NULL UNIQUE,\n  email         TEXT NOT NULL,\n  role_id       TEXT NOT NULL,\n  token_hash    TEXT NOT NULL,\n  invited_by    TEXT NOT NULL,\n  status        TEXT NOT NULL DEFAULT 'pending', -- pending|accepted|revoked|expired\n  expires_at    INTEGER NOT NULL,\n  created_at    INTEGER NOT NULL,\n  accepted_at   INTEGER\n);",
+      "indexes": [
+        "uq_invites_pending"
+      ],
+      "sha256": "92f7023c2f0225a74e5d9b5f3a9b5a60e105642fadebe8e76f517136c1dcaf1c"
+    },
+    "knowledge_acl": {
+      "ddl": "CREATE TABLE knowledge_acl (\n  kb_id         TEXT NOT NULL,\n  subject_type  TEXT NOT NULL,              -- user|group|tenant\n  subject_id    TEXT NOT NULL,\n  permission    TEXT NOT NULL,              -- read|write|manage\n  PRIMARY KEY (kb_id, subject_type, subject_id, permission)\n);",
+      "indexes": [],
+      "sha256": "0509f1aeea518dcf5f078cc1fe65d0763c76e18566b6daf802d86d5e521ea193"
+    },
+    "knowledge_bases": {
+      "ddl": "CREATE TABLE knowledge_bases (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  kb_id         TEXT NOT NULL UNIQUE,\n  name          TEXT NOT NULL,\n  description   TEXT,\n  embedding_model TEXT,\n  embedding_dim INTEGER,\n  embedding_version TEXT,\n  chunk_config_json TEXT,\n  chunker_version TEXT,\n  visibility    TEXT NOT NULL DEFAULT 'private', -- private|team|tenant|public\n  ocr_mode      TEXT NOT NULL DEFAULT 'off',\n  status        TEXT NOT NULL DEFAULT 'ready',\n  doc_count     INTEGER NOT NULL DEFAULT 0,\n  chunk_count   INTEGER NOT NULL DEFAULT 0,\n  created_by    TEXT,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  deleted_at    INTEGER,\n  version       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "788fef06f0086eacc70a2f8839010e74b0860d3a5a3a963d349f9b21e3b3c569"
+    },
+    "knowledge_chunks": {
+      "ddl": "CREATE TABLE knowledge_chunks (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  chunk_id      TEXT NOT NULL UNIQUE,\n  doc_id        TEXT NOT NULL,\n  kb_id         TEXT NOT NULL,\n  idx           INTEGER NOT NULL,\n  content       TEXT NOT NULL,\n  token_count   INTEGER NOT NULL,\n  heading_path  TEXT,                      -- H1/H2/H3 路径\n  page_from     INTEGER,\n  page_to       INTEGER,\n  char_start    INTEGER,\n  char_end      INTEGER,\n  embedding_json TEXT,          -- SQLite; PG 用 vector\n  tsv           TEXT,           -- SQLite FTS5; PG tsvector\n  metadata_json TEXT,\n  UNIQUE (doc_id, idx)\n);",
+      "indexes": [
+        "idx_chunks_kb",
+        "idx_chunks_heading"
+      ],
+      "sha256": "3e5eec047046e8553e97a9503c9a4e6e81838f046df8a36cf7f3213cae3148c8"
+    },
+    "knowledge_docs": {
+      "ddl": "CREATE TABLE knowledge_docs (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  doc_id        TEXT NOT NULL UNIQUE,\n  kb_id         TEXT NOT NULL,\n  filename      TEXT NOT NULL,\n  mime          TEXT NOT NULL,\n  size          INTEGER NOT NULL,\n  sha256        TEXT NOT NULL,\n  folder        TEXT,\n  status        TEXT NOT NULL, -- uploading|processing|ready|failed\n  error_code    TEXT,\n  chunk_count   INTEGER NOT NULL DEFAULT 0,\n  storage_key   TEXT NOT NULL,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  deleted_at    INTEGER,\n  UNIQUE (kb_id, sha256)\n);",
+      "indexes": [
+        "idx_docs_kb_status"
+      ],
+      "sha256": "6503d22d5e966f6655293c6b6d6fb28852d07138cb61fd78396db0d8aea58ac6"
+    },
+    "mandates": {
+      "ddl": "CREATE TABLE mandates (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  mandate_id    TEXT NOT NULL UNIQUE,\n  ticket_id     TEXT NOT NULL,\n  policy_version INTEGER NOT NULL,\n  scope_json    TEXT NOT NULL,\n  strength      TEXT NOT NULL,\n  matched_rules_json TEXT,\n  created_at    INTEGER NOT NULL,\n  invalidated_at INTEGER\n);",
+      "indexes": [],
+      "sha256": "338464e93e3276a936815480ce368b040bfcdb2a3eb66b399887339893df8d73"
+    },
+    "memory_atoms": {
+      "ddl": "-- 记忆：统一原子 + 审计（画像用 kind=profile）\nCREATE TABLE memory_atoms (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  atom_id       TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  agent_id      TEXT NOT NULL,\n  kind          TEXT NOT NULL,             -- fact|preference|episode|profile|skill\n  text          TEXT NOT NULL,\n  embedding     BLOB,                      -- PG 用 vector(1024)\n  confidence    REAL NOT NULL,\n  status        TEXT NOT NULL,             -- active|retired|pending_review\n  valid_from    INTEGER,\n  valid_to      INTEGER,\n  supersedes    TEXT,\n  source        TEXT NOT NULL,             -- explicit_user|assistant_inferred|import|migration\n  evidence_json TEXT NOT NULL,\n  payload_json  TEXT,                      -- profile 的 USER.md 等\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_memory_ns"
+      ],
+      "sha256": "137ac6263e71dd88f0a25b7605d0624826033893dc6b0998e73d743c9fcab10a"
+    },
+    "memory_events": {
+      "ddl": "CREATE TABLE memory_events (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  event_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  atom_id       TEXT NOT NULL,\n  kind          TEXT NOT NULL,              -- raw|promoted|merged|superseded|deleted\n  payload_json  TEXT NOT NULL,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_memory_events"
+      ],
+      "sha256": "5e274a3980f46ea20210ba9e9f913ef6883d965c79958d7650d268a933e4b858"
+    },
+    "messages": {
+      "ddl": "CREATE TABLE messages (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  message_id    TEXT NOT NULL UNIQUE,\n  thread_id     TEXT NOT NULL,\n  turn_id       TEXT,\n  role          TEXT NOT NULL, -- system|user|assistant|tool\n  content       TEXT NOT NULL DEFAULT '',\n  content_json  TEXT,          -- 结构化 blocks（工具卡/引用/文件）\n  status        TEXT NOT NULL DEFAULT 'completed', -- streaming|completed|failed|cancelled\n  seq           INTEGER NOT NULL,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  deleted_at    INTEGER,\n  UNIQUE (thread_id, seq)\n);",
+      "indexes": [
+        "idx_messages_thread"
+      ],
+      "sha256": "21e76180a581b48430e24faf5b00257f5a7ec5bb1ed765d6c04b76ef355e74e7"
+    },
+    "model_prices": {
+      "ddl": "CREATE TABLE model_prices (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  model         TEXT NOT NULL,\n  currency      TEXT NOT NULL,             -- CNY|USD\n  input_per_mtok  REAL NOT NULL,\n  output_per_mtok REAL NOT NULL,\n  cached_per_mtok REAL NOT NULL DEFAULT 0,\n  version       INTEGER NOT NULL,\n  effective_from INTEGER NOT NULL,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (model, version, effective_from)\n);",
+      "indexes": [],
+      "sha256": "cc6e2e89eccc4d67cb4985d22e3165a40dbab6ec0e7dfc4ae98a6d2b0efbcb65"
+    },
+    "models": {
+      "ddl": "CREATE TABLE models (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  model_id      TEXT NOT NULL UNIQUE,\n  provider_id   TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  caps_json     TEXT NOT NULL,\n  price_version TEXT,\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (provider_id, name)\n);",
+      "indexes": [],
+      "sha256": "918f0865daa6e78f5b6e03d4134d2c533bdb90c03abfab96764bb702da4898cc"
+    },
+    "notifications": {
+      "ddl": "CREATE TABLE notifications (\n  id              INTEGER PRIMARY KEY AUTOINCREMENT,\n  notification_id TEXT NOT NULL UNIQUE,\n  tenant_id       TEXT NOT NULL,\n  user_id         TEXT NOT NULL,\n  kind            TEXT NOT NULL,             -- task|cloud|export|system\n  title           TEXT NOT NULL,\n  body            TEXT,\n  link            TEXT,\n  dedupe_key      TEXT NOT NULL,\n  read_at         INTEGER,\n  created_at      INTEGER NOT NULL,\n  UNIQUE (tenant_id, user_id, dedupe_key)\n);",
+      "indexes": [
+        "idx_notif_unread"
+      ],
+      "sha256": "0be21f43c91a158e58865723d17d64a1066d00173b8cfa9b775d5b16de147429"
+    },
+    "outbox": {
+      "ddl": "CREATE TABLE outbox (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  event_id      TEXT NOT NULL UNIQUE,\n  topic         TEXT NOT NULL,\n  payload_json  TEXT NOT NULL,\n  status        TEXT NOT NULL DEFAULT 'pending', -- pending|sent|failed\n  attempts      INTEGER NOT NULL DEFAULT 0,\n  next_retry_at INTEGER,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_outbox_pending"
+      ],
+      "sha256": "1edc0a2331eee437c227e4f2a7c7b679ba544516c83c0565b338391dce982d32"
+    },
+    "plugin_signatures": {
+      "ddl": "CREATE TABLE plugin_signatures (\n  plugin_id     TEXT NOT NULL,\n  version       TEXT NOT NULL,\n  sha256        TEXT NOT NULL,\n  signer        TEXT,\n  signed_at     INTEGER NOT NULL,\n  PRIMARY KEY (plugin_id, version)\n);",
+      "indexes": [],
+      "sha256": "bc11a3665c5e93d6c41135d1a83c9371813429fa06cdd2a0313b094b4b2ab0b4"
+    },
+    "plugins": {
+      "ddl": "CREATE TABLE plugins (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  plugin_id     TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  version       TEXT NOT NULL,\n  manifest_json TEXT NOT NULL,\n  status        TEXT NOT NULL,              -- installed|enabled|disabled|failed\n  signature     TEXT,\n  installed_at  INTEGER NOT NULL\n);",
+      "indexes": [],
+      "sha256": "092f83a528f5750a02d9f7b54e237f7c27bbe8968c4def870c3a04968437ba34"
+    },
+    "policy_bundles": {
+      "ddl": "-- 策略包：发布/灰度/回滚\nCREATE TABLE policy_bundles (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  bundle_id     TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  version       INTEGER NOT NULL,\n  status        TEXT NOT NULL,             -- draft|active|rolled_back\n  rules_json    TEXT NOT NULL,             -- 规则快照\n  created_by    TEXT NOT NULL,\n  created_at    INTEGER NOT NULL,\n  activated_at  INTEGER,\n  UNIQUE (tenant_id, version)\n);",
+      "indexes": [
+        "idx_policy_bundle_active"
+      ],
+      "sha256": "2db94bfe0c6dfcbefa8d6d2d7dc74610ec449d863e7edbb4e4e94b78c69fdf4e"
+    },
+    "policy_rules": {
+      "ddl": "CREATE TABLE policy_rules (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  rule_id       TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  bundle_id     TEXT,                      -- 来源策略包；回滚时按 bundle 切\n  priority      INTEGER NOT NULL,\n  when_json     TEXT NOT NULL,             -- 受限 DSL，不 eval Python\n  effect        TEXT NOT NULL,             -- allow|ask|deny\n  obligations_json TEXT,\n  version       INTEGER NOT NULL DEFAULT 1,\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  updated_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_policy_eval"
+      ],
+      "sha256": "5e50fe0b505cc4ad8bee357313ab3b2933c56d6b1406265930434a952e885286"
+    },
+    "providers": {
+      "ddl": "CREATE TABLE providers (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  provider_id   TEXT NOT NULL UNIQUE,\n  name          TEXT NOT NULL,\n  kind          TEXT NOT NULL,\n  base_url      TEXT,\n  api_key_enc   TEXT,\n  status        TEXT NOT NULL DEFAULT 'unconfigured', -- unconfigured|authorized|error\n  models_json   TEXT,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  version       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "f4f77b719b6a9b22b723eea8b666d93f86a097a197021f40ed7a097b8fd6f948"
+    },
+    "quota_limits": {
+      "ddl": "CREATE TABLE quota_limits (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  quota_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  scope         TEXT NOT NULL,              -- tenant|user|agent\n  scope_id      TEXT NOT NULL,\n  metric        TEXT NOT NULL,              -- tokens|cost|requests|storage|concurrency\n  limit_value   INTEGER NOT NULL,\n  window        TEXT NOT NULL,              -- day|month|absolute\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, scope, scope_id, metric, window)\n);",
+      "indexes": [],
+      "sha256": "0875b5c2dd1e9199818be495e3e6499d7c9ec1a919219afc9af859f4d05a89b7"
+    },
+    "reports": {
+      "ddl": "CREATE TABLE reports (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  report_id     TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  ticket_id     TEXT NOT NULL,\n  assignment_id TEXT NOT NULL,\n  state         TEXT NOT NULL,\n  summary       TEXT NOT NULL,\n  progress      REAL,\n  facts_json    TEXT,\n  artifacts_json TEXT,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_reports_ticket"
+      ],
+      "sha256": "b468f3f200f69ece4af3d2bc4f6c66f529281231060e8bce7053bcefc299ce84"
+    },
+    "resource_group_grants": {
+      "ddl": "CREATE TABLE resource_group_grants (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  grant_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  resource_type TEXT NOT NULL,             -- skill_package|knowledge_base|connector|model|storage_backend|plugin|expert|agent\n  resource_key  TEXT NOT NULL,             -- 资源 ID 或 provider/model\n  group_id      TEXT NOT NULL,             -- groups.group_id；groups DDL 补齐后加 FK\n  permission    TEXT NOT NULL,             -- view|edit|manage\n  effect        TEXT NOT NULL DEFAULT 'allow', -- allow|deny（v1 只用 allow，deny 预留）\n  expires_at    INTEGER,                   -- 临时授权自动失效\n  granted_by    TEXT NOT NULL,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, resource_type, resource_key, group_id, permission)\n);",
+      "indexes": [
+        "idx_rgg_resource",
+        "idx_rgg_group",
+        "idx_rgg_expiry"
+      ],
+      "sha256": "f979fcc33e5a27ce43c3a6c2c5b07ecf2849aa4932d67879db9e97595f85c169"
+    },
+    "role_permissions": {
+      "ddl": "CREATE TABLE role_permissions (\n  role_id       TEXT NOT NULL,\n  permission    TEXT NOT NULL,\n  PRIMARY KEY (role_id, permission)\n);",
+      "indexes": [],
+      "sha256": "102f95f96c281795759cc6b34815f9858a7c93804e8a9afcb82ba7adcf57876a"
+    },
+    "roles": {
+      "ddl": "CREATE TABLE roles (\n  id              INTEGER PRIMARY KEY AUTOINCREMENT,\n  role_id         TEXT NOT NULL UNIQUE,\n  tenant_id       TEXT NOT NULL,\n  name            TEXT NOT NULL,\n  description     TEXT,\n  builtin         INTEGER NOT NULL DEFAULT 0,\n  permissions_json TEXT NOT NULL,\n  created_at      INTEGER NOT NULL,\n  updated_at      INTEGER NOT NULL,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "2a9116c8929365f64172e681a237fc9d007218224e84cbe03193352d64f983ee"
+    },
+    "runs": {
+      "ddl": "CREATE TABLE runs (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  run_id        TEXT NOT NULL UNIQUE,\n  turn_id       TEXT NOT NULL,\n  attempt       INTEGER NOT NULL DEFAULT 1,\n  status        TEXT NOT NULL, -- leased|running|waiting|completed|failed|cancelled\n  lease_owner   TEXT,\n  lease_until   INTEGER,\n  heartbeat_at  INTEGER,\n  last_step_idx INTEGER NOT NULL DEFAULT -1,\n  started_at    INTEGER NOT NULL,\n  finished_at   INTEGER,\n  version       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (turn_id, attempt)\n);",
+      "indexes": [
+        "idx_runs_claim"
+      ],
+      "sha256": "7d81f15065a1f4375ccda1a24dbbe319cd100c7b05fe6303faab31244aa03dd0"
+    },
+    "schema_migrations": {
+      "ddl": "CREATE TABLE schema_migrations (\n  version       INTEGER PRIMARY KEY,\n  applied_at    INTEGER NOT NULL,\n  checksum      TEXT NOT NULL\n);",
+      "indexes": [],
+      "sha256": "fee573d53b325ec19087365a5493f43da09f68d04a3c7d554472e2f69b0ed1ad"
+    },
+    "secrets": {
+      "ddl": "CREATE TABLE secrets (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  secret_id     TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  ciphertext    TEXT NOT NULL,\n  version       INTEGER NOT NULL DEFAULT 1,\n  created_at    INTEGER NOT NULL,\n  rotated_at    INTEGER,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "0068e08a4305b8676c2d7a2f72e81f7cfc5acec7b56947dd9da1fd01e559cc78"
+    },
+    "sessions": {
+      "ddl": "CREATE TABLE sessions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  session_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  user_id       TEXT NOT NULL,\n  refresh_hash  TEXT NOT NULL,\n  user_agent    TEXT,\n  ip            TEXT,\n  expires_at    INTEGER NOT NULL,\n  revoked_at    INTEGER,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_sessions_user"
+      ],
+      "sha256": "5c351972b0eac9386770d1278525a1d35b5f9e153e3765fed9ba89434c877af2"
+    },
+    "settings": {
+      "ddl": "CREATE TABLE settings (\n  tenant_id     TEXT NOT NULL,\n  key           TEXT NOT NULL,\n  value_json    TEXT NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  PRIMARY KEY (tenant_id, key)\n);",
+      "indexes": [],
+      "sha256": "13b7c11456796c759da81cce71b2df75debd74cc5184748e08e18fd89704196c"
+    },
+    "skill_packages": {
+      "ddl": "CREATE TABLE skill_packages (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  package_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  version       TEXT NOT NULL,\n  manifest_json TEXT NOT NULL,\n  storage_backend TEXT,\n  shared        INTEGER NOT NULL DEFAULT 0,\n  allow_download INTEGER NOT NULL DEFAULT 1,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, name, version)\n);",
+      "indexes": [],
+      "sha256": "878b2f45ca46cfbfec3f461e15ede02a29b58bed7568f512539b9679d81b7e66"
+    },
+    "skills": {
+      "ddl": "-- 技能与专家模板\nCREATE TABLE skills (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  skill_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  agent_id      TEXT,\n  slug          TEXT NOT NULL,\n  name          TEXT NOT NULL,\n  description   TEXT,\n  frontmatter_json TEXT NOT NULL,          -- 触发条件/依赖工具\n  content_ref   TEXT NOT NULL,             -- SKILL.md 存储引用\n  content_hash  TEXT NOT NULL,\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (agent_id, slug)\n);",
+      "indexes": [],
+      "sha256": "040e6cbac4c0f830d24d13ae3d088e4c56079c94d206d7853186f3744f89d3c9"
+    },
+    "source_actors": {
+      "ddl": "-- 外部身份映射（IM / webhook）\nCREATE TABLE source_actors (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  actor_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  source_kind   TEXT NOT NULL,             -- feishu|dingtalk|wecom|github|webhook|email|...\n  external_id   TEXT NOT NULL,             -- 平台用户 ID / open_id / email\n  display_name  TEXT,\n  kind          TEXT NOT NULL DEFAULT 'human', -- human|bot|system\n  linked_user_id TEXT,                     -- 关联本地 users.id；可为空\n  status        TEXT NOT NULL DEFAULT 'active', -- active|merged|deleted\n  metadata_json TEXT,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, source_kind, external_id)\n);",
+      "indexes": [
+        "idx_actor_link",
+        "idx_actor_status"
+      ],
+      "sha256": "f894a8f39ab8c892fec861e9cedcc61db28a23f2e0e688b9dd6154c5adbab160"
+    },
+    "sources": {
+      "ddl": "CREATE TABLE sources (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  source_id     TEXT NOT NULL UNIQUE,\n  kind          TEXT NOT NULL, -- github|feishu|wecom|dingtalk|email|webhook|schedule\n  name          TEXT NOT NULL,\n  config_json   TEXT NOT NULL,\n  status        TEXT NOT NULL DEFAULT 'active', -- active|paused|degraded\n  cursor        TEXT,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "aab8a4815dd59ffbb3f7e4b0a2e895cd2f265bdeb96266ab5af00ee98b16bb27"
+    },
+    "sso_providers": {
+      "ddl": "CREATE TABLE sso_providers (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  provider_id   TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  kind          TEXT NOT NULL,              -- oidc|oauth|ldap\n  name          TEXT NOT NULL,\n  config_json   TEXT NOT NULL,\n  allowed_email_domains_json TEXT,          -- [\"example.com\"]；空 = 不限制（需显式）\n  allowed_groups_json TEXT,                 -- 目录组白名单\n  auto_provision INTEGER NOT NULL DEFAULT 0,\n  default_role  TEXT NOT NULL DEFAULT 'member', -- admin|member|auditor\n  role_sync     TEXT NOT NULL DEFAULT 'none',   -- none|login\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, kind, name)\n);",
+      "indexes": [],
+      "sha256": "2073956947c692cd10f8ef1d82d38c9da831b028d514e081e6dd18c4ccc58423"
+    },
+    "steer_queue": {
+      "ddl": "CREATE TABLE steer_queue (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  steer_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  turn_id       TEXT NOT NULL,\n  kind          TEXT NOT NULL,              -- text|image|file\n  payload_json  TEXT NOT NULL,\n  status        TEXT NOT NULL,              -- queued|drained|removed|rejected\n  created_at    INTEGER NOT NULL,\n  drained_at    INTEGER\n);",
+      "indexes": [
+        "idx_steer_turn"
+      ],
+      "sha256": "c5ac0d8d94ac0704056f81dbbda0c0ba15175c427bd72e4ce1501fe778f40b9c"
+    },
+    "steps": {
+      "ddl": "CREATE TABLE steps (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  step_id       TEXT NOT NULL UNIQUE,\n  run_id        TEXT NOT NULL,\n  idx           INTEGER NOT NULL,\n  kind          TEXT NOT NULL, -- model|tool|approval|handoff|compact\n  status        TEXT NOT NULL, -- started|completed|failed|skipped\n  input_json    TEXT,\n  output_json   TEXT,\n  started_at    INTEGER NOT NULL,\n  finished_at   INTEGER,\n  UNIQUE (run_id, idx)\n);",
+      "indexes": [],
+      "sha256": "69bfa04e28a909eb5f039b966e73736a6c93d30cecdf799d516b79ab55fc07bf"
+    },
+    "storage_backends": {
+      "ddl": "CREATE TABLE storage_backends (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  backend_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  kind          TEXT NOT NULL,              -- local|s3|cos|tos\n  config_json   TEXT NOT NULL,\n  status        TEXT NOT NULL,              -- active|error|disabled\n  created_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, kind, backend_id)\n);",
+      "indexes": [],
+      "sha256": "9a4546cf7be5a69bcd90d527706da34ec95cea9c97f97f0e0a16e0ed8b57867d"
+    },
+    "subscriptions": {
+      "ddl": "CREATE TABLE subscriptions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  subscription_id TEXT NOT NULL UNIQUE,\n  ticket_id     TEXT NOT NULL REFERENCES tickets(ticket_id),\n  event_thread_id TEXT NOT NULL,\n  filter_json   TEXT,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (ticket_id, event_thread_id)\n);",
+      "indexes": [],
+      "sha256": "f3e03f69ded9e926848db702b522096955afd357e3f41cff6aa5eb17253adc46"
+    },
+    "team_members": {
+      "ddl": "CREATE TABLE team_members (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  team_id       TEXT NOT NULL,\n  agent_id      TEXT NOT NULL,\n  role          TEXT NOT NULL DEFAULT 'member', -- lead|member\n  created_at    INTEGER NOT NULL,\n  UNIQUE (team_id, agent_id)\n);",
+      "indexes": [],
+      "sha256": "83fd79f6a92a60f78aacb783ff66791fe0517c5f3dd8944b2bdf56bf273b9724"
+    },
+    "teams": {
+      "ddl": "CREATE TABLE teams (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  team_id       TEXT NOT NULL UNIQUE,\n  name          TEXT NOT NULL,\n  description   TEXT,\n  routing_json  TEXT,\n  created_by    TEXT NOT NULL,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  deleted_at    INTEGER,\n  version       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (tenant_id, name)\n);",
+      "indexes": [],
+      "sha256": "58bacc6d8d646f12c3956b924ef01593ae38d520bf3174ce9f11b8153e4a1bfb"
+    },
+    "tenants": {
+      "ddl": "CREATE TABLE tenants (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL UNIQUE,\n  name          TEXT NOT NULL,\n  status        TEXT NOT NULL DEFAULT 'active', -- active|suspended\n  plan          TEXT NOT NULL DEFAULT 'free',\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL\n);",
+      "indexes": [],
+      "sha256": "88f125bbd51f2e766594b88181a74e5338470bb192206231930431e746f56327"
+    },
+    "thread_branches": {
+      "ddl": "CREATE TABLE thread_branches (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  branch_id     TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  thread_id     TEXT NOT NULL,\n  parent_turn_id TEXT NOT NULL,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_branch_thread"
+      ],
+      "sha256": "d63d1d811dfd0deb6f2737cc176e8c6526dcbdf4cce7350ae6add40ade4e7d6c"
+    },
+    "threads": {
+      "ddl": "CREATE TABLE threads (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL DEFAULT 'default',\n  thread_id     TEXT NOT NULL UNIQUE,\n  owner_id      TEXT NOT NULL,\n  agent_id      TEXT,\n  agent_version_id TEXT,              -- 创建时锁定的 agent_versions.id；显式升级才变\n  title         TEXT NOT NULL DEFAULT '新对话',\n  status        TEXT NOT NULL DEFAULT 'active', -- active|archived|deleted\n  pinned        INTEGER NOT NULL DEFAULT 0,\n  branch_of     TEXT,\n  last_seq      INTEGER NOT NULL DEFAULT 0,\n  unread_count  INTEGER NOT NULL DEFAULT 0,   -- message.completed 时 +1；读后清零\n  last_message_at INTEGER,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  deleted_at    INTEGER,\n  version       INTEGER NOT NULL DEFAULT 1\n);",
+      "indexes": [
+        "idx_threads_owner"
+      ],
+      "sha256": "dd87d310b92c4cff260fb99c9e2be7c921461c644e6a9e125d90d67e426b5149"
+    },
+    "tickets": {
+      "ddl": "CREATE TABLE tickets (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  ticket_id     TEXT NOT NULL UNIQUE,\n  title         TEXT NOT NULL,\n  state         TEXT NOT NULL, -- open|ended\n  bucket        TEXT NOT NULL, -- attention|running|queued|done\n  source_id     TEXT,\n  trigger_id    TEXT,\n  actor_json    TEXT,\n  strength      TEXT NOT NULL, -- explicit|inferred\n  priority      INTEGER NOT NULL DEFAULT 0,\n  policy_version INTEGER NOT NULL,\n  scope_json    TEXT NOT NULL,\n  budget_json   TEXT,\n  cost_micros   INTEGER NOT NULL DEFAULT 0,\n  summary       TEXT,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  ended_at      INTEGER,\n  version       INTEGER NOT NULL DEFAULT 1\n);",
+      "indexes": [
+        "idx_tickets_bucket"
+      ],
+      "sha256": "2e622981b73f914668c626e86b9ddfeb203d82782cc63e93ef5833ef98faa196"
+    },
+    "timeline_events": {
+      "ddl": "CREATE TABLE timeline_events (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  event_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  ticket_id     TEXT NOT NULL,\n  kind          TEXT NOT NULL,\n  title         TEXT NOT NULL,\n  description   TEXT,\n  actor         TEXT,\n  payload_json  TEXT,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_timeline_ticket"
+      ],
+      "sha256": "a01bb17fdde6e53a565aff05c375d09a4ed8871d8740c764e74d4e687d3eb8fc"
+    },
+    "tool_calls": {
+      "ddl": "CREATE TABLE tool_calls (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tool_call_id  TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  turn_id       TEXT NOT NULL,\n  run_id        TEXT,\n  tool_key      TEXT NOT NULL,\n  args_json     TEXT NOT NULL,\n  result_json   TEXT,\n  status        TEXT NOT NULL,               -- running|completed|failed|denied\n  risk          TEXT NOT NULL,\n  approval_id   TEXT,\n  started_at    INTEGER NOT NULL,\n  ended_at      INTEGER,\n  error_code    TEXT\n);",
+      "indexes": [
+        "idx_toolcall_turn"
+      ],
+      "sha256": "a4fd3a123ea21e43625df53635e5f1fac04d7d4efa2ffb315ea59b8de28663a5"
+    },
+    "tool_settings": {
+      "ddl": "CREATE TABLE tool_settings (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  agent_id      TEXT NOT NULL,\n  tool_key      TEXT NOT NULL REFERENCES tools(tool_key),\n  enabled       INTEGER NOT NULL DEFAULT 1,\n  config_json   TEXT,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, agent_id, tool_key)\n);",
+      "indexes": [],
+      "sha256": "f31cedad91e191013874e23edcbb2d3bcef682b0f43782d8ff7d974a1f923e71"
+    },
+    "tools": {
+      "ddl": "-- 能力：工具注册表、逐 Agent 开关、策略规则\nCREATE TABLE tools (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tool_key      TEXT NOT NULL UNIQUE,      -- builtin.http_get / mcp.github.create_issue\n  source        TEXT NOT NULL,             -- builtin|mcp|plugin|openapi|skill\n  version       TEXT NOT NULL,\n  spec_json     TEXT NOT NULL,             -- name/description/input_schema/risk/scopes/renderer\n  enabled_global INTEGER NOT NULL DEFAULT 1,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL\n);",
+      "indexes": [],
+      "sha256": "f69a4732c0fafaeb9ecd88665f4b6bb8200b542494064d6aee9c67241057f9cd"
+    },
+    "triggers": {
+      "ddl": "CREATE TABLE triggers (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  trigger_id    TEXT NOT NULL UNIQUE,\n  source_id     TEXT NOT NULL,\n  dedupe_key    TEXT NOT NULL,\n  thread_key    TEXT NOT NULL,\n  actor_id      TEXT,                      -- source_actors.actor_id\n  actor_kind    TEXT,                      -- human|bot|system\n  payload_json  TEXT NOT NULL,\n  disposition   TEXT, -- accepted|filtered|duplicate|unavailable\n  received_at   INTEGER NOT NULL,\n  UNIQUE (source_id, dedupe_key)\n);",
+      "indexes": [
+        "idx_triggers_thread",
+        "idx_triggers_actor"
+      ],
+      "sha256": "4a98368356fea28aaedbe10083b3108b30fc7bcf71ca0faa1379d35c4f8a7ffe"
+    },
+    "turns": {
+      "ddl": "CREATE TABLE turns (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  turn_id       TEXT NOT NULL UNIQUE,\n  thread_id     TEXT NOT NULL,\n  agent_version_id TEXT,              -- Turn 开始时快照；同 thread 内可不同（升级后新 Turn 用新版）\n  user_message_id TEXT,\n  status        TEXT NOT NULL, -- queued|running|waiting_approval|waiting_input|completed|failed|cancelled\n  mode          TEXT NOT NULL DEFAULT 'act', -- act|ask|plan\n  model         TEXT,\n  policy_json   TEXT,\n  budget_json   TEXT,\n  seq           INTEGER NOT NULL,\n  started_at    INTEGER,\n  finished_at   INTEGER,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  version       INTEGER NOT NULL DEFAULT 1\n);",
+      "indexes": [
+        "idx_turns_thread",
+        "idx_turns_status"
+      ],
+      "sha256": "b401e851582b25447bfa8d378328f512a3bab3ea72ad86481f69944623edf17a"
+    },
+    "usage_ledger": {
+      "ddl": "CREATE TABLE usage_ledger (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  entry_id      TEXT NOT NULL UNIQUE,\n  user_id       TEXT,\n  agent_id      TEXT,\n  ticket_id     TEXT,\n  turn_id       TEXT,\n  model         TEXT,\n  provider      TEXT,\n  input_tokens  INTEGER NOT NULL DEFAULT 0,\n  output_tokens INTEGER NOT NULL DEFAULT 0,\n  cache_read    INTEGER NOT NULL DEFAULT 0,\n  cache_write   INTEGER NOT NULL DEFAULT 0,\n  reasoning     INTEGER NOT NULL DEFAULT 0,\n  cost_micros   INTEGER NOT NULL DEFAULT 0,\n  latency_ms    INTEGER,\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_usage_scope"
+      ],
+      "sha256": "7f928266992815bf01caa63ec9526dc306f713507933bf6458ef448e6a47d8f4"
+    },
+    "user_mfa": {
+      "ddl": "CREATE TABLE user_mfa (\n  id                  INTEGER PRIMARY KEY AUTOINCREMENT,\n  user_id             TEXT NOT NULL,\n  method              TEXT NOT NULL,          -- totp|webauthn\n  credential_id       TEXT NOT NULL DEFAULT '',\n  secret_enc          TEXT,\n  credential_json     TEXT,\n  recovery_codes_enc  TEXT,\n  enabled             INTEGER NOT NULL DEFAULT 0,\n  created_at          INTEGER NOT NULL,\n  last_used_at        INTEGER,\n  UNIQUE (user_id, method, credential_id)\n);",
+      "indexes": [],
+      "sha256": "e55c0c917aa31b3038d3d346535b29dff9a76f6944320ed8a94d0e296eb9a12a"
+    },
+    "user_preferences": {
+      "ddl": "CREATE TABLE user_preferences (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  user_id       TEXT NOT NULL UNIQUE,\n  preferences_json TEXT NOT NULL,\n  version       INTEGER NOT NULL DEFAULT 1,\n  updated_at    INTEGER NOT NULL\n);",
+      "indexes": [],
+      "sha256": "d32d8ee87807e2fe081ba68d2f59391f2bc73dbdb308d840f173d7aa5b809cb9"
+    },
+    "user_roles": {
+      "ddl": "CREATE TABLE user_roles (\n  user_id       TEXT NOT NULL,\n  role_id       TEXT NOT NULL,\n  created_at    INTEGER NOT NULL,\n  PRIMARY KEY (user_id, role_id)\n);",
+      "indexes": [],
+      "sha256": "6e860bef6a7d8886571c568c2ae6b9ce8e2cb215d66ff40d96eb2c43f76d921e"
+    },
+    "users": {
+      "ddl": "CREATE TABLE users (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL DEFAULT 'default',\n  user_id       TEXT NOT NULL UNIQUE,\n  username      TEXT NOT NULL,\n  display_name  TEXT,\n  email         TEXT,\n  password_hash TEXT,\n  avatar        TEXT,\n  status        TEXT NOT NULL DEFAULT 'active', -- active|disabled|invited\n  is_owner      INTEGER NOT NULL DEFAULT 0,\n  last_login_at INTEGER,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  deleted_at    INTEGER,\n  version       INTEGER NOT NULL DEFAULT 1,\n  UNIQUE (tenant_id, username),\n  UNIQUE (tenant_id, email)\n);",
+      "indexes": [
+        "idx_users_tenant_status"
+      ],
+      "sha256": "4a7462a8283954a987cc495b50b613786f3df2bacc8fc14cbf66158b52cf0127"
+    },
+    "watchdog_alerts": {
+      "ddl": "CREATE TABLE watchdog_alerts (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  alert_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  assignment_id TEXT NOT NULL,\n  kind          TEXT NOT NULL,              -- stalled|drifting|error_loop\n  detail        TEXT NOT NULL,\n  action        TEXT NOT NULL,              -- notify|stop|requeue\n  status        TEXT NOT NULL,              -- open|acked|resolved\n  created_at    INTEGER NOT NULL\n);",
+      "indexes": [
+        "idx_watchdog_open"
+      ],
+      "sha256": "118f0a56be757651cb507890e6fb0816a8784c7832f268fd1b3fca3602f36335"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 PY ?= python
 export PYTHONPATH := src
 
-.PHONY: setup lint type imports test contracts check-contracts contracts-runtime doctor migrate check
+.PHONY: setup lint type imports schema test contracts check-contracts contracts-runtime doctor migrate check
 
 setup:
 	uv sync
@@ -14,6 +14,9 @@ type:
 
 imports:
 	lint-imports
+
+schema:
+	$(PY) tools/extract_ddl.py --check
 
 test:
 	$(PY) -m pytest
@@ -33,5 +36,5 @@ doctor:
 migrate:
 	$(PY) -m polyopus migrate
 
-check: lint type imports test check-contracts
+check: lint type imports schema test check-contracts
 	$(PY) contracts/coverage_check.py
