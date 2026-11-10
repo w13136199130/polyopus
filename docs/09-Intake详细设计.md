@@ -18,7 +18,7 @@
 | I2 | 没有 Mandate 不允许执行任何有副作用的工具 | 执行前 scope 校验，fail-closed |
 | I3 | Ticket 状态只能由 **Eval / 人 / Policy** 改变，Executor 不行 | Executor 只有 `report` 权限 |
 | I4 | Subscription 只提供上下文，不提供权限 | 代码层不把 subscription 当授权 |
-| I5 | 每条 Trigger 都有 disposition（含被过滤的） | 写 `trigger_threads.disposition` |
+| I5 | 每条 Trigger 都有 disposition（含被过滤的） | 写 `triggers.disposition` |
 | I6 | 重启不重放已消费事件 | `sources.read_position_json` + 幂等双保险 |
 
 ---
@@ -140,7 +140,7 @@ POST /api/v1/webhooks/{source_id}
   → verify（失败 401）
   → normalize
   → is_self? → 200 {ignored:"self"}
-  → 事务：insert trigger (on conflict → existing) + trigger_threads(disposition=pending)
+  → 事务：insert trigger（on conflict → existing；disposition=pending）
   → 202 {trigger_id, duplicate:bool}
   → enqueue EvalJob(event_thread_id)（同 thread 串行：DB 唯一键或 queue 分组）
 ```
@@ -614,7 +614,7 @@ WHERE assignment_id = (
 | 数据 | 保留 | 说明 |
 |---|---|---|
 | `triggers.raw` | 30 天 | 脱敏后；可配 |
-| `trigger_threads`（disposition） | 180 天 | 调参与审计 |
+| `triggers`（disposition） | 180 天 | 调参与审计 |
 | `evaluations` | 180 天 | 含理由与 token |
 | `tickets/assignments/reports` | 永久（随租户删除） | 工单是业务记录 |
 | `attentions` | 永久 | 含回答人 |

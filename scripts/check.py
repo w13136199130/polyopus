@@ -34,6 +34,7 @@ def build_steps() -> list[tuple[str, list[str] | None, str | None]]:
         ("imports", imports, None if imports else "lint-imports not installed"),
         ("test", [PY, "-m", "pytest"], None),
         ("schema", [PY, "tools/extract_ddl.py", "--check"], None),
+        ("errors", [PY, "tools/extract_errors.py", "--check"], None),
         ("contracts", [PY, "-m", "contracts.check"], None),
         ("coverage", [PY, "contracts/coverage_check.py"], None),
     ]

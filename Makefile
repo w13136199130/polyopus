@@ -17,6 +17,8 @@ imports:
 
 schema:
 	$(PY) tools/extract_ddl.py --check
+	errors:
+	$(PY) tools/extract_errors.py --check
 
 test:
 	$(PY) -m pytest
@@ -36,5 +38,5 @@ doctor:
 migrate:
 	$(PY) -m polyopus migrate
 
-check: lint type imports schema test check-contracts
+check: lint type imports schema errors test check-contracts
 	$(PY) contracts/coverage_check.py
