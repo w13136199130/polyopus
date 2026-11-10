@@ -40,11 +40,11 @@ def test_core_migration_creates_twelve_tables(tmp_path: Path) -> None:
     conn = m.connect(tmp_path / "t.db")
     try:
         applied = m.apply(conn, m.discover(MIGRATIONS))
-        assert [x.version for x in applied] == [1]
+        assert [x.version for x in applied] == [1, 2]
         assert CORE <= _tables(conn)
         count = conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0]
-        assert count == 1
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert count == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
     finally:
         conn.close()
 
@@ -64,7 +64,7 @@ def test_pending_before_apply(tmp_path: Path) -> None:
     conn = m.connect(tmp_path / "t.db")
     try:
         migrations = m.discover(MIGRATIONS)
-        assert [x.version for x in m.pending(conn, migrations)] == [1]
+        assert [x.version for x in m.pending(conn, migrations)] == [1, 2]
     finally:
         conn.close()
 
@@ -103,3 +103,57 @@ def test_invalid_migration_name_rejected(tmp_path: Path) -> None:
     with pytest.raises(m.MigratorError) as exc:
         m.discover(mig_dir)
     assert exc.value.code == "MIGRATION_NAME_INVALID"
+
+
+def _copy(tmp_path: Path, *names: str) -> Path:
+    mig_dir = tmp_path / "migrations"
+    mig_dir.mkdir(exist_ok=True)
+    for name in names:
+        shutil.copy(MIGRATIONS / name, mig_dir / name)
+    return mig_dir
+
+
+def test_partial_upgrade_applies_only_new(tmp_path: Path) -> None:
+    mig_dir = _copy(tmp_path, "0001_core.sql", "0002_seed.sql")
+    conn = m.connect(tmp_path / "t.db")
+    try:
+        all_migrations = m.discover(mig_dir)
+        assert [x.version for x in m.apply(conn, [all_migrations[0]])] == [1]
+        assert [x.version for x in m.apply(conn, all_migrations)] == [2]
+        assert m.pending(conn, all_migrations) == []
+    finally:
+        conn.close()
+
+
+def test_failed_migration_rolls_back(tmp_path: Path) -> None:
+    mig_dir = tmp_path / "migrations"
+    mig_dir.mkdir()
+    (mig_dir / "0001_ok.sql").write_text("CREATE TABLE ok (id INTEGER);", encoding="utf-8")
+    (mig_dir / "0002_bad.sql").write_text(
+        "CREATE TABLE bad (id INTEGER);\nINSERT INTO missing_table VALUES (1);",
+        encoding="utf-8",
+    )
+    conn = m.connect(tmp_path / "t.db")
+    try:
+        with pytest.raises(m.MigratorError) as exc:
+            m.apply(conn, m.discover(mig_dir))
+        assert exc.value.code == "MIGRATION_FAILED"
+        assert "ok" in _tables(conn)
+        assert "bad" not in _tables(conn)
+        versions = [r[0] for r in conn.execute("SELECT version FROM schema_migrations")]
+        assert versions == [1]
+    finally:
+        conn.close()
+
+
+def test_schema_too_new_is_rejected(tmp_path: Path) -> None:
+    mig_dir = _copy(tmp_path, "0001_core.sql", "0002_seed.sql")
+    conn = m.connect(tmp_path / "t.db")
+    try:
+        migrations = m.discover(mig_dir)
+        m.apply(conn, migrations)
+        with pytest.raises(m.MigratorError) as exc:
+            m.pending(conn, [migrations[0]])
+        assert exc.value.code == "SCHEMA_TOO_NEW"
+    finally:
+        conn.close()

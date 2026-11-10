@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
 import sys
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from polyopus.platform.db.migrator import (
     pending,
     render,
 )
+from polyopus.platform.db.seed import ensure_admin
 
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS_DIR = ROOT / "migrations"
@@ -72,6 +74,8 @@ def _check_migrations(db_path: Path) -> tuple[str, str]:
     conn = connect(db_path)
     try:
         pend = pending(conn, migrations)
+    except MigratorError as exc:
+        return CHECK_FAIL, f"{exc.code}: {exc.message}"
     finally:
         conn.close()
     if pend:
@@ -117,6 +121,10 @@ def _pending_migrations(db_path: Path) -> list[Migration]:
 def cmd_migrate(args: argparse.Namespace) -> int:
     settings = load_settings()
     db_path = settings.resolved_db_path()
+    fresh = not db_path.exists()
+    created_admin = False
+    one_time_password = ""
+
     try:
         migrations = discover(MIGRATIONS_DIR)
         if args.sql:
@@ -126,7 +134,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
             pend = _pending_migrations(db_path)
             if pend:
                 names = ", ".join(m.path.name for m in pend)
-                print(f"{len(pend)} pending: {names}")
+                print(f"{len(pend)} pending: {names}\nrun: poly migrate")
                 return 1
             print("up to date")
             return 0
@@ -134,6 +142,10 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         conn = connect(db_path)
         try:
             applied = apply(conn, migrations)
+            if fresh and applied:
+                created_admin, one_time_password = ensure_admin(
+                    conn, password=os.environ.get("POLY_ADMIN_PASSWORD")
+                )
         finally:
             conn.close()
     except MigratorError as exc:
@@ -144,6 +156,10 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         print("applied: " + ", ".join(m.path.name for m in applied))
     else:
         print("up to date")
+
+    if created_admin:
+        print(f"admin created: username=admin password={one_time_password}")
+        print("store this password now; it will not be shown again")
     return 0
 
 
