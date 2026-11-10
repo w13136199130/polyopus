@@ -11,3 +11,4 @@ data/
 *.db-shm
 .idea/
 .vscode/
+.env

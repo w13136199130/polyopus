@@ -90,10 +90,13 @@ def test_fake_model_matches_gateway_protocol() -> None:
     asyncio.run(run())
 
 
+NO_ENV = {"env_base_url": "", "env_api_key": "", "env_model": ""}
+
+
 def test_registry_falls_back_to_fake(tmp_path: Path) -> None:
     conn = m.connect(tmp_path / "t.db")
     m.apply(conn, m.discover(MIGRATIONS))
-    registry = Registry(conn)
+    registry = Registry(conn, **NO_ENV)
     resolved = registry.resolve(None)
     assert resolved.fake is True
     conn.close()
@@ -124,7 +127,7 @@ def test_registry_reads_models_table(tmp_path: Path) -> None:
         (json.dumps({"max_input_tokens": 131072, "supports_tools": True}),),
     )
     conn.commit()
-    registry = Registry(conn)
+    registry = Registry(conn, **NO_ENV)
     resolved = registry.resolve("qwen3")
     assert resolved.fake is False
     assert resolved.caps.max_input_tokens == 131072

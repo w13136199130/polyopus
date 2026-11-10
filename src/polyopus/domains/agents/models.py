@@ -13,7 +13,12 @@ import sqlite3
 from dataclasses import dataclass
 
 from polyopus.kernel.models.fake import FakeModel
-from polyopus.kernel.models.gateway import ModelCaps, ModelGateway, ModelRequest
+from polyopus.kernel.models.gateway import (
+    ChatMessage,
+    ModelCaps,
+    ModelGateway,
+    ModelRequest,
+)
 from polyopus.kernel.models.openai_compat import OpenAICompatProvider, ProviderConfig
 
 
@@ -27,8 +32,16 @@ class Resolved:
 
 
 class Registry:
-    def __init__(self, conn: sqlite3.Connection | None = None, env_base_url: str = "",
-                 env_api_key: str = "", env_model: str = "") -> None:
+    def __init__(self, conn: sqlite3.Connection | None = None, env_base_url: str | None = None,
+                 env_api_key: str | None = None, env_model: str | None = None) -> None:
+        # default to instance settings so every caller (engine, doctor) sees
+        # the same provider without threading env through each call site
+        if env_base_url is None or env_api_key is None or env_model is None:
+            from polyopus.config import load_settings
+            settings = load_settings()
+            env_base_url = settings.model_base_url if env_base_url is None else env_base_url
+            env_api_key = settings.model_api_key if env_api_key is None else env_api_key
+            env_model = settings.model_name if env_model is None else env_model
         self._conn = conn
         self._env_base_url = env_base_url.rstrip("/")
         self._env_api_key = env_api_key
@@ -102,10 +115,13 @@ class Registry:
             import asyncio
 
             async def probe_stream() -> None:
+                # one minimal message: most providers reject empty arrays
                 async for _delta in resolved.gateway.stream(
                     ModelRequest(
                         model=resolved.model,
-                        messages=(),
+                        messages=(
+                            ChatMessage(role="user", content="ping"),
+                        ),
                         max_output_tokens=1,
                         temperature=0,
                     )

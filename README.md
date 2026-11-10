@@ -29,7 +29,7 @@ uv run python scripts/demo_kill9.py
 | 命令 | 作用 |
 |---|---|
 | `poly doctor` | 6 项自检（含模型探活） |
-| `POLY_MODEL_BASE_URL/_API_KEY/_NAME` | 接 OpenAI 兼容真模型；不配则 FakeModel |
+| `POLY_MODEL_BASE_URL/_API_KEY/_NAME` | 接 OpenAI 兼容真模型（已实测 deepseek-flash）；不配则 FakeModel。**key 写 `.env`（已 gitignore），绝不入库** |
 | `poly migrate` / `--check` / `--sql` | 应用 / 只检查 / 只打印迁移 |
 | `poly recover` | 恢复租约过期的 run |
 | `poly serve` | 启动 HTTP API（`/healthz`、`/api/v1`） |
