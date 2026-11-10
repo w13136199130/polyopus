@@ -6,7 +6,9 @@ Also proves the restart invariant: the approval survives a fresh connection
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -15,11 +17,8 @@ from fastapi.testclient import TestClient
 
 from polyopus.api.app import create_app
 from polyopus.config import Settings
-from polyopus.kernel.models import FakeModel
 from polyopus.platform.db import migrator as m
 from polyopus.platform.db.seed import ensure_admin
-from polyopus.platform.events.store import EventStore
-from polyopus.workers import engine
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / "migrations"
@@ -47,40 +46,35 @@ def _post_turn(client: TestClient, thread_id: str, content: str) -> str:
     return response.json()["turnId"]
 
 
-def _run(db: Path, turn_id: str, require_approval: bool) -> str:
-    conn = m.connect(db)
-    try:
-        import asyncio
-
-        result = asyncio.run(
-            engine.run_turn(
-                conn,
-                EventStore(conn),
-                turn_id,
-                config=engine.EngineConfig(require_approval=require_approval),
-                model=FakeModel(chunk_words=2, delay_seconds=0),
-            )
-        )
-        return result
-    finally:
-        conn.close()
+def _wait_status(db: Path, turn_id: str, status: str, timeout: float = 15.0) -> None:
+    """The API launches the engine in a background thread; wait for the row."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        conn = sqlite3.connect(str(db), timeout=5)
+        try:
+            row = conn.execute(
+                "SELECT status FROM turns WHERE turn_id = ?", (turn_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row and row[0] == status:
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"turn did not reach {status}")
 
 
 def test_stream_to_completion(env: tuple[Path, TestClient]) -> None:
     db, client = env
     thread_id = client.post("/api/v1/threads", json={"title": "t"}).json()["threadId"]
     turn_id = _post_turn(client, thread_id, "hello world again")
-
-    assert _run(db, turn_id, require_approval=False) == "completed"
+    _wait_status(db, turn_id, "completed")
 
     types = [
         line.split("data: ", 1)[1]
         for line in client.get(f"/api/v1/threads/{thread_id}/events?after_seq=0").text.splitlines()
         if line.startswith("data: ")
     ]
-    import json as _json
-
-    seq_types = [_json.loads(t)["type"] for t in types]
+    seq_types = [json.loads(t)["type"] for t in types]
     assert seq_types[0] == "turn.queued"
     assert "message.delta" in seq_types
     assert seq_types[-1] == "turn.finished"
@@ -97,9 +91,8 @@ def test_approval_pause_answer_resume(env: tuple[Path, TestClient]) -> None:
     db, client = env
     thread_id = client.post("/api/v1/threads", json={"title": "t2"}).json()["threadId"]
     turn_id = _post_turn(client, thread_id, "write this file please")
-
-    # simulate a "restart": engine runs in a fresh connection
-    assert _run(db, turn_id, require_approval=True) == "waiting_approval"
+    # "write" routes through the demo policy gate; the engine thread pauses
+    _wait_status(db, turn_id, "waiting_approval")
 
     # turn is paused; the approval shows up in the inbox
     inbox = client.get("/api/v1/attentions").json()["items"]
@@ -122,11 +115,9 @@ def test_approval_pause_answer_resume(env: tuple[Path, TestClient]) -> None:
     conn.close()
     assert final == "completed"
 
-    import json as _json
-
     stream = client.get(f"/api/v1/threads/{thread_id}/events?after_seq=0").text
     seq_types = [
-        _json.loads(line.split("data: ", 1)[1])["type"]
+        json.loads(line.split("data: ", 1)[1])["type"]
         for line in stream.splitlines()
         if line.startswith("data: ")
     ]
@@ -145,8 +136,7 @@ def test_denied_still_completes_the_turn(env: tuple[Path, TestClient]) -> None:
     db, client = env
     thread_id = client.post("/api/v1/threads", json={"title": "t3"}).json()["threadId"]
     turn_id = _post_turn(client, thread_id, "dangerous write")
-
-    assert _run(db, turn_id, require_approval=True) == "waiting_approval"
+    _wait_status(db, turn_id, "waiting_approval")
     attention_id = client.get("/api/v1/attentions").json()["items"][0]["attentionId"]
 
     answer = client.post(f"/api/v1/attentions/{attention_id}/answer",

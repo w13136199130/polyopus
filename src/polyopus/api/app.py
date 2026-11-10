@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from polyopus import __version__
@@ -14,6 +16,7 @@ from polyopus.platform.errors import AppError
 from polyopus.platform.telemetry import log as tlog
 
 logger = tlog.get_logger("polyopus.api")
+WEB = Path(__file__).resolve().parent.parent / "web"
 
 HTTP_CODE_MAP = {
     400: "VALIDATION_FAILED",
@@ -93,6 +96,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
+
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(WEB / "index.html")
 
     return app
 

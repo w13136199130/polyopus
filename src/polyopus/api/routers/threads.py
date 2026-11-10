@@ -76,6 +76,7 @@ def list_messages(
 def post_turn(
     thread_id: str,
     body: PostTurnBody,
+    request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
@@ -89,6 +90,13 @@ def post_turn(
         thread_id=thread_id,
         content=body.content,
         idempotency_key=idempotency_key or body.clientMessageId,
+    )
+    from polyopus.workers import runner
+
+    runner.launch_turn(
+        request.app.state.settings.resolved_db_path,
+        turn_id,
+        body.content,
     )
     return {"turnId": turn_id, "messageId": message_id, "status": "queued"}
 

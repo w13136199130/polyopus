@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PolyOpus</title>
+<style>
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#fafafa; --surface-3:#f0f2f5;
+  --text:#1a1d24; --text-2:#5c6470; --text-3:#9aa3af;
+  --line:#e4e7ec; --accent:#4f6ef7; --accent-2:#3d5be0;
+  --ok:#16a34a; --warn:#d97706; --danger:#dc2626;
+  --radius:10px; --font:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0f1115;--surface:#171a21;--surface-2:#1c2029;--surface-3:#232833;
+    --text:#e6e9ef;--text-2:#9aa3af;--text-3:#6b7280;--line:#2a2f3a}
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);font-size:14px;color:var(--text);background:var(--bg);height:100vh;display:flex}
+button{font-family:inherit;cursor:pointer;border:none;border-radius:8px;padding:8px 14px;font-size:13px}
+input,textarea{font-family:inherit;font-size:14px;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;outline:none}
+input:focus,textarea:focus{border-color:var(--accent)}
+/* ---- login ---- */
+.login{margin:auto;width:340px;display:flex;flex-direction:column;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px}
+.login h1{margin:0;font-size:18px;text-align:center}
+.login .sub{color:var(--text-3);text-align:center;font-size:12px;margin-top:-6px}
+.login button{background:var(--accent);color:#fff}
+.login .err{color:var(--danger);font-size:12px;min-height:16px}
+/* ---- shell ---- */
+.shell{display:none;flex:1;min-width:0}
+.rail{width:250px;flex:none;border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column}
+.rail header{padding:14px 14px 8px;display:flex;justify-content:space-between;align-items:center}
+.rail header b{font-size:15px}
+.rail .new{background:var(--surface-3);color:var(--text);padding:5px 10px;font-size:12px}
+.threads{flex:1;overflow:auto;padding:6px}
+.thread{padding:9px 10px;border-radius:8px;cursor:pointer;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread:hover{background:var(--surface-3)}
+.thread.on{background:var(--surface-3);color:var(--text);font-weight:600}
+.rail footer{padding:10px 14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;color:var(--text-3);font-size:12px}
+.rail footer button{background:none;color:var(--text-3);padding:4px 6px}
+/* ---- chat ---- */
+.chat{flex:1;min-width:0;display:flex;flex-direction:column}
+.msgs{flex:1;overflow:auto;padding:20px 8%;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:78%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.msg.assistant{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.assistant.streaming::after{content:"▋";animation:blink 1s steps(2) infinite;color:var(--text-3)}
+@keyframes blink{50%{opacity:0}}
+.empty{margin:auto;color:var(--text-3);text-align:center;line-height:2}
+/* ---- approval card ---- */
+.card{align-self:flex-start;width:78%;background:var(--surface);border:1px solid var(--warn);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.card .t{display:flex;gap:8px;align-items:center;color:var(--warn);font-weight:600}
+.card .risk{font-size:11px;background:var(--warn);color:#fff;border-radius:6px;padding:1px 6px}
+.card .tool{font-family:ui-monospace,Consolas,monospace;background:var(--surface-3);border-radius:6px;padding:8px;font-size:12px;white-space:pre-wrap;word-break:break-all}
+.card .ops{display:flex;gap:8px}
+.card .ops .yes{background:var(--ok);color:#fff}
+.card .ops .no{background:var(--surface-3);color:var(--text)}
+.card.done{border-color:var(--line);opacity:.75}
+.card.done .t{color:var(--text-3)}
+.hint{align-self:center;color:var(--text-3);font-size:12px}
+/* ---- composer ---- */
+.composer{border-top:1px solid var(--line);background:var(--surface);padding:14px 8%}
+.composer .row{display:flex;gap:10px}
+.composer textarea{flex:1;resize:none;height:44px;max-height:120px}
+.composer .send{background:var(--accent);color:#fff;width:52px}
+.composer .send:disabled{opacity:.4;cursor:default}
+.composer .meta{color:var(--text-3);font-size:11px;margin-top:6px;min-height:14px}
+</style>
+</head>
+<body>
+<div class="login" id="login">
+  <h1>PolyOpus</h1>
+  <div class="sub">切片① · 对话与审批</div>
+  <input id="u" placeholder="用户名" autocomplete="username" />
+  <input id="p" type="password" placeholder="密码" autocomplete="current-password" />
+  <div class="err" id="lerr"></div>
+  <button id="loginBtn">登录</button>
+</div>
+
+<div class="shell" id="shell">
+  <div class="rail">
+    <header><b>会话</b><button class="new" id="newThread">＋ 新建</button></header>
+    <div class="threads" id="threads"></div>
+    <footer><span id="who"></span><button id="logout" title="退出">⎋</button></footer>
+  </div>
+  <div class="chat">
+    <div class="msgs" id="msgs"><div class="empty">发一条消息开始<br/>消息里包含「写 / 删除 / write」会触发审批</div></div>
+    <div class="composer">
+      <div class="row">
+        <textarea id="input" placeholder="输入消息，Enter 发送"></textarea>
+        <button class="send" id="send">➤</button>
+      </div>
+      <div class="meta" id="meta"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { threadId: null, lastSeq: 0, es: null, user: null, streaming: null };
+
+const api = async (path, opts = {}) => {
+  const res = await fetch("/api/v1" + path, {
+    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+    ...opts,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error?.code || res.status),
+    { code: body.error?.code, message: body.error?.message });
+  return body;
+};
+
+/* ---- auth ---- */
+async function boot() {
+  try { const me = await api("/auth/me"); enter(me.user); }
+  catch { $("login").style.display = "flex"; }
+}
+async function doLogin() {
+  $("lerr").textContent = "";
+  try {
+    const r = await api("/auth/login", { method: "POST",
+      body: JSON.stringify({ username: $("u").value, password: $("p").value }) });
+    enter(r.user);
+  } catch (e) { $("lerr").textContent = e.message || e.code || "登录失败"; }
+}
+function enter(user) {
+  state.user = user;
+  $("login").style.display = "none";
+  $("shell").style.display = "flex";
+  $("who").textContent = user.username;
+  loadThreads();
+}
+async function doLogout() {
+  try { await api("/auth/logout", { method: "POST" }); } catch {}
+  location.reload();
+}
+
+/* ---- threads ---- */
+async function loadThreads() {
+  const { items } = await api("/threads");
+  const box = $("threads"); box.innerHTML = "";
+  for (const t of items) {
+    const el = document.createElement("div");
+    el.className = "thread" + (t.threadId === state.threadId ? " on" : "");
+    el.textContent = t.title; el.title = t.title;
+    el.onclick = () => openThread(t.threadId);
+    box.appendChild(el);
+  }
+  if (!state.threadId && items.length) openThread(items[0].threadId);
+}
+async function newThread() {
+  const t = await api("/threads", { method: "POST", body: JSON.stringify({ title: "新对话" }) });
+  state.threadId = null; await loadThreads(); openThread(t.threadId);
+}
+
+/* ---- chat ---- */
+async function openThread(threadId) {
+  state.threadId = threadId; state.lastSeq = 0;
+  if (state.es) state.es.close();
+  document.querySelectorAll(".thread").forEach(el =>
+    el.classList.toggle("on", el.textContent && el.onclick));
+  const msgs = $("msgs"); msgs.innerHTML = "";
+  const { items } = await api(`/threads/${threadId}/messages`);
+  for (const m of items) addBubble(m.role, m.content, m.status);
+  loadThreads();
+  follow();
+}
+function follow() {
+  state.es = new EventSource(
+    `/api/v1/threads/${state.threadId}/events?after_seq=${state.lastSeq}&follow=true`);
+  state.es.onmessage = (e) => handle(JSON.parse(e.data));
+  state.es.onerror = () => { /* browser retries; after_seq resumes */ };
+}
+function addBubble(role, content, status) {
+  const el = document.createElement("div");
+  el.className = `msg ${role}` + (status === "streaming" ? " streaming" : "");
+  el.textContent = content;
+  $("msgs").appendChild(el);
+  $("msgs").scrollTop = $("msgs").scrollHeight;
+  return el;
+}
+function hint(text) {
+  const el = document.createElement("div"); el.className = "hint"; el.textContent = text;
+  $("msgs").appendChild(el); $("msgs").scrollTop = $("msgs").scrollHeight;
+}
+
+/* ---- stream state machine (docs/33 §5.2.1, simplified) ---- */
+function handle(ev) {
+  state.lastSeq = ev.seq;
+  const p = ev.payload;
+  switch (ev.type) {
+    case "message.delta": {
+      if (!state.streaming) {
+        const el = addBubble("assistant", "", "streaming");
+        state.streaming = { el, text: "" };
+      }
+      state.streaming.text += p.text;
+      state.streaming.el.textContent = state.streaming.text;
+      $("msgs").scrollTop = $("msgs").scrollHeight;
+      break;
+    }
+    case "message.started": {
+      state.streaming = { el: addBubble("assistant", "", "streaming"), text: "" };
+      break;
+    }
+    case "message.completed": {
+      if (state.streaming) {
+        state.streaming.el.classList.remove("streaming");
+        state.streaming.el.textContent =
+          (p.blocks || []).filter(b => b.type === "text").map(b => b.text).join("");
+        state.streaming = null;
+      }
+      break;
+    }
+    case "approval.requested": {
+      renderApproval(p); setMeta("等待审批…"); break;
+    }
+    case "approval.resolved": {
+      const card = document.querySelector(`[data-approval="${p.approval_id}"]`);
+      if (card) {
+        card.classList.add("done");
+        const t = card.querySelector(".t");
+        t.textContent = p.decision === "denied" ? "✕ 已拒绝" :
+          p.decision === "expired" ? "⏱ 已过期（自动拒绝）" : "✓ 已批准";
+        card.querySelector(".ops").remove();
+      }
+      break;
+    }
+    case "turn.finished": {
+      setMeta(p.status === "completed" ? "完成" : `结束：${p.status}`);
+      $("send").disabled = false; $("input").disabled = false;
+      break;
+    }
+    case "turn.started": setMeta("生成中…"); break;
+    case "turn.resumed": hint(`↻ 从第 ${p.from_step} 步恢复（${p.reason}）`); break;
+  }
+}
+function setMeta(t) { $("meta").textContent = t; }
+
+/* ---- approval card ---- */
+function renderApproval(p) {
+  const action = (p.actions || [])[0] || {};
+  const card = document.createElement("div");
+  card.className = "card";
+  card.dataset.approval = p.approval_id;
+  card.innerHTML = `
+    <div class="t"><span class="risk">${action.risk || "high"}</span> 需要审批 · ${p.summary || action.tool || ""}</div>
+    <div class="tool">${action.tool || "tool"}\n${action.args_preview || ""}</div>
+    <div class="ops">
+      <button class="yes">批准</button><button class="no">拒绝</button>
+    </div>`;
+  card.querySelector(".yes").onclick = () => answer(card, p.approval_id, "approve");
+  card.querySelector(".no").onclick = () => answer(card, p.approval_id, "deny");
+  $("msgs").appendChild(card); $("msgs").scrollTop = $("msgs").scrollHeight;
+}
+async function answer(card, approvalId, decision) {
+  card.querySelector(".ops").disabled = true;
+  try {
+    const { items } = await api("/attentions");
+    const at = items.find(i => i.sourceId === approvalId && i.status === "pending");
+    if (!at) throw new Error("待决项已不存在");
+    await api(`/attentions/${at.attentionId}/answer`, {
+      method: "POST", body: JSON.stringify({ decision }) });
+    /* approval.resolved event updates the card */
+  } catch (e) {
+    setMeta("操作失败：" + (e.code || e.message));
+    card.querySelector(".ops").disabled = false;
+  }
+}
+
+/* ---- send ---- */
+async function send() {
+  const content = $("input").value.trim();
+  if (!content || !state.threadId) return;
+  $("input").value = "";
+  addBubble("user", content, "completed");
+  $("send").disabled = true; $("input").disabled = true;
+  setMeta("发送中…");
+  try {
+    await api(`/threads/${state.threadId}/turns`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ content }),
+    });
+  } catch (e) {
+    setMeta("发送失败：" + (e.code || e.message));
+    $("send").disabled = false; $("input").disabled = false;
+  }
+}
+
+$("loginBtn").onclick = doLogin;
+$("p").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+$("logout").onclick = doLogout;
+$("newThread").onclick = newThread;
+$("send").onclick = send;
+$("input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+boot();
+</script>
+</body>
+</html>

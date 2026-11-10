@@ -90,6 +90,14 @@ async def run_turn(
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
 
+    existing = conn.execute(
+        "SELECT status FROM runs WHERE turn_id = ? ORDER BY attempt DESC LIMIT 1",
+        (turn_id,),
+    ).fetchone()
+    if existing is not None and str(existing[0]) in ("leased", "running", "waiting"):
+        raise AppError("TURN_ACTIVE", details={"turn_id": turn_id, "status": str(existing[0])})
+    attempt = 1 if existing is None else 2  # retry after a finished run keeps history
+
     run_id = "run_" + secrets.token_hex(8)
     now = _now()
     conn.execute(
@@ -97,9 +105,9 @@ async def run_turn(
         INSERT INTO runs
           (tenant_id, run_id, turn_id, attempt, status, lease_owner, lease_until,
            heartbeat_at, last_step_idx, started_at)
-        VALUES (?, ?, ?, 1, 'leased', ?, ?, ?, -1, ?)
+        VALUES (?, ?, ?, ?, 'leased', ?, ?, ?, -1, ?)
         """,
-        (tenant_id, run_id, turn_id, owner, now + 60, now, now),
+        (tenant_id, run_id, turn_id, attempt, owner, now + 60, now, now),
     )
     conn.commit()
     lease.claim(conn, run_id, owner, 60)
@@ -107,7 +115,7 @@ async def run_turn(
     store.append(
         thread_id,
         "turn.started",
-        {"turn_id": turn_id, "run_id": run_id, "attempt": 1, "model": resolved.model},
+        {"turn_id": turn_id, "run_id": run_id, "attempt": attempt, "model": resolved.model},
         tenant_id=tenant_id,
         turn_id=turn_id,
         run_id=run_id,
@@ -136,7 +144,13 @@ async def run_turn(
     input_tokens = output_tokens = cached_tokens = 0
     first_token_ms: int | None = None
     started = time.monotonic()
-    source = model if model is not None else resolved.gateway
+    source: gateway_types.ModelGateway
+    if model is not None:
+        source = model
+    elif resolved.fake:
+        source = FakeModel(chunk_words=cfg.chunk_words, delay_seconds=cfg.delay_seconds)
+    else:
+        source = resolved.gateway
     async for delta in source.stream(request):
         if isinstance(delta, gateway_types.TextDelta):
             if first_token_ms is None:
@@ -180,7 +194,6 @@ async def run_turn(
 
     # step 1: optional tool gate
     if cfg.require_approval:
-        _set_turn_status(conn, turn_id, "waiting_approval")
         _, attention_id = attention.request(
             conn,
             store,
@@ -196,6 +209,7 @@ async def run_turn(
                 summary="需要批准后写入",
             ),
         )
+        _set_turn_status(conn, turn_id, "waiting_approval")
         lease.release(conn, run_id, owner)
         conn.execute("UPDATE runs SET status = 'waiting' WHERE run_id = ?", (run_id,))
         conn.commit()
@@ -296,25 +310,26 @@ def _finish(
     note: str | None = None,
 ) -> None:
     now = _now()
+    # events are the truth: append turn.finished BEFORE flipping row status,
+    # so no reader can observe status=completed without the terminal event.
+    store.append(
+        thread_id,
+        "turn.finished",
+        {
+            "turn_id": turn_id,
+            "run_id": run_id,
+            "status": status,
+            "duration_ms": 0,
+            "finish_reason": "stop",
+        },
+        tenant_id=tenant_id,
+        turn_id=turn_id,
+        run_id=run_id,
+    )
     conn.execute(
         "UPDATE runs SET status = ?, finished_at = ?, lease_owner = NULL, "
         "lease_until = NULL WHERE run_id = ?",
         (status, now, run_id),
     )
     _set_turn_status(conn, turn_id, status, now)
-    payload = {
-        "turn_id": turn_id,
-        "run_id": run_id,
-        "status": status,
-        "duration_ms": 0,
-        "finish_reason": "stop",
-    }
-    store.append(
-        thread_id,
-        "turn.finished",
-        payload,
-        tenant_id=tenant_id,
-        turn_id=turn_id,
-        run_id=run_id,
-    )
     _ = note  # reserved for richer finish payloads
