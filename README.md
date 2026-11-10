@@ -19,7 +19,7 @@ cd polyopus
 uv sync
 uv run poly migrate         # 首次会打印一次性 admin 口令
 uv run poly doctor          # 5 项自检（迁移后应为全 OK）
-uv run pytest               # 52 个用例，含真实 kill -9 恢复
+uv run pytest               # 59 个用例，含真实 kill -9 恢复
 uv run python scripts/demo_kill9.py
 ```
 
@@ -30,6 +30,7 @@ uv run python scripts/demo_kill9.py
 | `poly doctor` | 环境 + 迁移状态自检 |
 | `poly migrate` / `--check` / `--sql` | 应用 / 只检查 / 只打印迁移 |
 | `poly recover` | 恢复租约过期的 run |
+| `poly serve` | 启动 HTTP API（`/healthz`、`/api/v1`） |
 | `scripts/check.py` | 本地全量门禁（lint/type/imports/schema/test/contracts/coverage） |
 
 ---

@@ -192,6 +192,13 @@ def cmd_recover(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    uvicorn.run("polyopus.api.app:app", host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poly", description="PolyOpus CLI")
     parser.add_argument("--version", action="version", version=f"poly {__version__}")
@@ -209,6 +216,12 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--owner", default="cli")
     recover.add_argument("--delay", type=float, default=0.0)
     recover.set_defaults(func=cmd_recover)
+
+    serve = sub.add_parser("serve", help="run the HTTP API")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--reload", action="store_true")
+    serve.set_defaults(func=cmd_serve)
 
     return parser
 

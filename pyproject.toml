@@ -46,6 +46,9 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/polyopus/api/**" = ["B008"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

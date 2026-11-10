@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     env: str = "dev"
     data_dir: Path = Path("data")
     db_path: Path = Path("data/polyopus.db")
+    secret_key: str = "dev-insecure-change-me"
+    access_ttl_seconds: int = 8 * 3600
+    session_ttl_seconds: int = 30 * 86400
 
     def resolved_db_path(self) -> Path:
         """Absolute DB path; `db_path` wins over `data_dir`."""
