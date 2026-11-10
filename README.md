@@ -19,7 +19,7 @@ cd polyopus
 uv sync
 uv run poly migrate         # 首次会打印一次性 admin 口令
 uv run poly doctor          # 5 项自检（迁移后应为全 OK）
-uv run pytest               # 59 个用例，含真实 kill -9 恢复
+uv run pytest               # 62 个用例，含真实 kill -9 恢复与审批暂停/恢复
 uv run python scripts/demo_kill9.py
 ```
 
