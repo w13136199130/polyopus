@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from polyopus import __version__
@@ -125,9 +125,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
-    @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(WEB / "index.html")
+    # ---- static SPA (docs/49 §12) -----------------------------------------
+    # `src/polyopus/web` is the committed Vite build output. Hashed assets are
+    # immutable; index/legacy are always no-store so a deploy is picked up.
+    # Unknown /api paths must stay JSON 404 — the SPA fallback never eats them.
+
+    NO_STORE = {"Cache-Control": "no-store"}
+    IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
+    FALLBACK_EXCLUDED = ("api/", "assets/", "healthz", "docs", "openapi.json")
+
+    def _spa_or_hint() -> FileResponse | JSONResponse:
+        index = WEB / "index.html"
+        if not index.is_file():
+            return JSONResponse(
+                {"error": {"code": "WEB_DIST_MISSING",
+                           "message": "run: pnpm --dir web build"}},
+                status_code=500,
+            )
+        return FileResponse(index, headers=NO_STORE)
+
+    @app.get("/legacy", include_in_schema=False)
+    def legacy() -> Response:
+        # the pre-SPA single-file UI, kept until V05-03..05 land the pages
+        page = WEB / "legacy" / "index.html"
+        if not page.is_file():
+            return JSONResponse(
+                {"error": {"code": "WEB_DIST_MISSING",
+                           "message": "run: pnpm --dir web build"}},
+                status_code=500,
+            )
+        return FileResponse(page, headers=NO_STORE)
+
+    @app.get("/assets/{file_path:path}", include_in_schema=False)
+    def spa_asset(file_path: str) -> FileResponse:
+        target = (WEB / "assets" / file_path).resolve()
+        if WEB.resolve() not in target.parents or not target.is_file():
+            raise StarletteHTTPException(status_code=404)
+        return FileResponse(target, headers=IMMUTABLE)
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa_fallback(path: str) -> Response:
+        if path == "" or path.startswith(FALLBACK_EXCLUDED):
+            if path.startswith(("api/",)):
+                raise StarletteHTTPException(status_code=404)
+            return _spa_or_hint()
+        if ".." in path.split("/"):
+            raise StarletteHTTPException(status_code=404)
+        candidate = (WEB / path).resolve()
+        if candidate.is_file() and WEB.resolve() in candidate.parents:
+            return FileResponse(candidate, headers={"Cache-Control": "no-cache"})
+        return _spa_or_hint()
 
     return app
 

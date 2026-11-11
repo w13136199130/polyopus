@@ -25,9 +25,15 @@ def _imports_cmd() -> list[str] | None:
     return None
 
 
+def _pnpm_cmd() -> list[str] | None:
+    exe = shutil.which("pnpm")
+    return [exe] if exe else None
+
+
 def build_steps() -> list[tuple[str, list[str] | None, str | None]]:
     """(name, command, skip_reason)."""
     imports = _imports_cmd()
+    pnpm = _pnpm_cmd()
     return [
         ("lint", [PY, "-m", "ruff", "check", "src", "tests"], None),
         ("type", [PY, "-m", "mypy", "src"], None),
@@ -37,6 +43,15 @@ def build_steps() -> list[tuple[str, list[str] | None, str | None]]:
         ("errors", [PY, "tools/extract_errors.py", "--check"], None),
         ("contracts", [PY, "-m", "contracts.check"], None),
         ("coverage", [PY, "contracts/coverage_check.py"], None),
+        # frontend: build to src/polyopus/web, then require the committed
+        # dist to be in sync (same drift model as contracts/generated)
+        ("web-build", [*pnpm, "--dir", "web", "build"] if pnpm else None,
+         "pnpm not installed"),
+        ("web-dist",
+         ["git", "diff", "--exit-code", "--", "src/polyopus/web"] if pnpm else None,
+         "pnpm not installed"),
+        ("web-test", [*pnpm, "--dir", "web", "test"] if pnpm else None,
+         "pnpm not installed"),
     ]
 
 

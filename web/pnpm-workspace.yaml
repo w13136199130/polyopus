@@ -1,0 +1,4 @@
+# pnpm settings live here, not package.json (pnpm v10+).
+# esbuild needs its postinstall to pick the platform binary.
+allowBuilds:
+  esbuild: true

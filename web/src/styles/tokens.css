@@ -1,0 +1,39 @@
+/* Design tokens (docs/49 §9) — extracted from the prototype/legacy UI.
+   [data-theme] is the single source; components must not hardcode colors. */
+:root,
+html[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #fafafa;
+  --surface-3: #f0f2f5;
+  --text: #1a1d24;
+  --text-2: #5c6470;
+  --text-3: #9aa3af;
+  --line: #e4e7ec;
+  --accent: #4f6ef7;
+  --accent-2: #3d5be0;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --radius: 10px;
+  --radius-s: 8px;
+  --font:
+    -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+}
+
+html[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #171a21;
+  --surface-2: #1c2029;
+  --surface-3: #232833;
+  --text: #e6e9ef;
+  --text-2: #9aa3af;
+  --text-3: #6b7280;
+  --line: #2a2f3a;
+}

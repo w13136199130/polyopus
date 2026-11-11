@@ -32,7 +32,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
 
 
 def test_index_contains_tasks_screen(client: TestClient) -> None:
-    page = client.get("/").text
+    page = client.get("/legacy").text
     for marker in ("tasksView", "tabTasks", "inbox", "buckets",
                    "sendTrigger", "ticketDetail", "演示：webhook 触发器"):
         assert marker in page, f"missing {marker}"

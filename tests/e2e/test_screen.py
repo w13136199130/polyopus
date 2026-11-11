@@ -64,7 +64,14 @@ def _events(client: TestClient, thread_id: str, after: int) -> tuple[list[dict],
 
 def test_index_serves_screen(client: tuple[Path, TestClient]) -> None:
     _, c = client
-    response = c.get("/")
+    # "/" serves the SPA build; the pre-SPA single-file UI lives at /legacy
+    spa = c.get("/")
+    assert spa.status_code == 200
+    assert "id=\"root\"" in spa.text
+    assert "/assets/" in spa.text
+    assert spa.headers["cache-control"] == "no-store"
+
+    response = c.get("/legacy")
     assert response.status_code == 200
     assert "PolyOpus" in response.text
     assert "approval" in response.text
