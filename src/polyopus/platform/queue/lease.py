@@ -19,7 +19,7 @@ def claim(
         UPDATE runs
            SET status = 'running', lease_owner = ?, lease_until = ?, heartbeat_at = ?
          WHERE run_id = ?
-           AND (status IN ('leased', 'pending') OR lease_until IS NULL
+           AND (status IN ('leased', 'pending', 'waiting') OR lease_until IS NULL
                 OR lease_until < ? OR lease_owner = ?)
         """,
         (owner, ts + ttl, ts, run_id, ts, owner),

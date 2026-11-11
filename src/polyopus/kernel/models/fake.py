@@ -9,6 +9,8 @@ turn_worker fake runner.
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -18,6 +20,7 @@ from polyopus.kernel.models.gateway import (
     ModelDelta,
     ModelRequest,
     TextDelta,
+    ToolCallDelta,
     UsageDelta,
 )
 
@@ -43,9 +46,35 @@ class FakeModel:
         parts = [m.content for m in req.messages if m.role in ("user", "system")]
         return parts[-1] if parts else ""
 
+    _WRITE_INTENT = re.compile(r"写|保存|write|save", re.IGNORECASE)
+    _FILENAME = re.compile(r"[\w.-]+\.(?:txt|md|yml|yaml|py|json)")
+
+    def _write_call(self, req: ModelRequest) -> ToolCallDelta | None:
+        """Simulate a model that decides to write a file (fs.write is high
+        risk, so the policy gate pauses the turn — exercises the approval
+        path without a real model)."""
+        if not any(t.name == "fs.write" for t in req.tools):
+            return None
+        prompt = self._prompt_of(req)
+        if not self._WRITE_INTENT.search(prompt):
+            return None
+        match = self._FILENAME.search(prompt)
+        path = match.group(0) if match else "output.txt"
+        args = {"path": path, "content": f"# 由请求生成\n{prompt}\n"}
+        return ToolCallDelta(
+            id="tc_fake_write", name="fs_write",
+            arguments_json=json.dumps(args, ensure_ascii=False),
+        )
+
     async def stream(self, req: ModelRequest) -> AsyncIterator[ModelDelta]:
         prompt = self._prompt_of(req)
         self.calls.append(prompt)
+        write = self._write_call(req)
+        if write is not None:
+            yield write
+            yield UsageDelta(input_tokens=len(prompt.split()), output_tokens=1)
+            yield FinishDelta(reason="tool_calls")
+            return
         words = [f"echo[{w}]" for w in prompt.split() or ["empty"]]
         output = 0
         for start in range(0, len(words), self.chunk_words):

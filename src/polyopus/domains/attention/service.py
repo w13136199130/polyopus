@@ -26,6 +26,7 @@ class ApprovalRequest:
     args_preview: str
     risk: str = "high"
     summary: str = ""
+    args_json: str = ""  # full arguments; resume executes from these
     allowed_decisions: tuple[str, ...] = ("approve", "approve_session", "deny")
 
 
@@ -53,6 +54,7 @@ def request(
                     "tool": req.tool,
                     "args_preview": req.args_preview[:500],
                     "risk": req.risk,
+                    "args_json": req.args_json,
                 }
             ],
             "allowed_decisions": list(req.allowed_decisions),
