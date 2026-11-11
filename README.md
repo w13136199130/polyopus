@@ -32,6 +32,7 @@ uv run python scripts/demo_kill9.py
 | `POLY_MODEL_BASE_URL/_API_KEY/_NAME` | 接 OpenAI 兼容真模型（已实测 deepseek-flash）；不配则 FakeModel。**key 写 `.env`（已 gitignore），绝不入库** |
 | `poly migrate` / `--check` / `--sql` | 应用 / 只检查 / 只打印迁移 |
 | `poly recover` | 恢复租约过期的 run |
+| `POST /api/v1/webhooks/{id}` | webhook 入口（HMAC 验签、幂等去重、Gate→工单） |
 | `poly serve` | 启动 HTTP API（`/healthz`、`/api/v1`） |
 | `scripts/check.py` | 本地全量门禁（lint/type/imports/schema/test/contracts/coverage） |
 

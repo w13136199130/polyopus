@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from polyopus import __version__
-from polyopus.api.routers import attentions, auth, threads, webhooks
+from polyopus.api.routers import attentions, auth, threads, tickets_api, webhooks
 from polyopus.config import Settings, load_settings
 from polyopus.platform.errors import AppError
 from polyopus.platform.telemetry import log as tlog
@@ -37,6 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(threads.router, prefix="/api/v1")
     app.include_router(attentions.router, prefix="/api/v1")
     app.include_router(webhooks.router, prefix="/api/v1")
+    app.include_router(tickets_api.router, prefix="/api/v1")
 
     @app.middleware("http")
     async def trace_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]

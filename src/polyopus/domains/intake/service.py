@@ -212,16 +212,21 @@ def open_ticket(
         """,
         (TENANT, thread_id, title, now, now),
     )
+    source_cfg = json.loads(source["config_json"] or "{}")
+    max_tokens = source_cfg.get("max_total_tokens")
+    budget = {"max_total_tokens": int(max_tokens)} if max_tokens else None
     conn.execute(
         """
         INSERT INTO tickets
           (tenant_id, ticket_id, title, state, bucket, source_id, trigger_id,
-           actor_json, strength, policy_version, scope_json, created_at, updated_at)
-        VALUES (?, ?, ?, 'open', 'queued', ?, ?, ?, 'explicit', 1, ?, ?, ?)
+           actor_json, strength, policy_version, scope_json, budget_json,
+           created_at, updated_at)
+        VALUES (?, ?, ?, 'open', 'queued', ?, ?, ?, 'explicit', 1, ?, ?, ?, ?)
         """,
         (TENANT, ticket_id, title, cfg.source_id, trigger_id,
          json.dumps({"id": str(trigger["actor_id"]), "kind": str(trigger["actor_kind"])}),
-         json.dumps(scope), now, now),
+         json.dumps(scope),
+         json.dumps(budget) if budget else None, now, now),
     )
     conn.execute(
         """
@@ -238,6 +243,9 @@ def open_ticket(
         (trigger_id,),
     )
     conn.commit()
+
+    from polyopus.domains.tickets import service as tickets
+    tickets.link_thread(conn, ticket_id, thread_id)
 
     store.append(
         thread_id,

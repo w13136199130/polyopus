@@ -23,6 +23,7 @@ class CreateSourceBody(BaseModel):
     allow_actors: list[str] = Field(default_factory=list)
     explicit_patterns: list[str] = Field(default_factory=list)
     default_scope: list[str] = Field(default_factory=lambda: ["workspace:default"])
+    max_total_tokens: int | None = Field(default=None, gt=0)
     generate_secret: bool = True
 
 
@@ -45,12 +46,14 @@ def create_source(
 ) -> dict[str, object]:
     source_id = "src_" + secrets.token_hex(8)
     secret = secrets.token_urlsafe(24) if body.generate_secret else ""
-    config = {
+    config: dict[str, object] = {
         "secret": secret,
         "allow_actors": body.allow_actors,
         "explicit_patterns": body.explicit_patterns,
         "default_scope": body.default_scope,
     }
+    if body.max_total_tokens is not None:
+        config["max_total_tokens"] = body.max_total_tokens
     now = int(time.time())
     conn.execute(
         """

@@ -32,6 +32,7 @@ def _payload(row: sqlite3.Row) -> dict[str, object]:
         "payload": json.loads(row["payload_json"]),
         "status": row["status"],
         "turnId": row["turn_id"],
+        "ticketId": row["ticket_id"],
         "expiresAt": row["expires_at"],
         "createdAt": row["created_at"],
     }
