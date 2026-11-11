@@ -28,6 +28,9 @@ class ChatMessage:
     content: str
     tool_calls: tuple[ToolCallMessagePart, ...] = ()
     tool_call_id: str | None = None
+    # DeepSeek thinking models require the assistant reasoning to be passed
+    # back on the next turn, including when the message carries tool calls.
+    reasoning_content: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,14 @@ class TextDelta:
 
 
 @dataclass(frozen=True)
+class ReasoningDelta:
+    """Thinking-model reasoning stream; kept out of the user-visible message."""
+
+    text: str
+    kind: ClassVar[str] = "reasoning"
+
+
+@dataclass(frozen=True)
 class ToolCallDelta:
     """One complete tool call (providers accumulate streamed fragments)."""
 
@@ -98,7 +109,7 @@ class FinishDelta:
     kind: ClassVar[str] = "finish"
 
 
-type ModelDelta = TextDelta | ToolCallDelta | UsageDelta | FinishDelta
+type ModelDelta = TextDelta | ReasoningDelta | ToolCallDelta | UsageDelta | FinishDelta
 
 
 class ModelGateway(Protocol):

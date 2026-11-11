@@ -152,7 +152,7 @@ def run_assignment(
         )
         status = result if result in ("completed", "waiting_approval") else "failed"
     except AppError as exc:
-        if exc.normalized_code() == "TURN_ACTIVE":
+        if exc.normalized_code() == "THREAD_TURN_ACTIVE":
             status = "waiting_approval"
         else:
             raise

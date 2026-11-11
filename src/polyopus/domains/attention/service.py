@@ -27,6 +27,8 @@ class ApprovalRequest:
     risk: str = "high"
     summary: str = ""
     args_json: str = ""  # full arguments; resume executes from these
+    # thinking-model reasoning for this tool call; must be replayed on resume
+    reasoning: str = ""
     allowed_decisions: tuple[str, ...] = ("approve", "approve_session", "deny")
 
 
@@ -58,6 +60,7 @@ def request(
                 }
             ],
             "allowed_decisions": list(req.allowed_decisions),
+            "reasoning_content": req.reasoning,
         },
         ensure_ascii=False,
     )

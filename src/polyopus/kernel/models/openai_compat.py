@@ -20,6 +20,7 @@ from polyopus.kernel.models.gateway import (
     ModelDelta,
     ModelRequest,
     ModelUnavailableError,
+    ReasoningDelta,
     TextDelta,
     ToolCallDelta,
     UsageDelta,
@@ -67,6 +68,8 @@ class OpenAICompatProvider:
                 body["content"] = m.content or None
             if m.tool_call_id is not None:
                 body["tool_call_id"] = m.tool_call_id
+            if m.reasoning_content is not None:
+                body["reasoning_content"] = m.reasoning_content
             return body
 
         payload = {
@@ -124,9 +127,10 @@ class OpenAICompatProvider:
             response = urlopen(request, timeout=self._config.timeout_seconds)
         except HTTPError as exc:
             retryable = exc.code in RETRYABLE_STATUS
+            detail = exc.read().decode("utf-8", errors="replace")[:300]
             raise ModelUnavailableError(
                 "MODEL_NOT_AVAILABLE" if retryable else "PROVIDER_AUTH_FAILED",
-                f"HTTP {exc.code}",
+                f"HTTP {exc.code}: {detail}",
                 retryable=retryable,
             ) from exc
         except (URLError, OSError) as exc:
@@ -167,6 +171,9 @@ class OpenAICompatProvider:
                 text = delta.get("content")
                 if text:
                     yield TextDelta(text=str(text))
+                reasoning = delta.get("reasoning_content")
+                if reasoning:
+                    yield ReasoningDelta(text=str(reasoning))
                 fragments = delta.get("tool_calls")
                 if isinstance(fragments, list):
                     for frag in fragments:

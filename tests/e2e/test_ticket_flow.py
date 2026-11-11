@@ -33,8 +33,10 @@ def env(tmp_path: Path) -> Iterator[tuple[Path, TestClient]]:
     m.apply(conn, m.discover(MIGRATIONS))
     ensure_admin(conn, password="p")
     conn.close()
+    # this test drives run_assignment explicitly; a competing embedded worker
+    # would race the very same turn (UNIQUE(turn_id, attempt))
     settings = Settings(db_path=db, secret_key="s", access_ttl_seconds=3600,
-                        session_ttl_seconds=86400)
+                        session_ttl_seconds=86400, embedded_worker=False)
     with TestClient(create_app(settings)) as client:
         client.post("/api/v1/auth/login", json={"username": "admin", "password": "p"})
         yield db, client

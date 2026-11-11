@@ -7,6 +7,7 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -69,6 +70,88 @@ def test_openai_stream_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     assert texts == ["你", "好"]
     assert usage and usage[0].input_tokens == 10 and usage[0].cached_tokens == 4
     assert finish and finish[0].reason == "stop"
+
+
+def test_openai_reasoning_delta(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = OpenAICompatProvider(ProviderConfig(base_url="http://x/v1"))
+    sse = (
+        'data: {"choices":[{"delta":{"reasoning_content":"先想"}}]}\n'
+        'data: {"choices":[{"delta":{"content":"答案"}}]}\n'
+        "data: [DONE]\n"
+    )
+
+    class FakeResponse:
+        def __iter__(self) -> Iterator[bytes]:
+            for line in _chunks(sse):
+                yield line.encode("utf-8")
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "polyopus.kernel.models.openai_compat.urlopen", lambda *a, **k: FakeResponse()
+    )
+
+    async def collect() -> list[gt.ModelDelta]:
+        return [
+            d
+            async for d in provider.stream(
+                gt.ModelRequest(
+                    model="m", messages=(gt.ChatMessage(role="user", content="hi"),)
+                )
+            )
+        ]
+
+    deltas = asyncio.run(collect())
+    reasoning = [d.text for d in deltas if isinstance(d, gt.ReasoningDelta)]
+    texts = [d.text for d in deltas if isinstance(d, gt.TextDelta)]
+    assert reasoning == ["先想"]
+    assert texts == ["答案"]
+
+
+def test_reasoning_content_is_sent_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DeepSeek thinking mode rejects a follow-up that drops reasoning_content."""
+    provider = OpenAICompatProvider(ProviderConfig(base_url="http://x/v1"))
+    seen: dict[str, object] = {}
+
+    class EmptyResponse:
+        def __iter__(self) -> Iterator[bytes]:
+            yield b"data: [DONE]\n"
+
+        def __enter__(self) -> EmptyResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    def fake_urlopen(request: Any, **kwargs: Any) -> EmptyResponse:
+        seen["body"] = json.loads(request.data.decode("utf-8"))
+        return EmptyResponse()
+
+    monkeypatch.setattr("polyopus.kernel.models.openai_compat.urlopen", fake_urlopen)
+    message = gt.ChatMessage(
+        role="assistant",
+        content="",
+        reasoning_content="thinking...",
+        tool_calls=(gt.ToolCallMessagePart(
+            id="tc1", name="fs.write", arguments_json="{}"),),
+    )
+
+    async def run() -> None:
+        async for _ in provider.stream(
+            gt.ModelRequest(model="m", messages=(message,))
+        ):
+            pass
+
+    asyncio.run(run())
+    wire = seen["body"]
+    assert isinstance(wire, dict)
+    sent = wire["messages"][0]
+    assert sent["reasoning_content"] == "thinking..."
+    assert sent["tool_calls"][0]["function"]["name"] == "fs_write"
 
 
 def test_fake_model_matches_gateway_protocol() -> None:

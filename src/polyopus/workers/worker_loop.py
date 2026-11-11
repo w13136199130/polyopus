@@ -2,7 +2,7 @@
 
 `turns.status='queued'` IS the queue. The loop claims one turn at a time
 (parallelism lives across tickets/threads, not within one turn — docs/09
-§8.1); double-claims lose to UNIQUE(turn_id, attempt) -> TURN_ACTIVE.
+§8.1); double-claims lose to UNIQUE(turn_id, attempt) -> THREAD_TURN_ACTIVE.
 Runs as an embedded thread behind `poly serve` (default) or standalone
 `poly worker` for a separate process.
 """

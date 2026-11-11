@@ -84,6 +84,7 @@ def _set_turn_status(
 @dataclass
 class _StreamState:
     text: str = ""
+    reasoning: str = ""
     index: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -106,6 +107,7 @@ async def _stream_round(
 ) -> list[gateway_types.ToolCallDelta]:
     """Stream one model round into events; returns accumulated tool calls."""
     calls: list[gateway_types.ToolCallDelta] = []
+    state.reasoning = ""  # reasoning belongs to this round's assistant message
     async for delta in gateway.stream(request):
         if isinstance(delta, gateway_types.TextDelta):
             if state.first_token_ms is None:
@@ -118,6 +120,9 @@ async def _stream_round(
                 tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
             )
             state.index += 1
+        elif isinstance(delta, gateway_types.ReasoningDelta):
+            # thinking-model output: kept for the next round, not user-visible
+            state.reasoning += delta.text
         elif isinstance(delta, gateway_types.ToolCallDelta):
             calls.append(delta)
         elif isinstance(delta, gateway_types.UsageDelta):
@@ -128,11 +133,12 @@ async def _stream_round(
 
 
 def _tool_messages_parts(
-    calls: list[gateway_types.ToolCallDelta], tool_round: int
+    calls: list[gateway_types.ToolCallDelta], tool_round: int, reasoning: str = ""
 ) -> gateway_types.ChatMessage:
     return gateway_types.ChatMessage(
         role="assistant",
         content="",
+        reasoning_content=reasoning or None,
         tool_calls=tuple(
             gateway_types.ToolCallMessagePart(
                 id=c.id or f"tc_{tool_round}",
@@ -380,7 +386,7 @@ async def run_turn(
         tool_round += 1
         assert cfg.workspace is not None  # tools were advertised
 
-        messages.append(_tool_messages_parts(calls, tool_round))
+        messages.append(_tool_messages_parts(calls, tool_round, state.reasoning))
         paused = False
         for call in calls:
             call_id = call.id or f"tc_{tool_round}"
@@ -413,6 +419,7 @@ async def run_turn(
                         risk=risk,
                         summary=f"策略要求审批（{decision.reason}）",
                         args_json=call.arguments_json,
+                        reasoning=state.reasoning,
                     ),
                 )
                 _set_turn_status(conn, turn_id, "waiting_approval")
@@ -574,6 +581,7 @@ def resume_after_approval(
         gateway_types.ChatMessage(role="user", content=user_content),
         gateway_types.ChatMessage(
             role="assistant", content="",
+            reasoning_content=str(request_data.get("reasoning_content") or "") or None,
             tool_calls=(
                 gateway_types.ToolCallMessagePart(
                     id=call_id, name=internal, arguments_json=arguments_json
