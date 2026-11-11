@@ -30,6 +30,7 @@ QUEUE_SQL = MIGRATIONS / "0004_queue.sql"
 AUTH_SQL = MIGRATIONS / "0005_auth.sql"
 ATTENTION_SQL = MIGRATIONS / "0006_attention.sql"
 MODEL_SQL = MIGRATIONS / "0007_models.sql"
+ASSIGNMENT_SQL = MIGRATIONS / "0008_assignments.sql"
 
 # 8 names listed in docs/31 as deferred/merged: they must have no DDL.
 DEFERRED = [
@@ -46,7 +47,8 @@ DEFERRED = [
 # M1 auth subset (sessions are not in the M0 core).
 AUTH_TABLES = ["sessions"]
 ATTENTION_TABLES = ["approvals"]
-MODEL_TABLES = ["providers", "models", "usage_ledger"] if False else ["providers", "models"]
+MODEL_TABLES = ["providers", "models"]
+ASSIGNMENT_TABLES = ["assignments"]
 
 # M1 queue subset (platform-level, used by Outbox).
 QUEUE_TABLES = ["outbox"]
@@ -211,7 +213,7 @@ def render_intake(manifest: dict[str, Any]) -> str:
     return render_subset(
         manifest,
         INTAKE_TABLES,
-        ["M1 intake subset (9 tables); tickets/assignments ship in 0001_core.sql."],
+        ["M1 intake subset (9 tables); tickets ship in 0001_core.sql."],
     )
 
 
@@ -247,6 +249,14 @@ def render_model(manifest: dict[str, Any]) -> str:
     )
 
 
+def render_assignment(manifest: dict[str, Any]) -> str:
+    return render_subset(
+        manifest,
+        ASSIGNMENT_TABLES,
+        ["Slice-2 intake subset: assignments (docs/31 §2.3)."],
+    )
+
+
 def _previous_manifest() -> dict[str, Any] | None:
     if not MANIFEST.is_file():
         return None
@@ -276,6 +286,7 @@ def check(manifest: dict[str, Any]) -> list[str]:
         (AUTH_SQL, render_auth),
         (ATTENTION_SQL, render_attention),
         (MODEL_SQL, render_model),
+        (ASSIGNMENT_SQL, render_assignment),
     ):
         expected = render(manifest)
         if not path.is_file():
@@ -299,6 +310,7 @@ def emit(manifest: dict[str, Any]) -> None:
     AUTH_SQL.write_text(render_auth(manifest), encoding="utf-8", newline="\n")
     ATTENTION_SQL.write_text(render_attention(manifest), encoding="utf-8", newline="\n")
     MODEL_SQL.write_text(render_model(manifest), encoding="utf-8", newline="\n")
+    ASSIGNMENT_SQL.write_text(render_assignment(manifest), encoding="utf-8", newline="\n")
     print(f"wrote {MANIFEST.relative_to(ROOT)} ({len(manifest['tables'])} tables)")
     print(f"wrote {CORE_SQL.relative_to(ROOT)} ({len(CORE_TABLES)} tables)")
     print(f"wrote {INTAKE_SQL.relative_to(ROOT)} ({len(INTAKE_TABLES)} tables)")
@@ -306,6 +318,7 @@ def emit(manifest: dict[str, Any]) -> None:
     print(f"wrote {AUTH_SQL.relative_to(ROOT)} ({len(AUTH_TABLES)} tables)")
     print(f"wrote {ATTENTION_SQL.relative_to(ROOT)} ({len(ATTENTION_TABLES)} tables)")
     print(f"wrote {MODEL_SQL.relative_to(ROOT)} ({len(MODEL_TABLES)} tables)")
+    print(f"wrote {ASSIGNMENT_SQL.relative_to(ROOT)} ({len(ASSIGNMENT_TABLES)} tables)")
 
 
 def main(argv: list[str] | None = None) -> int:
