@@ -41,12 +41,14 @@ export default defineConfig(({ mode }) => ({
   // http-proxy config powers `vite preview`, so SSE-through-proxy can be
   // verified even where the dev optimizer cannot run (esbuild blocked by AV).
   server: {
+    host: true, // listen on v4+v6 so 127.0.0.1 works everywhere
     proxy: {
       "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
       "/healthz": { target: "http://127.0.0.1:8000", changeOrigin: false },
     },
   },
   preview: {
+    host: true,
     proxy: {
       "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
       "/healthz": { target: "http://127.0.0.1:8000", changeOrigin: false },

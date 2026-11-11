@@ -7,7 +7,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiError, apiFetch, type SessionUser } from "@/lib/api/client";
+import {
+  UNAUTHORIZED_EVENT,
+  apiFetch,
+  resetUnauthorizedLatch,
+} from "@/lib/api/client";
+import type { LoginResponse, SessionUser } from "@/lib/api/wire";
 
 export type SessionStatus = "loading" | "authed" | "anon";
 
@@ -22,11 +27,12 @@ const SessionContext = createContext<SessionValue | null>(null);
 
 async function me(): Promise<SessionUser | null> {
   try {
-    const data = await apiFetch<{ user: SessionUser }>("/auth/me");
+    const data = await apiFetch<{ user: SessionUser }>("/auth/me", {
+      skipUnauthorized: true,
+    });
     return data.user;
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) return null;
-    // Probe failures (server down) stay anonymous; UI pages surface API errors.
+  } catch {
+    // Probe failures (server down) stay anonymous; page APIs surface errors.
     return null;
   }
 }
@@ -42,24 +48,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(found);
       setStatus(found ? "authed" : "anon");
     });
+
+    // single-flight 401 from any API call ends the session here; the shell
+    // guard then redirects to /login with the current path as returnTo
+    function onUnauthorized() {
+      setUser(null);
+      setStatus("anon");
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
     return () => {
       alive = false;
+      window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
     };
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const data = await apiFetch<{ user: SessionUser }>("/auth/login", {
+    const data = await apiFetch<LoginResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
+      skipUnauthorized: true, // a wrong password is a form error, not a logout
     });
+    resetUnauthorizedLatch();
     setUser(data.user);
     setStatus("authed");
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await apiFetch("/auth/logout", { method: "POST" });
+      await apiFetch("/auth/logout", { method: "POST", skipUnauthorized: true });
     } finally {
+      resetUnauthorizedLatch();
       setUser(null);
       setStatus("anon");
     }

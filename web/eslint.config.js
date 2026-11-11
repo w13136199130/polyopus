@@ -21,6 +21,15 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": "off",
       "@typescript-eslint/no-explicit-any": "error",
+      // docs/49 §5.1: EventSource cannot read 401, send headers or abort
+      // properly — all streaming must go through lib/stream's fetch SSE.
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "EventSource",
+          message: "Use lib/stream (fetch-based SSE), not EventSource.",
+        },
+      ],
     },
   },
 );
