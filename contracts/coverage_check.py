@@ -241,18 +241,39 @@ def main() -> int:
             if table not in tables:
                 hard.append(f"G-3 {req['id']} references unknown table: {table}")
 
-    # G-4: test ids exist somewhere under tests/.
-    test_text = ""
+    # G-4: mapped test ids are load-bearing (hard); the rest stay warnings.
+    # contracts/test_map.json maps docs/28 test ids -> the files that cover
+    # them. Ratchet: floor rises to 40 at M2 exit (docs/45 W11-12).
+    test_map_path = ROOT / "contracts" / "test_map.json"
+    test_map: dict[str, list[str]] = {}
+    if test_map_path.exists():
+        import json as _json
+        test_map = _json.loads(read(test_map_path))
+    file_text: dict[str, str] = {}
     if TESTS.exists():
-        for path in TESTS.rglob("*"):
-            if path.is_file() and path.suffix in {".py", ".ts", ".tsx"}:
-                try:
-                    test_text += read(path)
-                except UnicodeDecodeError:
-                    continue
+        for path in TESTS.rglob("*.py"):
+            try:
+                file_text[str(path.relative_to(ROOT)).replace("\\", "/")] = read(path)
+            except UnicodeDecodeError:
+                continue
+    test_text = "".join(file_text.values())
+    for test_id, files in test_map.items():
+        for rel in files:
+            if rel not in file_text or test_id not in file_text[rel]:
+                hard.append(f"G-4 mapped test missing: {test_id} -> {rel}")
+    MAPPED_FLOOR = 30
+    if len(test_map) < MAPPED_FLOOR:
+        hard.append(
+            f"G-4 mapped requirement tests {len(test_map)} < floor {MAPPED_FLOOR}"
+        )
     for req in requirements:
         test_id = req["test"].strip("` ")
-        if test_id and test_id not in {"—", "-"} and test_id not in test_text:
+        if (
+            test_id
+            and test_id not in {"—", "-"}
+            and test_id not in test_map
+            and test_id not in test_text
+        ):
             soft.append(f"G-4 {req['id']} test not found: {test_id}")
 
     # G-5: state machines reference contracted events.
@@ -270,6 +291,7 @@ def main() -> int:
     print(f"requirements: {len(requirements)}")
     print(f"docs/29 endpoints: {len(api_doc)}  OpenAPI endpoints: {len(openapi)}")
     print(f"tables: {len(tables)}  events: {len(events)}  error codes: {len(error_codes)}")
+    print(f"requirement tests mapped (G-4 hard): {len(test_map)}")
     print()
     for label, items in (("HARD", hard), ("WARN", soft), ("ALLOWED", allowed)):
         print(f"{label}: {len(items)}")

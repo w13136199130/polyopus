@@ -1,5 +1,7 @@
 """fs.read jail + provider tool_calls parsing + engine tool loop."""
 
+# covers: T-EXP-06
+
 from __future__ import annotations
 
 import asyncio

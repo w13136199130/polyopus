@@ -1,5 +1,7 @@
 """Slice ② cards 4-6: assignment runs, budget blocks, watchdog stops."""
 
+# covers: T-INTAKE-06 T-TASK-03 T-TASK-02
+
 from __future__ import annotations
 
 import hashlib

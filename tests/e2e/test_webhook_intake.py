@@ -1,5 +1,7 @@
 """Slice ② cards 1-3: webhook idempotency, gate, ticket+mandate."""
 
+# covers: T-INTAKE-02 T-INTAKE-03
+
 from __future__ import annotations
 
 import hashlib

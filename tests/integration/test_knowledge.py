@@ -1,5 +1,7 @@
 """Knowledge SQLite path: chunking, retrieval, gates, golden set (W11 batch 2)."""
 
+# covers: T-KB-03 T-KB-07
+
 from __future__ import annotations
 
 import sqlite3

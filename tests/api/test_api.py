@@ -1,5 +1,7 @@
 """Slice ① API: auth + threads + SSE."""
 
+# covers: T-AUTH-03 T-CHAT-02
+
 from __future__ import annotations
 
 from collections.abc import Iterator

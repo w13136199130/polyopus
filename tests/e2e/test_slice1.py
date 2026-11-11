@@ -4,6 +4,8 @@ Also proves the restart invariant: the approval survives a fresh connection
 (events are the truth, the turn resumes after resolve).
 """
 
+# covers: T-CHAT-03 T-CHAT-09 T-TASK-07
+
 from __future__ import annotations
 
 import json

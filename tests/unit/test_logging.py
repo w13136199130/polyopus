@@ -1,5 +1,7 @@
 """M0-20: JSON logs carry trace_id and structured fields."""
 
+# covers: T-OPS-02
+
 from __future__ import annotations
 
 import io

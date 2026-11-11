@@ -1,5 +1,7 @@
 """M0-09: seed tenant + first admin (idempotent, hashed password)."""
 
+# covers: T-AUTH-04
+
 from __future__ import annotations
 
 from pathlib import Path

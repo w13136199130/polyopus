@@ -1,5 +1,7 @@
 """Memory three tiers + probes (W11; G-S5: hit >= 85%, pollution 0)."""
 
+# covers: T-MEM-04 T-MEM-05
+
 from __future__ import annotations
 
 import asyncio

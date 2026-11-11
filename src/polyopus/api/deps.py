@@ -30,6 +30,10 @@ def get_store(conn: Connection = Depends(get_db)) -> EventStore:
 
 
 def _token_from(request: Request) -> str:
+    # AUTH-014: tokens travel by header or httpOnly cookie only; a token in
+    # the query string lands in access logs and browser history - reject it.
+    if "access_token" in request.query_params or "token" in request.query_params:
+        raise AppError("TOKEN_IN_QUERY")
     header = request.headers.get("Authorization", "")
     if header.lower().startswith("bearer "):
         return header[7:].strip()

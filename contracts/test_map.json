@@ -1,0 +1,98 @@
+{
+  "T-ADM-03": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-AUTH-02": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-AUTH-03": [
+    "tests/api/test_api.py"
+  ],
+  "T-AUTH-04": [
+    "tests/integration/test_seed.py"
+  ],
+  "T-AUTH-14": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-CAP-04": [
+    "tests/requirements/test_spikes_promoted.py"
+  ],
+  "T-CHAT-02": [
+    "tests/api/test_api.py"
+  ],
+  "T-CHAT-03": [
+    "tests/e2e/test_slice1.py"
+  ],
+  "T-CHAT-07": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-CHAT-09": [
+    "tests/e2e/test_slice1.py"
+  ],
+  "T-CHAT-13": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-CHAT-15": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-EXP-06": [
+    "tests/integration/test_tools.py"
+  ],
+  "T-INTAKE-01": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-INTAKE-02": [
+    "tests/e2e/test_webhook_intake.py"
+  ],
+  "T-INTAKE-03": [
+    "tests/e2e/test_webhook_intake.py"
+  ],
+  "T-INTAKE-06": [
+    "tests/e2e/test_ticket_flow.py"
+  ],
+  "T-KB-03": [
+    "tests/integration/test_knowledge.py"
+  ],
+  "T-KB-07": [
+    "tests/integration/test_knowledge.py"
+  ],
+  "T-MEM-04": [
+    "tests/integration/test_memory.py"
+  ],
+  "T-MEM-05": [
+    "tests/integration/test_memory.py"
+  ],
+  "T-MEM-07": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-OPS-02": [
+    "tests/unit/test_logging.py"
+  ],
+  "T-OPS-03": [
+    "tests/integration/test_migrator.py"
+  ],
+  "T-TASK-01": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-TASK-02": [
+    "tests/e2e/test_ticket_flow.py"
+  ],
+  "T-TASK-03": [
+    "tests/e2e/test_ticket_flow.py"
+  ],
+  "T-TASK-07": [
+    "tests/e2e/test_slice1.py"
+  ],
+  "T-TEN-01": [
+    "tests/requirements/test_gate_batch.py"
+  ],
+  "T-TEN-02": [
+    "tests/requirements/test_spikes_promoted.py"
+  ],
+  "T-USE-01": [
+    "tests/integration/test_usage.py"
+  ],
+  "T-USE-02": [
+    "tests/integration/test_usage.py"
+  ]
+}
