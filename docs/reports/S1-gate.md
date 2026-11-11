@@ -45,7 +45,7 @@ POST /attentions/{id}/answer approve
 | # | 项 | 去向 |
 |---|---|---|
 | ~~L-1~~ | ~~仅缺 fs.read~~ **已清偿**：`kernel/tools/fs_read`（jail/行号/64KB 上限）+ provider 工具名点→下划线映射 + 工具环（≤2 轮，tool.* 契约事件） | — |
-| L-2 | **服务器级重启**：turn 暂停中重启 `poly serve` 再 answer 的完整演练未单测 | M2 引入 turn_worker 进程时补 e2e |
+| ~~L-2~~ | ~~服务器级重启未单测~~ **已清偿（v0.1 卡4）**：跨进程重启演练 e2e 通过，顺带修出 answer 端点工作区归属 bug | — |
 | L-3 | engine 为线程内单进程启动（`workers/runner.py` 自认 demo 级） | M2 换队列 worker |
 | L-4 | SSE `follow` 为 0.2s 轮询，非推送 | v1.1（多实例/Redis）再议 |
 | ~~L-5~~ | ~~真模型未实测~~ **已清偿**：`deepseek-flash` 接入，doctor `model OK`；e2e 真流式+真审批链验证通过 | — |

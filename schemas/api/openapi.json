@@ -7289,7 +7289,7 @@
         },
         "parameters": [
           {
-            "name": "from",
+            "name": "fromTs",
             "in": "query",
             "required": false,
             "schema": {
@@ -7298,7 +7298,7 @@
             }
           },
           {
-            "name": "to",
+            "name": "toTs",
             "in": "query",
             "required": false,
             "schema": {

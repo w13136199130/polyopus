@@ -8,6 +8,9 @@ Run `python contracts/generate.py`.
 
 from __future__ import annotations
 
+import keyword
+import re
+
 from dataclasses import dataclass
 from typing import Literal
 
@@ -1302,7 +1305,7 @@ OPS: tuple[Op, ...] = (
        body="QuotaPatch"),
     Op("GET", "/admin/audit/export", "exportAudit", "Export audit log as CSV/JSON",
        "audit", "AuditExport",
-       params=(Param("from", "query", "ts"), Param("to", "query", "ts"),
+       params=(Param("fromTs", "query", "ts"), Param("toTs", "query", "ts"),
                Param("actor", "query", "str"), Param("format", "query", "enum:csv|json"))),
     Op("GET", "/admin/sso-providers", "listSsoProviders", "List SSO providers", "admin",
        "SsoProviderList"),
@@ -1485,13 +1488,38 @@ OPS: tuple[Op, ...] = (
 )
 
 
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_HEADER = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_|~-]+$")  # RFC 7230 token
+
+
+def assert_valid_name(name: str, where: str) -> None:
+    """Generated Python classes use field/param names as identifiers, so a
+    reserved word (the from incident) or junk breaks codegen with a
+    SyntaxError far from the cause. Reject at spec-import time instead."""
+    assert _IDENT.match(name), f"{where}: {name!r} is not a valid identifier"
+    assert not keyword.iskeyword(name), (
+        f"{where}: {name!r} is a Python keyword; generated code cannot compile"
+    )
+
+
 def validate_spec() -> None:
     assert len(MODELS) == 232, len(MODELS)
     names = {m.name for m in MODELS}
     for m in MODELS:
+        assert_valid_name(m.name, "model name")
         for p in m.fields:
+            assert_valid_name(p.name, f"{m.name}.{p.name}")
             if p.type.startswith("obj:"):
                 assert p.type[4:] in names, f"{m.name}.{p.name}: unknown model {p.type}"
+    for op in OPS:
+        for param in op.params:
+            where = f"{op.op_id} param"
+            if param.location == "header":
+                # header names are HTTP tokens (hyphens legal), never
+                # Python identifiers - so only sanity-check the charset
+                assert _HEADER.match(param.name), f"{where}: bad header name"
+            else:
+                assert_valid_name(param.name, where)
     for op in OPS:
         assert op.response in names, f"{op.op_id}: unknown response {op.response}"
         if op.body:

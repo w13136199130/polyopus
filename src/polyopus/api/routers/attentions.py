@@ -6,7 +6,9 @@ import json
 import sqlite3
 from sqlite3 import Connection
 
-from fastapi import APIRouter, Depends
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from polyopus.api.deps import current_user, get_db, get_store
@@ -55,6 +57,7 @@ def list_attentions(
 def answer(
     attention_id: str,
     body: AnswerBody,
+    request: Request,
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
@@ -95,7 +98,12 @@ def answer(
         decision=decision,
         by=user.user_id,
     )
+    # resume must write into THIS app instance's workspace (tests isolate
+    # it per tmp_path; the engine would otherwise fall back to global settings)
+    workspace = Path(request.app.state.settings.workspace_dir)
+    workspace.mkdir(parents=True, exist_ok=True)
     engine.resume_after_approval(
-        conn, store, str(row["turn_id"]), decision=decision
+        conn, store, str(row["turn_id"]), decision=decision,
+        config=engine.EngineConfig(workspace=workspace),
     )
     return {"attentionId": attention_id, "status": "answered", "decision": decision}
