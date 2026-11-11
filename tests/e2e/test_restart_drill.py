@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Iterator
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from polyopus.api.app import create_app
