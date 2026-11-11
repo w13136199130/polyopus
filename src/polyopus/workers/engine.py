@@ -137,9 +137,22 @@ async def run_turn(
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
         ),
     )
-    messages: list[gateway_types.ChatMessage] = [
-        gateway_types.ChatMessage(role="user", content=_user_content(conn, turn_id))
-    ]
+    from polyopus.domains import memory as memory_svc
+
+    user_content = _user_content(conn, turn_id)
+    agent_id = _agent_of(conn, thread_id)
+    hints = memory_svc.recall(conn, tenant_id, agent_id, user_content)
+    messages: list[gateway_types.ChatMessage] = []
+    if hints:
+        lines = "\n".join(f"- [{h['kind']}] {h['text']}" for h in hints)
+        messages.append(
+            gateway_types.ChatMessage(
+                role="system", content=f"已知记忆（供参考）：\n{lines}"
+            )
+        )
+    messages.append(
+        gateway_types.ChatMessage(role="user", content=user_content)
+    )
     text = ""
     index = 0
     input_tokens = output_tokens = cached_tokens = 0
@@ -312,6 +325,8 @@ async def run_turn(
 
     _finish(conn, store, tenant_id=tenant_id, thread_id=thread_id,
             turn_id=turn_id, run_id=run_id, status="completed")
+    _harvest_memory(conn, tenant_id=tenant_id, thread_id=thread_id,
+                    turn_id=turn_id)
     return "completed"
 
 
@@ -348,6 +363,30 @@ def resume_after_approval(
             turn_id=turn_id, run_id=run_id, status=status,
             note=f"approval {decision}")
     return status
+
+
+def _agent_of(conn: sqlite3.Connection, thread_id: str) -> str:
+    row = conn.execute(
+        "SELECT COALESCE(agent_id, 'agent:default') FROM threads WHERE thread_id = ?",
+        (thread_id,),
+    ).fetchone()
+    return str(row[0]) if row else "agent:default"
+
+
+def _harvest_memory(
+    conn: sqlite3.Connection, *, tenant_id: str, thread_id: str, turn_id: str
+) -> None:
+    """docs/13 §4.1 write path, rule-based tier: raw -> candidate -> atom."""
+    from polyopus.domains import memory as memory_svc
+
+    memory_svc.capture_raw(conn, tenant_id, thread_id, turn_id)
+    raw = memory_svc.load_raw(conn, tenant_id)
+    candidates = memory_svc.extract_candidates(raw)
+    if not candidates:
+        return
+    agent_id = _agent_of(conn, thread_id)
+    memory_svc.stage_candidates(conn, tenant_id, agent_id, candidates)
+    memory_svc.promote(conn, tenant_id, agent_id)
 
 
 def _record_usage(

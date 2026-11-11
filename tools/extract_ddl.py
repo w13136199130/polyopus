@@ -31,6 +31,7 @@ AUTH_SQL = MIGRATIONS / "0005_auth.sql"
 ATTENTION_SQL = MIGRATIONS / "0006_attention.sql"
 MODEL_SQL = MIGRATIONS / "0007_models.sql"
 ASSIGNMENT_SQL = MIGRATIONS / "0008_assignments.sql"
+MEMORY_SQL = MIGRATIONS / "0009_memory.sql"
 
 # 8 names listed in docs/31 as deferred/merged: they must have no DDL.
 DEFERRED = [
@@ -49,6 +50,7 @@ AUTH_TABLES = ["sessions"]
 ATTENTION_TABLES = ["approvals"]
 MODEL_TABLES = ["providers", "models"]
 ASSIGNMENT_TABLES = ["assignments"]
+MEMORY_TABLES = ["memory_atoms", "memory_events"]
 
 # M1 queue subset (platform-level, used by Outbox).
 QUEUE_TABLES = ["outbox"]
@@ -257,6 +259,14 @@ def render_assignment(manifest: dict[str, Any]) -> str:
     )
 
 
+def render_memory(manifest: dict[str, Any]) -> str:
+    return render_subset(
+        manifest,
+        MEMORY_TABLES,
+        ["W11 memory: atoms + events (docs/13 §4, docs/31 §2.6)."],
+    )
+
+
 def _previous_manifest() -> dict[str, Any] | None:
     if not MANIFEST.is_file():
         return None
@@ -287,6 +297,7 @@ def check(manifest: dict[str, Any]) -> list[str]:
         (ATTENTION_SQL, render_attention),
         (MODEL_SQL, render_model),
         (ASSIGNMENT_SQL, render_assignment),
+        (MEMORY_SQL, render_memory),
     ):
         expected = render(manifest)
         if not path.is_file():
@@ -311,6 +322,7 @@ def emit(manifest: dict[str, Any]) -> None:
     ATTENTION_SQL.write_text(render_attention(manifest), encoding="utf-8", newline="\n")
     MODEL_SQL.write_text(render_model(manifest), encoding="utf-8", newline="\n")
     ASSIGNMENT_SQL.write_text(render_assignment(manifest), encoding="utf-8", newline="\n")
+    MEMORY_SQL.write_text(render_memory(manifest), encoding="utf-8", newline="\n")
     print(f"wrote {MANIFEST.relative_to(ROOT)} ({len(manifest['tables'])} tables)")
     print(f"wrote {CORE_SQL.relative_to(ROOT)} ({len(CORE_TABLES)} tables)")
     print(f"wrote {INTAKE_SQL.relative_to(ROOT)} ({len(INTAKE_TABLES)} tables)")
@@ -319,6 +331,7 @@ def emit(manifest: dict[str, Any]) -> None:
     print(f"wrote {ATTENTION_SQL.relative_to(ROOT)} ({len(ATTENTION_TABLES)} tables)")
     print(f"wrote {MODEL_SQL.relative_to(ROOT)} ({len(MODEL_TABLES)} tables)")
     print(f"wrote {ASSIGNMENT_SQL.relative_to(ROOT)} ({len(ASSIGNMENT_TABLES)} tables)")
+    print(f"wrote {MEMORY_SQL.relative_to(ROOT)} ({len(MEMORY_TABLES)} tables)")
 
 
 def main(argv: list[str] | None = None) -> int:
