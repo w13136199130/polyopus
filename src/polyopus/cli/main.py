@@ -246,7 +246,35 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     if _migrate_and_seed() != 0:
         return 1
+    if args.no_worker:
+        # queue is drained by a standalone `poly worker` process instead
+        import os
+
+        os.environ["POLY_EMBEDDED_WORKER"] = "false"
     uvicorn.run("polyopus.api.app:app", host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
+def cmd_worker(args: argparse.Namespace) -> int:
+    import threading
+
+    from polyopus.platform.events.store import EventStore  # noqa: F401 (warm import)
+    from polyopus.workers.worker_loop import run_worker_loop
+
+    if _migrate_and_seed() != 0:
+        return 1
+    settings = load_settings()
+    stop = threading.Event()
+    print(f"worker: polling queued turns on {settings.resolved_db_path()}")
+    try:
+        processed = run_worker_loop(
+            settings.resolved_db_path, stop=stop,
+            max_turns=args.once or None,
+        )
+    except KeyboardInterrupt:
+        stop.set()
+        return 0
+    print(f"worker: processed {processed} turn(s)")
     return 0
 
 
@@ -272,7 +300,14 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--reload", action="store_true")
+    serve.add_argument("--no-worker", action="store_true",
+                       help="do not embed the turn worker (run `poly worker` separately)")
     serve.set_defaults(func=cmd_serve)
+
+    worker = sub.add_parser("worker", help="drain queued turns (standalone)")
+    worker.add_argument("--once", type=int, default=None,
+                        help="process at most N turns then exit")
+    worker.set_defaults(func=cmd_worker)
 
     return parser
 

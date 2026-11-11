@@ -91,13 +91,6 @@ def post_turn(
         content=body.content,
         idempotency_key=idempotency_key or body.clientMessageId,
     )
-    from polyopus.workers import runner
-
-    runner.launch_turn(
-        request.app.state.settings.resolved_db_path,
-        turn_id,
-        body.content,
-    )
     return {"turnId": turn_id, "messageId": message_id, "status": "queued"}
 
 

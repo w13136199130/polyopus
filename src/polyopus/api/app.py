@@ -37,8 +37,26 @@ HTTP_CODE_MAP = {
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    app = FastAPI(title="PolyOpus", version=__version__)
-    app.state.settings = settings or load_settings()
+    from collections.abc import AsyncIterator
+    from contextlib import asynccontextmanager
+
+    effective = settings or load_settings()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        stop = None
+        if effective.embedded_worker:
+            from polyopus.workers.worker_loop import start_embedded
+
+            stop = start_embedded(effective.resolved_db_path)
+        try:
+            yield
+        finally:
+            if stop is not None:
+                stop.set()
+
+    app = FastAPI(title="PolyOpus", version=__version__, lifespan=lifespan)
+    app.state.settings = effective
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(threads.router, prefix="/api/v1")

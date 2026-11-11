@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     model_api_key: str = ""
     model_name: str = ""
     workspace_dir: Path = Path("data/workspace")
+    embedded_worker: bool = True
     access_ttl_seconds: int = 8 * 3600
     session_ttl_seconds: int = 30 * 86400
 

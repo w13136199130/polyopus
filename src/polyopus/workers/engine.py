@@ -288,20 +288,25 @@ async def run_turn(
         (turn_id,),
     ).fetchone()
     if existing is not None and str(existing[0]) in ("leased", "running", "waiting"):
-        raise AppError("TURN_ACTIVE", details={"turn_id": turn_id, "status": str(existing[0])})
+        raise AppError("THREAD_TURN_ACTIVE", details={"turn_id": turn_id, "status": str(existing[0])})
     attempt = 1 if existing is None else int(existing[1]) + 1  # keep retry history
 
     run_id = "run_" + secrets.token_hex(8)
     now = _now()
-    conn.execute(
-        """
-        INSERT INTO runs
-          (tenant_id, run_id, turn_id, attempt, status, lease_owner, lease_until,
-           heartbeat_at, last_step_idx, started_at)
-        VALUES (?, ?, ?, ?, 'leased', ?, ?, ?, -1, ?)
-        """,
-        (tenant_id, run_id, turn_id, attempt, owner, now + 60, now, now),
-    )
+    try:
+        conn.execute(
+            """
+            INSERT INTO runs
+              (tenant_id, run_id, turn_id, attempt, status, lease_owner, lease_until,
+               heartbeat_at, last_step_idx, started_at)
+            VALUES (?, ?, ?, ?, 'leased', ?, ?, ?, -1, ?)
+            """,
+            (tenant_id, run_id, turn_id, attempt, owner, now + 60, now, now),
+        )
+    except sqlite3.IntegrityError as exc:
+        # two workers raced the same turn: UNIQUE(turn_id, attempt) decides
+        raise AppError("THREAD_TURN_ACTIVE",
+                       details={"turn_id": turn_id, "status": "race"}) from exc
     conn.commit()
     lease.claim(conn, run_id, owner, 60)
     _set_turn_status(conn, turn_id, "running", now)
