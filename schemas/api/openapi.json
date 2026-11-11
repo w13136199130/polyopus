@@ -10368,6 +10368,150 @@
           }
         }
       }
+    },
+    "/usage/summary": {
+      "get": {
+        "operationId": "usageSummary",
+        "summary": "Usage totals by window/model (USE-001)",
+        "tags": [
+          "usage"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ]
+            }
+          },
+          {
+            "name": "asUser",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "x-id-prefix": "u"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "x-id-prefix": "ag"
+            }
+          }
+        ]
+      }
+    },
+    "/usage/export": {
+      "get": {
+        "operationId": "usageExport",
+        "summary": "Export the current filter as CSV (USE-002)",
+        "tags": [
+          "usage"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvFile"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ]
+            }
+          },
+          {
+            "name": "asUser",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "x-id-prefix": "u"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "x-id-prefix": "ag"
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -10607,6 +10751,103 @@
         "required": [
           "kind",
           "ref"
+        ]
+      },
+      "CsvFile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "filename"
+        ]
+      },
+      "UsageSummaryItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "integer"
+          },
+          "inputTokens": {
+            "type": "integer"
+          },
+          "outputTokens": {
+            "type": "integer"
+          },
+          "cachedTokens": {
+            "type": "integer"
+          },
+          "costMicros": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "CNY",
+              "USD"
+            ]
+          }
+        },
+        "required": [
+          "bucket",
+          "model",
+          "turns",
+          "inputTokens",
+          "outputTokens",
+          "cachedTokens",
+          "costMicros"
+        ]
+      },
+      "UsageSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "window": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          },
+          "startTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageSummaryItem"
+            }
+          },
+          "totalCostMicros": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window",
+          "startTs",
+          "endTs",
+          "items",
+          "totalCostMicros"
         ]
       },
       "Report": {

@@ -402,16 +402,23 @@ def _record_usage(
     cached_tokens: int,
     first_token_ms: int | None,
 ) -> None:
+    from polyopus.domains.usage import service as usage_svc
+
+    cost = usage_svc.price_usage(
+        conn, model=model, input_tokens=input_tokens,
+        output_tokens=output_tokens, cached_tokens=cached_tokens,
+    )
     entry_id = "us_" + secrets.token_hex(8)
     conn.execute(
         """
         INSERT INTO usage_ledger
           (tenant_id, entry_id, turn_id, model, input_tokens, output_tokens,
-           cache_read, latency_ms, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           cache_read, latency_ms, cost_micros, currency, price_version, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (tenant_id, entry_id, turn_id, model, input_tokens, output_tokens,
-         cached_tokens, first_token_ms, _now()),
+         cached_tokens, first_token_ms, cost.cost_micros, cost.currency,
+         cost.price_version, _now()),
     )
     conn.commit()
     store.append(
@@ -423,9 +430,9 @@ def _record_usage(
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "cached_tokens": cached_tokens,
-            "cost_micros": 0,
-            "currency": "CNY",
-            "price_version": "unpriced",
+            "cost_micros": cost.cost_micros,
+            "currency": cost.currency,
+            "price_version": cost.price_version,
         },
         tenant_id=tenant_id,
         turn_id=turn_id,

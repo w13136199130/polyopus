@@ -70,6 +70,19 @@ MODELS: tuple[Model, ...] = (
         f("kind", "enum:file|image|pdf|pr|diff|report|link"), f("ref", "str"),
         f("mime", "str", required=False), f("size", "int", required=False),
     )),
+    Model("CsvFile", (
+        f("content", "str"), f("filename", "str"),
+    )),
+    Model("UsageSummaryItem", (
+        f("bucket", "str"), f("model", "str"),
+        f("turns", "int"), f("inputTokens", "int"), f("outputTokens", "int"),
+        f("cachedTokens", "int"), f("costMicros", "int"),
+        f("currency", "enum:CNY|USD", required=False),
+    )),
+    Model("UsageSummary", (
+        f("window", "enum:day|week|month"), f("startTs", "ts"), f("endTs", "ts"),
+        f("items", "arr:obj:UsageSummaryItem"), f("totalCostMicros", "int"),
+    )),
     Model("Report", (
         f("id", "ref:rp"), f("at", "ts"),
         f("state", "enum:progress|waiting|ready|blocked|failed|dropped"),
@@ -1455,11 +1468,25 @@ OPS: tuple[Op, ...] = (
        )),
     Op("POST", "/attentions/{attentionId}/answer", "answerAttention", "Answer an attention", "attentions", "Attention",
        params=(Param("attentionId", "path", "str", required=True),), body="AnswerRequest"),
+
+    # ---- usage (USE-001/USE-002) -----------------------------------------
+    Op("GET", "/usage/summary", "usageSummary", "Usage totals by window/model (USE-001)", "usage", "UsageSummary",
+       params=(
+           Param("window", "query", "enum:day|week|month"),
+           Param("asUser", "query", "ref:u"),
+           Param("agentId", "query", "ref:ag"),
+       )),
+    Op("GET", "/usage/export", "usageExport", "Export the current filter as CSV (USE-002)", "usage", "CsvFile",
+       params=(
+           Param("window", "query", "enum:day|week|month"),
+           Param("asUser", "query", "ref:u"),
+           Param("agentId", "query", "ref:ag"),
+       )),
 )
 
 
 def validate_spec() -> None:
-    assert len(MODELS) == 229, len(MODELS)
+    assert len(MODELS) == 232, len(MODELS)
     names = {m.name for m in MODELS}
     for m in MODELS:
         for p in m.fields:

@@ -49,6 +49,30 @@ export interface Artifact {
   size?: number;
 }
 
+export interface CsvFile {
+  content: string;
+  filename: string;
+}
+
+export interface UsageSummaryItem {
+  bucket: string;
+  model: string;
+  turns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  costMicros: number;
+  currency?: "CNY" | "USD";
+}
+
+export interface UsageSummary {
+  window: "day" | "week" | "month";
+  startTs: string;
+  endTs: string;
+  items: UsageSummaryItem[];
+  totalCostMicros: number;
+}
+
 export interface Report {
   id: string;
   at: string;

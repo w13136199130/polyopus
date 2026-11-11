@@ -62,6 +62,30 @@ class Artifact(BaseModel):
     mime: str | None = None
     size: int | None = None
 
+class CsvFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str
+    filename: str
+
+class UsageSummaryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    bucket: str
+    model: str
+    turns: int
+    inputTokens: int
+    outputTokens: int
+    cachedTokens: int
+    costMicros: int
+    currency: Literal["CNY", "USD"] | None = None
+
+class UsageSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    window: Literal["day", "week", "month"]
+    startTs: datetime
+    endTs: datetime
+    items: list[UsageSummaryItem]
+    totalCostMicros: int
+
 class Report(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
