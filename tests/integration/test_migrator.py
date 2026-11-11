@@ -40,12 +40,12 @@ def test_core_migration_creates_twelve_tables(tmp_path: Path) -> None:
     conn = m.connect(tmp_path / "t.db")
     try:
         applied = m.apply(conn, m.discover(MIGRATIONS))
-        assert [x.version for x in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        assert [x.version for x in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         assert CORE <= _tables(conn)
         assert {"sources", "triggers", "evals", "mandates", "reports", "outbox", "sessions", "approvals", "providers", "models"} <= _tables(conn)
         count = conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0]
-        assert count == 9
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert count == 10
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 10
     finally:
         conn.close()
 
@@ -65,7 +65,7 @@ def test_pending_before_apply(tmp_path: Path) -> None:
     conn = m.connect(tmp_path / "t.db")
     try:
         migrations = m.discover(MIGRATIONS)
-        assert [x.version for x in m.pending(conn, migrations)] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        assert [x.version for x in m.pending(conn, migrations)] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     finally:
         conn.close()
 
