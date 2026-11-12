@@ -6,6 +6,15 @@ import { defineConfig } from "vite";
 // contracts/generated. Never hand-edit files under it.
 const OUT_DIR = fileURLToPath(new URL("../src/polyopus/web", import.meta.url));
 
+// dev/preview proxy: same-origin cookies, no CORS (docs/49 F8). The same
+// http-proxy config powers `vite preview`; e2e points the preview proxy at
+// a dedicated FakeModel backend via POLY_API_TARGET.
+const API_TARGET = process.env.POLY_API_TARGET || "http://127.0.0.1:8000";
+const proxy = {
+  "/api": { target: API_TARGET, changeOrigin: false },
+  "/healthz": { target: API_TARGET, changeOrigin: false },
+};
+
 export default defineConfig(({ mode }) => ({
   base: process.env.VITE_BASE_PATH || "/",
   // keep the deps-optimizer cache out of node_modules: some setups (AV,
@@ -42,17 +51,11 @@ export default defineConfig(({ mode }) => ({
   // verified even where the dev optimizer cannot run (esbuild blocked by AV).
   server: {
     host: true, // listen on v4+v6 so 127.0.0.1 works everywhere
-    proxy: {
-      "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
-      "/healthz": { target: "http://127.0.0.1:8000", changeOrigin: false },
-    },
+    proxy,
   },
   preview: {
     host: true,
-    proxy: {
-      "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
-      "/healthz": { target: "http://127.0.0.1:8000", changeOrigin: false },
-    },
+    proxy,
   },
   resolve: {
     alias: {

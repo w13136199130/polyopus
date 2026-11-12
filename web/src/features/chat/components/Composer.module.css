@@ -1,0 +1,16 @@
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--space-3) var(--space-5) var(--space-4);
+}
+
+.input {
+  flex: 1;
+  resize: none;
+  line-height: 1.6;
+  max-height: 160px;
+}

@@ -85,7 +85,21 @@ def request(
             VALUES (?, ?, NULL, ?, 'approval', 'approval', ?, ?, 'pending', ?, ?)
             """,
             (tenant_id, attention_id, turn_id, approval_id,
-             json.dumps({"summary": req.summary or req.tool}, ensure_ascii=False),
+             json.dumps(
+                 {
+                     "summary": req.summary or req.tool,
+                     # the inbox must answer "what exactly needs approval"
+                     # without a second round-trip to the approval row
+                     "actions": [
+                         {
+                             "tool": req.tool,
+                             "args_preview": req.args_preview[:200],
+                             "risk": req.risk,
+                         }
+                     ],
+                 },
+                 ensure_ascii=False,
+             ),
              ts + ttl_seconds, ts),
         )
         conn.commit()

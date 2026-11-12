@@ -33,6 +33,9 @@
 
 .body {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: auto;
-  padding: var(--space-5);
+  padding: 0;
 }
