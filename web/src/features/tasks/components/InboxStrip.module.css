@@ -1,0 +1,39 @@
+.strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--text-3);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+}
+
+.blocked {
+  border-left-color: var(--danger);
+}
+
+.question {
+  border-left-color: var(--warn);
+}
+
+.ticketRef {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}

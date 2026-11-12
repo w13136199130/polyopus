@@ -8,13 +8,13 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { attentions, threads } from "@/lib/api/endpoints";
-import type { AttentionItem } from "@/lib/api/wire";
+import { threads } from "@/lib/api/endpoints";
+import { attentionKeys } from "@/lib/api/hooks";
 
 export const chatKeys = {
   threads: ["threads"] as const,
   messages: (threadId: string) => ["messages", threadId] as const,
-  attentions: ["attentions"] as const,
+  attentions: attentionKeys.all,
 };
 
 export function useThreads() {
@@ -47,32 +47,3 @@ export function useMessages(threadId: string | null) {
   });
 }
 
-export function useAttentions() {
-  return useQuery({
-    queryKey: chatKeys.attentions,
-    queryFn: attentions.list,
-    refetchInterval: 5_000,
-  });
-}
-
-export function useAnswerAttention() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { attentionId: string; decision: "approve" | "deny" }) =>
-      attentions.answer(input.attentionId, input.decision),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: chatKeys.attentions });
-    },
-  });
-}
-
-/** Pending approval cards for the given turn (kind=approval, still pending). */
-export function pendingApprovalsForTurn(
-  items: AttentionItem[] | undefined,
-  turnId: string | null,
-): AttentionItem[] {
-  if (!items || !turnId) return [];
-  return items.filter(
-    (item) => item.kind === "approval" && item.status === "pending" && item.turnId === turnId,
-  );
-}

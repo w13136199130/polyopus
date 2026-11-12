@@ -8,7 +8,7 @@ import time
 from sqlite3 import Connection
 
 from fastapi import APIRouter, Body, Depends, Header, Request
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from polyopus.api.deps import current_user, get_db, get_store
 from polyopus.domains.identity.service import User
@@ -19,12 +19,34 @@ router = APIRouter(tags=["intake"])
 
 
 class CreateSourceBody(BaseModel):
+    """Accepts snake_case and the repo-wide camelCase wire convention:
+    the SPA sends camelCase (docs/29); silently defaulting `generateSecret`
+    to true once caused unsigned demo webhooks to 401 (V05-04 e2e catch)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str = Field(min_length=1, max_length=100)
-    allow_actors: list[str] = Field(default_factory=list)
-    explicit_patterns: list[str] = Field(default_factory=list)
-    default_scope: list[str] = Field(default_factory=lambda: ["workspace:default"])
-    max_total_tokens: int | None = Field(default=None, gt=0)
-    generate_secret: bool = True
+    allow_actors: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("allow_actors", "allowActors"),
+    )
+    explicit_patterns: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("explicit_patterns", "explicitPatterns"),
+    )
+    default_scope: list[str] = Field(
+        default_factory=lambda: ["workspace:default"],
+        validation_alias=AliasChoices("default_scope", "defaultScope"),
+    )
+    max_total_tokens: int | None = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices("max_total_tokens", "maxTotalTokens"),
+    )
+    generate_secret: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("generate_secret", "generateSecret"),
+    )
 
 
 def _view(source_id: str, name: str, status: str) -> dict[str, str]:

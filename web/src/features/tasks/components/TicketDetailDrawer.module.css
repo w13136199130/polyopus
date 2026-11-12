@@ -1,0 +1,62 @@
+.facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.facts > div {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+dt {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+dd {
+  margin: 0;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+dd code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--surface-3);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.reportState {
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 1px 8px;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.ready {
+  background: var(--ok);
+  color: #fff;
+}
+
+.blocked,
+.failed {
+  background: var(--danger);
+  color: #fff;
+}
+
+.waiting {
+  background: var(--warn);
+  color: #fff;
+}
+
+.reportSummary {
+  margin: var(--space-1) 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}

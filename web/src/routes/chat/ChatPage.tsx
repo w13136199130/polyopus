@@ -9,15 +9,17 @@ import { useSearchParams } from "react-router";
 import { ErrorState, PageLoading, StreamConnectingIndicator } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import {
-  pendingApprovalsForTurn,
-  useAnswerAttention,
-  useAttentions,
   useCreateThread,
   useMessages,
   useThreads,
 } from "@/features/chat/api";
+import {
+  pendingApprovalsForTurn,
+  useAnswerAttention,
+  useAttentions,
+} from "@/lib/api/hooks";
 import { useChatStream } from "@/features/chat/useChatStream";
-import { ApprovalCard } from "@/features/chat/components/ApprovalCard";
+import { ApprovalCard } from "@/components/attention/ApprovalCard";
 import { Composer } from "@/features/chat/components/Composer";
 import { MessageList } from "@/features/chat/components/MessageList";
 import { ThreadRail } from "@/features/chat/components/ThreadRail";
