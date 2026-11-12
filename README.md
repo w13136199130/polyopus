@@ -19,7 +19,7 @@ cd polyopus
 uv sync
 uv run poly migrate         # 首次会打印一次性 admin 口令
 uv run poly doctor          # 6 项自检（迁移后除 model 外全 OK）
-uv run poly serve           # 打开 http://127.0.0.1:8000 —— SPA 壳（登录后 8+3 导航）；旧单文件界面在 /legacy
+uv run poly serve           # 打开 http://127.0.0.1:8000 —— 登录后 8+3 导航（对话/任务/用量为真实页面）
 uv run pytest               # 全量后端测试；前端另有 pnpm --dir web test
 uv run python scripts/demo_kill9.py
 工作区文件（`fs.read` 只读工具可访问）：放 `data/workspace/` 下即可，模型能真实读取。
@@ -43,7 +43,7 @@ pnpm --dir web test         # Vitest
 | `poly recover` | 恢复租约过期的 run |
 | `poly worker` | 独立 worker 进程消化排队 turn（`--once N` 限量） |
 | `POST /api/v1/webhooks/{id}` | webhook 入口（HMAC 验签、幂等去重、Gate→工单） |
-| `poly serve` | 启动 HTTP API（`/healthz`、`/api/v1`）+ SPA 静态（`/assets` immutable、SPA fallback、`/legacy`） |
+| `poly serve` | 启动 HTTP API（`/healthz`、`/api/v1`）+ SPA 静态（`/assets` immutable、SPA fallback） |
 | `pnpm --dir web dev/build/test` | 前端开发 / 构建（产物入库）/ 测试 |
 | `scripts/check.py` | 本地全量门禁（lint/type/imports/schema/test/contracts/coverage/web-build/web-dist/web-test） |
 
@@ -273,7 +273,6 @@ polyopus/
 │  └─ ts/src/                （TypeScript）
 ├─ web/                      ← 前端源码（React 19 + Vite 7；V05-01 起）
 │  ├─ src/                   （app/layouts/routes/features/lib/styles）
-│  └─ public/legacy/         （v0.1 单文件界面，V05-03..05 迁完删除）
 ├─ spikes/                   ← 技术 Spike（S1–S3 已 GO；不进生产构建）
 └─ Makefile
 ```

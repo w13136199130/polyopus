@@ -1,4 +1,5 @@
-"""Task center screen (v0.1 card 3): page structure + unsigned demo path."""
+"""Task center API flows (v0.1 card 3; the legacy single-file UI was retired
+in V05-05 — these API-level checks keep their value)."""
 
 from __future__ import annotations
 
@@ -29,15 +30,6 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     with TestClient(create_app(settings)) as c:
         c.post("/api/v1/auth/login", json={"username": "admin", "password": "p"})
         yield c
-
-
-def test_index_contains_tasks_screen(client: TestClient) -> None:
-    page = client.get("/legacy").text
-    for marker in ("tasksView", "tabTasks", "inbox", "buckets",
-                   "sendTrigger", "ticketDetail", "演示：webhook 触发器"):
-        assert marker in page, f"missing {marker}"
-    # XSS guard present for ticket titles
-    assert "function esc(" in page
 
 
 def test_secretless_source_accepts_unsigned_webhook(client: TestClient) -> None:

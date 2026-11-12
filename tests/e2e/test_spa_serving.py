@@ -1,7 +1,7 @@
 """SPA static serving (v0.1 card V05-01): fallback rules and cache headers.
 
 `src/polyopus/web` is the committed Vite build; these tests pin the serving
-contract from docs/49 §12: hashed assets immutable, index/legacy no-store,
+contract from docs/49 §12: hashed assets immutable, index no-store,
 unknown /api stays JSON 404.
 """
 
@@ -83,12 +83,3 @@ def test_hashed_assets_immutable(client: TestClient) -> None:
 
     missing = client.get("/assets/does-not-exist-12345678.js")
     assert missing.status_code == 404
-
-
-@pytest.mark.skipif(not (WEB / "legacy" / "index.html").is_file(),
-                    reason="dist not built")
-def test_legacy_page_available(client: TestClient) -> None:
-    response = client.get("/legacy")
-    assert response.status_code == 200
-    assert "PolyOpus" in response.text
-    assert response.headers["cache-control"] == "no-store"

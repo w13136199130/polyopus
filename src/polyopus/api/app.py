@@ -127,7 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---- static SPA (docs/49 §12) -----------------------------------------
     # `src/polyopus/web` is the committed Vite build output. Hashed assets are
-    # immutable; index/legacy are always no-store so a deploy is picked up.
+    # immutable; index is always no-store so a deploy is picked up.
     # Unknown /api paths must stay JSON 404 — the SPA fallback never eats them.
 
     NO_STORE = {"Cache-Control": "no-store"}
@@ -143,18 +143,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=500,
             )
         return FileResponse(index, headers=NO_STORE)
-
-    @app.get("/legacy", include_in_schema=False)
-    def legacy() -> Response:
-        # the pre-SPA single-file UI, kept until V05-03..05 land the pages
-        page = WEB / "legacy" / "index.html"
-        if not page.is_file():
-            return JSONResponse(
-                {"error": {"code": "WEB_DIST_MISSING",
-                           "message": "run: pnpm --dir web build"}},
-                status_code=500,
-            )
-        return FileResponse(page, headers=NO_STORE)
 
     @app.get("/assets/{file_path:path}", include_in_schema=False)
     def spa_asset(file_path: str) -> FileResponse:
