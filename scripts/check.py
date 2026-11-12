@@ -53,6 +53,10 @@ def build_steps() -> list[tuple[str, list[str] | None, str | None]]:
          "pnpm not installed"),
         ("web-test", [*pnpm, "--dir", "web", "test"] if pnpm else None,
          "pnpm not installed"),
+        # Playwright against `vite preview` of the dist built above;
+        # local default channel is msedge, CI overrides via PW_CHANNEL
+        ("web-e2e", [*pnpm, "--dir", "web", "e2e"] if pnpm else None,
+         "pnpm not installed"),
     ]
 
 

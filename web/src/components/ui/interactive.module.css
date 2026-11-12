@@ -1,0 +1,191 @@
+/* Interactive kit styles: Button / Dialog / Drawer (docs/49 §9). */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button_md {
+  padding: 8px 14px;
+}
+
+.button_sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.button_primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button_primary:not(:disabled):hover {
+  background: var(--accent-2);
+}
+
+.button_secondary {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.button_secondary:not(:disabled):hover {
+  border-color: var(--line);
+}
+
+.button_danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.button_ghost {
+  background: transparent;
+  color: var(--text-2);
+}
+
+.button_ghost:not(:disabled):hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: ui-spin 0.7s linear infinite;
+}
+
+.button_loading {
+  cursor: progress;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- overlay + panel shared by Dialog and Drawer ---- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  animation: ui-fade 0.12s ease;
+}
+
+@keyframes ui-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.dialog,
+.drawer {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.25);
+}
+
+.dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-right: none;
+  animation: ui-slide-in 0.15s ease;
+}
+
+@keyframes ui-slide-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0.6;
+  }
+}
+
+.dialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5) 0;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dialogClose {
+  background: none;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+}
+
+.dialogClose:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.dialogDescription {
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-5);
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.dialogBody {
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.drawerBody {
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--line);
+}

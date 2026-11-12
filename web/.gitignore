@@ -1,3 +1,5 @@
+.screenshots/
+.playwright-output/
 node_modules/
 coverage/
 .vite/

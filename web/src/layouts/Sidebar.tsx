@@ -1,21 +1,9 @@
 import { NavLink } from "react-router";
 import { NAV_BOTTOM, NAV_PRIMARY, type NavItem } from "@/app/nav";
 import { useSession } from "@/lib/auth/session";
+import { toggleTheme } from "@/lib/theme";
 import icons, { type IconName } from "./icons";
 import styles from "./Sidebar.module.css";
-
-const THEME_KEY = "poly:theme";
-
-function toggleTheme(): void {
-  const root = document.documentElement;
-  const next = root.dataset.theme === "dark" ? "light" : "dark";
-  root.dataset.theme = next;
-  try {
-    localStorage.setItem(THEME_KEY, next);
-  } catch {
-    /* private mode: visual toggle still works for this tab */
-  }
-}
 
 function NavButton({ item }: { item: NavItem }) {
   return (
