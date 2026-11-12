@@ -33,13 +33,19 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
   await expect(assistant.first()).toContainText("echo[", { timeout: 20_000 });
   await expect(page.getByTestId("bubble-user").first()).toContainText("hello e2e chat");
 
-  // streaming really streamed: >=2 deltas + terminal event in the log
+  // streaming really streamed: >=2 deltas + terminal event in the log.
+  // The projection can lag the live bubble for a beat -> poll, don't race.
   const threadId = new URL(threadUrl).searchParams.get("threadId")!;
-  const eventsResponse = await page.request.get(
-    `/api/v1/threads/${threadId}/events?after_seq=0`,
-  );
-  expect(eventsResponse.ok()).toBe(true);
-  const sse = await eventsResponse.text();
+  let sse = "";
+  for (let i = 0; i < 20; i += 1) {
+    const eventsResponse = await page.request.get(
+      `/api/v1/threads/${threadId}/events?after_seq=0`,
+    );
+    expect(eventsResponse.ok()).toBe(true);
+    sse = await eventsResponse.text();
+    if (sse.includes("turn.finished")) break;
+    await page.waitForTimeout(500);
+  }
   expect((sse.match(/message\.delta/g) ?? []).length).toBeGreaterThanOrEqual(2);
   expect(sse).toContain("turn.finished");
 

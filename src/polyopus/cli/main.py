@@ -214,7 +214,28 @@ def cmd_recover(args: argparse.Namespace) -> int:
 
 def _migrate_and_seed() -> int:
     """docs/16 §6: auto-migrate at startup; first boot seeds the owner."""
+    import os
+
     from polyopus.platform.db.seed import ensure_admin
+
+    if os.environ.get("POLY_E2E_RESET") == "1":
+        # hermetic e2e backends: start from a pristine db+workspace every
+        # run (playwright.config sets this) — shared-state leftovers have
+        # poisoned runs before (memory atoms leaking between specs)
+        import shutil
+
+        settings_for_reset = load_settings()
+        db = settings_for_reset.resolved_db_path()
+        if db.exists():
+            db.unlink()
+        for suffix in ("-wal", "-shm"):
+            side = db.with_name(db.name + suffix)
+            if side.exists():
+                side.unlink()
+        ws = settings_for_reset.workspace_dir
+        if ws.exists():
+            shutil.rmtree(ws, ignore_errors=True)
+        print(f"e2e reset: removed {db}")
 
     settings = load_settings()
     try:
@@ -259,22 +280,37 @@ def cmd_worker(args: argparse.Namespace) -> int:
     import threading
 
     from polyopus.platform.events.store import EventStore  # noqa: F401 (warm import)
+    from polyopus.workers.ticket_loop import run_ticket_loop
     from polyopus.workers.worker_loop import run_worker_loop
 
     if _migrate_and_seed() != 0:
         return 1
     settings = load_settings()
     stop = threading.Event()
-    print(f"worker: polling queued turns on {settings.resolved_db_path()}")
+    db_path = settings.resolved_db_path
+    print(f"worker: polling queued turns + tickets on {db_path()}")
+
+    turn_thread = threading.Thread(
+        target=run_worker_loop, args=(db_path,),
+        kwargs={"stop": stop, "max_turns": args.once or None},
+        name="turn-worker", daemon=True,
+    )
+    ticket_thread = threading.Thread(
+        target=run_ticket_loop, args=(db_path,),
+        kwargs={"stop": stop, "max_tickets": args.once or None},
+        name="ticket-worker", daemon=True,
+    )
+    turn_thread.start()
+    ticket_thread.start()
     try:
-        processed = run_worker_loop(
-            settings.resolved_db_path, stop=stop,
-            max_turns=args.once or None,
-        )
+        while turn_thread.is_alive() or ticket_thread.is_alive():
+            turn_thread.join(0.5)
+            ticket_thread.join(0.5)
     except KeyboardInterrupt:
         stop.set()
-        return 0
-    print(f"worker: processed {processed} turn(s)")
+        turn_thread.join(5)
+        ticket_thread.join(5)
+    print("worker: stopped")
     return 0
 
 

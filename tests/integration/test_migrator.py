@@ -38,16 +38,16 @@ def _tables(conn: sqlite3.Connection) -> set[str]:
     return {str(r[0]) for r in rows}
 
 
-def test_core_migration_creates_twelve_tables(tmp_path: Path) -> None:
+def test_core_migration_creates_thirteen_tables(tmp_path: Path) -> None:
     conn = m.connect(tmp_path / "t.db")
     try:
         applied = m.apply(conn, m.discover(MIGRATIONS))
-        assert [x.version for x in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        assert [x.version for x in applied] == list(range(1, 14))
         assert CORE <= _tables(conn)
         assert {"sources", "triggers", "evals", "mandates", "reports", "outbox", "sessions", "approvals", "providers", "models"} <= _tables(conn)
         count = conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0]
-        assert count == 12
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 12
+        assert count == 13
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 13
     finally:
         conn.close()
 
@@ -67,7 +67,7 @@ def test_pending_before_apply(tmp_path: Path) -> None:
     conn = m.connect(tmp_path / "t.db")
     try:
         migrations = m.discover(MIGRATIONS)
-        assert [x.version for x in m.pending(conn, migrations)] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        assert [x.version for x in m.pending(conn, migrations)] == list(range(1, 14))
     finally:
         conn.close()
 

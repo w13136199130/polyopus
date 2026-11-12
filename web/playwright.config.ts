@@ -17,6 +17,9 @@ export default defineConfig({
   testDir: "./e2e",
   outputDir: ".playwright-output",
   timeout: 45_000,
+  // specs share ONE backend + sqlite file; parallel workers make each
+  // other's queue/idle assertions racy by construction -> run serially
+  workers: 1,
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: process.env.PW_BASE_URL ?? "http://127.0.0.1:4177",
@@ -34,6 +37,7 @@ export default defineConfig({
         POLY_DB_PATH: "data/e2e-chat.db",
         POLY_WORKSPACE_DIR: "data/e2e-chat-ws",
         POLY_ADMIN_PASSWORD: "chat-e2e",
+        POLY_E2E_RESET: "1",
         POLY_MODEL_BASE_URL: "",
         POLY_MODEL_API_KEY: "",
         POLY_MODEL_NAME: "",

@@ -14,7 +14,10 @@ import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from polyopus.workers.engine import EngineConfig
 
 from polyopus.domains import conversations
 from polyopus.platform.errors import AppError
@@ -83,17 +86,29 @@ class Budget:
 
 
 def assign(conn: sqlite3.Connection, store: EventStore, ticket_id: str) -> str:
+    """Create the next assignment; UNIQUE(ticket, attempt) arbitrates races.
+
+    Two workers claiming the same queued ticket compute the same next
+    attempt number; exactly one INSERT succeeds (docs/48 V05-07) — the loser
+    sees sqlite3.IntegrityError and skips.
+    """
     _ticket(conn, ticket_id)
     thread_id = thread_of_ticket(conn, ticket_id)
     assignment_id = "as_" + secrets.token_hex(8)
     now = _now()
+    attempt = int(
+        conn.execute(
+            "SELECT COALESCE(MAX(attempt), 0) + 1 FROM assignments WHERE ticket_id = ?",
+            (ticket_id,),
+        ).fetchone()[0]
+    )
     conn.execute(
         """
         INSERT INTO assignments
-          (tenant_id, assignment_id, ticket_id, executor, state, started_at)
-        VALUES (?, ?, ?, ?, 'pending', ?)
+          (tenant_id, assignment_id, ticket_id, executor, state, attempt, started_at)
+        VALUES (?, ?, ?, ?, 'pending', ?, ?)
         """,
-        (TENANT, assignment_id, ticket_id, EXECUTOR, now),
+        (TENANT, assignment_id, ticket_id, EXECUTOR, attempt, now),
     )
     conn.execute(
         "UPDATE tickets SET bucket = 'running', updated_at = ? WHERE ticket_id = ?",
@@ -104,10 +119,22 @@ def assign(conn: sqlite3.Connection, store: EventStore, ticket_id: str) -> str:
         thread_id,
         "assignment.started",
         {"assignment_id": assignment_id, "ticket_id": ticket_id,
-         "executor_kind": EXECUTOR},
+         "executor_kind": EXECUTOR, "attempt": attempt},
         tenant_id=TENANT,
     )
     return assignment_id
+
+
+def _default_engine_config() -> EngineConfig:
+    """Ticket turns get the same workspace/tool wiring as chat turns."""
+    from pathlib import Path
+
+    from polyopus.config import load_settings
+    from polyopus.workers.engine import EngineConfig
+
+    path = Path(load_settings().workspace_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    return EngineConfig(workspace=path)
 
 
 def _usage_of_thread(conn: sqlite3.Connection, thread_id: str) -> int:
@@ -125,6 +152,7 @@ def run_assignment(
     ticket_id: str,
     *,
     content: str | None = None,
+    engine_config: EngineConfig | None = None,
 ) -> str:
     """Drive one assignment to a Report. Returns the report state."""
     from polyopus.workers import engine
@@ -147,8 +175,10 @@ def run_assignment(
         tenant_id=TENANT, owner_id="system", thread_id=thread_id, content=text,
     )
     try:
+        config = engine_config or _default_engine_config()
         result = asyncio.run(
-            engine.run_turn(conn, store, turn_id, owner=f"as:{assignment_id}")
+            engine.run_turn(conn, store, turn_id, owner=f"as:{assignment_id}",
+                            config=config)
         )
         status = result if result in ("completed", "waiting_approval") else "failed"
     except AppError as exc:
@@ -207,9 +237,9 @@ def run_assignment(
         )
     else:
         conn.execute(
-            "UPDATE tickets SET bucket = 'attention' IF 0 ELSE 'attention' "
+            "UPDATE tickets SET bucket = 'attention', updated_at = ? "
             "WHERE ticket_id = ?",
-            (ticket_id,),
+            (_now(), ticket_id),
         )
         conn.commit()
     return state

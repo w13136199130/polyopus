@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -44,15 +45,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        stop = None
+        stops: list[threading.Event] = []
         if effective.embedded_worker:
-            from polyopus.workers.worker_loop import start_embedded
+            from polyopus.workers.ticket_loop import start_embedded as start_tickets
+            from polyopus.workers.worker_loop import start_embedded as start_turns
 
-            stop = start_embedded(effective.resolved_db_path)
+            stops.append(start_turns(effective.resolved_db_path))
+            stops.append(start_tickets(effective.resolved_db_path))
         try:
             yield
         finally:
-            if stop is not None:
+            for stop in stops:
                 stop.set()
 
     app = FastAPI(title="PolyOpus", version=__version__, lifespan=lifespan)
