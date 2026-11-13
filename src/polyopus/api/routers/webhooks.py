@@ -6,6 +6,7 @@ import json
 import secrets
 import time
 from sqlite3 import Connection
+from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, Header, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -47,6 +48,10 @@ class CreateSourceBody(BaseModel):
         default=None,
         validation_alias=AliasChoices("callback_url", "callbackUrl"),
     )
+    assessment: Literal["off", "dry_run", "auto"] = Field(
+        default="off",
+        description="model-based admission (V05-13): off = rule Gate only",
+    )
     generate_secret: bool = Field(
         default=True,
         validation_alias=AliasChoices("generate_secret", "generateSecret"),
@@ -84,6 +89,8 @@ def create_source(
         from polyopus.domains.outbound import service as outbound
 
         config["callback_url"] = outbound.validate_callback_url(body.callback_url)
+    if body.assessment != "off":
+        config["assessment"] = body.assessment
     now = int(time.time())
     conn.execute(
         """

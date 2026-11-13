@@ -39,6 +39,10 @@ class SourceConfig:
     explicit_patterns: tuple[str, ...]
     default_scope: tuple[str, ...]
     callback_url: str = ""  # outbound replies (V05-08)
+    # V05-13: model-based admission. off = rule Gate only (default,
+    # explicit_only); dry_run = judge + write dispositions, never open;
+    # auto = judge + open on accept
+    assessment: str = "off"
 
 
 def config_of(row: sqlite3.Row) -> SourceConfig:
@@ -54,6 +58,7 @@ def config_of(row: sqlite3.Row) -> SourceConfig:
         explicit_patterns=tuple(cfg.get("explicit_patterns", ())),
         default_scope=tuple(cfg.get("default_scope", ("workspace:default",))),
         callback_url=str(cfg.get("callback_url", "")),
+        assessment=str(cfg.get("assessment", "off")),
     )
 
 
@@ -197,8 +202,16 @@ def open_ticket(
     store: EventStore,
     source: sqlite3.Row,
     trigger_id: str,
+    *,
+    strength: str = "explicit",
+    matched_rules: list[str] | None = None,
+    scope: list[str] | None = None,
 ) -> str:
+    """strength/matched_rules/scope record HOW admission happened: the rule
+    Gate ('explicit' + gate:explicit + default scope) or a V05-13 assessment
+    (judged strength + assessment:<eval_id> + judged scope)."""
     cfg = config_of(source)
+    matched = matched_rules if matched_rules is not None else ["gate:explicit"]
     trigger = conn.execute(
         "SELECT * FROM triggers WHERE trigger_id = ?", (trigger_id,)
     ).fetchone()
@@ -211,7 +224,7 @@ def open_ticket(
     mandate_id = "md_" + secrets.token_hex(8)
     thread_id = "th_" + secrets.token_hex(12)
     title = str(payload.get("text", ""))[:80] or "webhook 工单"
-    scope = list(cfg.default_scope)
+    scope = list(scope) if scope else list(cfg.default_scope)
 
     # ADR-012: all execution lands on thread+turn; the ticket carries the mandate
     conn.execute(
@@ -237,10 +250,11 @@ def open_ticket(
           (tenant_id, ticket_id, title, state, bucket, source_id, trigger_id,
            actor_json, strength, policy_version, scope_json, budget_json,
            created_at, updated_at)
-        VALUES (?, ?, ?, 'open', 'queued', ?, ?, ?, 'explicit', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, 'open', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (TENANT, ticket_id, title, cfg.source_id, trigger_id,
          json.dumps({"id": str(trigger["actor_id"]), "kind": str(trigger["actor_kind"])}),
+         strength,
          policy_version,
          json.dumps(scope),
          json.dumps(budget) if budget else None, now, now),
@@ -250,10 +264,10 @@ def open_ticket(
         INSERT INTO mandates
           (tenant_id, mandate_id, ticket_id, policy_version, scope_json, strength,
            matched_rules_json, created_at)
-        VALUES (?, ?, ?, ?, ?, 'explicit', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (TENANT, mandate_id, ticket_id, policy_version, json.dumps(scope),
-         json.dumps(["gate:explicit"]), now),
+         strength, json.dumps(matched), now),
     )
     conn.execute(
         "UPDATE triggers SET disposition = 'accepted' WHERE trigger_id = ?",
@@ -276,8 +290,8 @@ def open_ticket(
             "mandate": {
                 "policy_version": policy_version,
                 "scope": scope,
-                "strength": "explicit",
-                "matched_rules": ["gate:explicit"],
+                "strength": strength,
+                "matched_rules": matched,
                 "actor": {"kind": str(trigger["actor_kind"]),
                           "id": str(trigger["actor_id"])},
                 "granted_at": now,
@@ -474,4 +488,23 @@ def process(
     if not result.accept:
         filter_trigger(conn, store, source, trigger_id, result)
         return None
+    if cfg.assessment != "off":
+        # V05-13: model judgement between the Gate and the ticket. The Gate
+        # already accepted; assessment may still ignore/stop/duplicate or
+        # (auto only) open with the judged strength. dry_run never opens.
+        from polyopus.domains.intake import assessment
+
+        outcome = assessment.run_for_trigger(
+            conn, store, source, trigger,
+            gate_explicit=bool(cfg.explicit_patterns),
+            dry_run=cfg.assessment == "dry_run",
+        )
+        if outcome.status != "decided" or outcome.decision != "accept":
+            return None
+        if outcome.duplicate_of or cfg.assessment == "dry_run":
+            return None
+        return open_ticket(conn, store, source, trigger_id,
+                           strength=outcome.strength,
+                           matched_rules=[f"assessment:{outcome.eval_id}"],
+                           scope=list(outcome.scope))
     return open_ticket(conn, store, source, trigger_id)

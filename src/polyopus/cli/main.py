@@ -362,6 +362,25 @@ def cmd_policy(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    """`poly eval --dry-run --source <id>` (V05-13): judge recent triggers,
+    write dispositions + evals, never open tickets."""
+    from polyopus.domains.intake import assessment
+    from polyopus.platform.events.store import EventStore
+
+    conn = _policy_conn()
+    try:
+        counts = assessment.eval_dry_run(
+            conn, EventStore(conn), args.source, hours=args.hours
+        )
+        total = sum(counts.values())
+        print(f"dry-run: source={args.source} triggers={total} counts={counts}")
+        print("no tickets were opened")
+        return 0
+    finally:
+        conn.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poly", description="PolyOpus CLI")
     parser.add_argument("--version", action="version", version=f"poly {__version__}")
@@ -369,6 +388,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check local environment (5 checks)")
     doctor.set_defaults(func=cmd_doctor)
+
+    ev = sub.add_parser("eval", help="assessment dry-run over recent triggers")
+    ev.add_argument("--dry-run", action="store_true", required=True,
+                    help="judge and write dispositions without opening tickets")
+    ev.add_argument("--source", required=True, help="source id (src_...)")
+    ev.add_argument("--hours", type=int, default=24, help="lookback window")
+    ev.set_defaults(func=cmd_eval)
 
     migrate = sub.add_parser("migrate", help="apply database migrations")
     migrate.add_argument("--sql", action="store_true", help="print SQL instead of applying")
