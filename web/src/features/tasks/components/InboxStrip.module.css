@@ -37,3 +37,7 @@
   font-size: 11px;
   color: var(--text-3);
 }
+
+.failed {
+  border-left-color: var(--danger);
+}

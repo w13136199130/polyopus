@@ -556,6 +556,7 @@ WHERE assignment_id = (
 | `approval` | 工具审批 | 30 min | 拒绝并记 `expired` |
 | `question` | Executor 提问 | 4 h | 保持；`ticket` 标 `waiting` |
 | `blocked` | 预算/权限/依赖 | 24 h | 升级给管理员 |
+| `failed` | `Report.state=failed`（V05-09） | 24 h | 升级给管理员 |
 
 - **合并同类**：同一 Ticket 的多个 question 合并为一张卡。
 - **上限**：每用户 20 条待决；超出时新工单进"排队"。

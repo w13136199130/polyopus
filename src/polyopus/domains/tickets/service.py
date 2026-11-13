@@ -220,30 +220,47 @@ def run_assignment(
         tenant_id=TENANT,
     )
 
+    # V05-09 停止后不再接新事件: when a human stop already ended the ticket,
+    # the Report still lands (audit) but nothing else may mutate the ticket —
+    # no bucket change, no attention, no outbound reply.
+    effects = True
     if exceeded:
-        _block_on_budget(conn, store, ticket_id, thread_id, summary)
+        effects = _open_attention(
+            conn, store, ticket_id=ticket_id, thread_id=thread_id, kind="blocked",
+            reason="budget_exceeded", next_action="追加预算后重派，或停止工单",
+            summary=summary, report_id=report_id,
+        )
     elif state == "ready":
-        conn.execute(
+        ended = conn.execute(
             "UPDATE tickets SET state = 'ended', bucket = 'done', ended_at = ?, "
-            "updated_at = ? WHERE ticket_id = ?",
+            "updated_at = ? WHERE ticket_id = ? AND state = 'open'",
             (now, now, ticket_id),
+        ).rowcount
+        if ended:
+            conn.commit()
+            store.append(
+                thread_id,
+                "ticket.ended",
+                {"ticket_id": ticket_id, "reason": "completed", "summary": summary},
+                tenant_id=TENANT,
+            )
+        else:
+            effects = False
+    elif state == "failed":
+        effects = _open_attention(
+            conn, store, ticket_id=ticket_id, thread_id=thread_id, kind="failed",
+            reason="report_failed", next_action="查看报告后重派，或停止工单",
+            summary=summary, report_id=report_id,
         )
-        conn.commit()
-        store.append(
-            thread_id,
-            "ticket.ended",
-            {"ticket_id": ticket_id, "reason": "completed", "summary": summary},
-            tenant_id=TENANT,
-        )
-    else:
+    else:  # waiting: the approval attention already owns the inbox (P0-1)
         conn.execute(
             "UPDATE tickets SET bucket = 'attention', updated_at = ? "
-            "WHERE ticket_id = ?",
+            "WHERE ticket_id = ? AND state = 'open'",
             (_now(), ticket_id),
         )
         conn.commit()
 
-    if state in ("ready", "blocked", "failed"):
+    if effects and state in ("ready", "blocked", "failed"):
         _enqueue_reply(conn, ticket_id, report_id, state, summary)
     return state
 
@@ -307,11 +324,31 @@ def _record_report(
     return report_id
 
 
-def _block_on_budget(
-    conn: sqlite3.Connection, store: EventStore, ticket_id: str, thread_id: str,
+def _open_attention(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    ticket_id: str,
+    thread_id: str,
+    kind: str,  # blocked | failed
+    reason: str,
+    next_action: str,
     summary: str,
-) -> None:
-    """Card 5: budget overrun -> ticket lands in the attention inbox."""
+    report_id: str,
+) -> bool:
+    """V05-09: structured Attention for blocked/failed Reports.
+
+    Payload carries only structured fields — reason/next_action/report_id —
+    per docs/46 P0-1 (attention is never inferred from free text; `summary`
+    stays as the human rendering the inbox already shows). Returns False
+    when the ticket is no longer open (human stop won the race): 停止后
+    不再接新事件.
+    """
+    row = conn.execute(
+        "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,)
+    ).fetchone()
+    if row is None or str(row["state"]) != "open":
+        return False
     attention_id = "at_" + secrets.token_hex(8)
     now = _now()
     expires = now + 24 * 3600
@@ -320,13 +357,17 @@ def _block_on_budget(
         INSERT INTO attentions
           (tenant_id, attention_id, ticket_id, turn_id, kind, source_type,
            source_id, payload_json, status, expires_at, created_at)
-        VALUES (?, ?, ?, NULL, 'blocked', 'ticket', ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, NULL, ?, 'ticket', ?, ?, 'pending', ?, ?)
         """,
-        (TENANT, attention_id, ticket_id, ticket_id,
-         json.dumps({"summary": summary}, ensure_ascii=False), expires, now),
+        (TENANT, attention_id, ticket_id, kind, ticket_id,
+         json.dumps({"reason": reason, "next_action": next_action,
+                     "summary": summary, "report_id": report_id},
+                    ensure_ascii=False),
+         expires, now),
     )
     conn.execute(
-        "UPDATE tickets SET bucket = 'attention', updated_at = ? WHERE ticket_id = ?",
+        "UPDATE tickets SET bucket = 'attention', updated_at = ? "
+        "WHERE ticket_id = ? AND state = 'open'",
         (now, ticket_id),
     )
     conn.commit()
@@ -336,12 +377,14 @@ def _block_on_budget(
         {
             "attention_id": attention_id,
             "ticket_id": ticket_id,
-            "kind": "blocked",
+            "kind": kind,
+            "reason": reason,
             "question": summary,
             "expires_at": expires,
         },
         tenant_id=TENANT,
     )
+    return True
 
 
 # ---- card 6: human stop + watchdog ------------------------------------------

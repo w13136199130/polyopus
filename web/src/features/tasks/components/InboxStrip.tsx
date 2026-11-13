@@ -14,11 +14,18 @@ interface Props {
 function describe(attention: AttentionItem): string {
   const payload = attention.payload as { summary?: string };
   if (attention.kind === "blocked") return payload.summary ?? "执行受阻";
+  if (attention.kind === "failed") return payload.summary ?? "执行失败";
   if (attention.kind === "question") return payload.summary ?? "待回答";
   return payload.summary ?? "待审批";
 }
 
-/** Attention inbox (V05-04): approvals answer inline, blocked/question inform. */
+function kindLabel(kind: string): string {
+  if (kind === "blocked") return "受阻";
+  if (kind === "failed") return "执行失败";
+  return "待回答";
+}
+
+/** Attention inbox (V05-04): approvals answer inline, blocked/failed/question inform. */
 export function InboxStrip({ items, loading, error, onRetry }: Props) {
   const answer = useAnswerAttention();
 
@@ -49,7 +56,7 @@ export function InboxStrip({ items, loading, error, onRetry }: Props) {
             role="status"
           >
             <div>
-              <strong>{attention.kind === "blocked" ? "受阻" : "待回答"}</strong>
+              <strong>{kindLabel(attention.kind)}</strong>
               <span> · {describe(attention)}</span>
             </div>
             {attention.ticketId ? (
