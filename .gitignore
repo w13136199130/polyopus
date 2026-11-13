@@ -12,3 +12,6 @@ data/
 .idea/
 .vscode/
 .env
+.env.*
+!.env.example
+.zcode/

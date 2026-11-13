@@ -38,6 +38,7 @@ class SourceConfig:
     bot_actors: tuple[str, ...]
     explicit_patterns: tuple[str, ...]
     default_scope: tuple[str, ...]
+    callback_url: str = ""  # outbound replies (V05-08)
 
 
 def config_of(row: sqlite3.Row) -> SourceConfig:
@@ -52,6 +53,7 @@ def config_of(row: sqlite3.Row) -> SourceConfig:
         bot_actors=tuple(cfg.get("bot_actors", ())),
         explicit_patterns=tuple(cfg.get("explicit_patterns", ())),
         default_scope=tuple(cfg.get("default_scope", ("workspace:default",))),
+        callback_url=str(cfg.get("callback_url", "")),
     )
 
 

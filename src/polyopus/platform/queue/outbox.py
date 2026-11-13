@@ -131,7 +131,12 @@ class Outbox:
         )
         self._conn.commit()
 
-    def mark_failed(self, item: OutboxItem, *, max_attempts: int = 5) -> str:
+    def mark_failed(
+        self, item: OutboxItem, *, max_attempts: int = 5, backoff: float | None = None
+    ) -> str:
+        """Retry with backoff, or dead-letter (`status='failed'`) once
+        `attempts` reaches `max_attempts`. `backoff` overrides the default
+        exponential delay in seconds (V05-08 passes the doc-16 ladder)."""
         ts = self._now()
         if item.attempts >= max_attempts:
             self._conn.execute(
@@ -140,12 +145,21 @@ class Outbox:
             )
             self._conn.commit()
             return "failed"
-        backoff = min(2**item.attempts, 300)
+        delay = min(2**item.attempts, 300) if backoff is None else backoff
         self._conn.execute(
-            "UPDATE outbox SET next_retry_at = ? WHERE id = ?", (ts + backoff, item.id)
+            "UPDATE outbox SET next_retry_at = ? WHERE id = ?", (ts + delay, item.id)
         )
         self._conn.commit()
         return "pending"
+
+    def mark_dead(self, item: OutboxItem) -> None:
+        """Dead-letter immediately: for permanent failures (4xx callbacks,
+        deleted sources) that retrying can never fix (V05-08)."""
+        self._conn.execute(
+            "UPDATE outbox SET status = 'failed', next_retry_at = NULL WHERE id = ?",
+            (item.id,),
+        )
+        self._conn.commit()
 
     def dispatch(
         self,

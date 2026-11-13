@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     embedded_worker: bool = True
     access_ttl_seconds: int = 8 * 3600
     session_ttl_seconds: int = 30 * 86400
+    # absolute link base for outbound replies (V05-08); the reply payload's
+    # `link` is `{public_base_url}/tasks?ticketId=...`
+    public_base_url: str = "http://127.0.0.1:8000"
 
     def resolved_db_path(self) -> Path:
         """Absolute DB path; `db_path` wins over `data_dir`."""

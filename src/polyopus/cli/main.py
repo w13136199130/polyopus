@@ -280,6 +280,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
     import threading
 
     from polyopus.platform.events.store import EventStore  # noqa: F401 (warm import)
+    from polyopus.workers.outbox_loop import run_outbox_loop
     from polyopus.workers.ticket_loop import run_ticket_loop
     from polyopus.workers.worker_loop import run_worker_loop
 
@@ -288,7 +289,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
     settings = load_settings()
     stop = threading.Event()
     db_path = settings.resolved_db_path
-    print(f"worker: polling queued turns + tickets on {db_path()}")
+    print(f"worker: polling queued turns + tickets + outbox on {db_path()}")
 
     turn_thread = threading.Thread(
         target=run_worker_loop, args=(db_path,),
@@ -300,16 +301,21 @@ def cmd_worker(args: argparse.Namespace) -> int:
         kwargs={"stop": stop, "max_tickets": args.once or None},
         name="ticket-worker", daemon=True,
     )
-    turn_thread.start()
-    ticket_thread.start()
+    outbox_thread = threading.Thread(
+        target=run_outbox_loop, args=(db_path,),
+        kwargs={"stop": stop},
+        name="outbox-worker", daemon=True,
+    )
+    for thread in (turn_thread, ticket_thread, outbox_thread):
+        thread.start()
     try:
-        while turn_thread.is_alive() or ticket_thread.is_alive():
-            turn_thread.join(0.5)
-            ticket_thread.join(0.5)
+        while any(t.is_alive() for t in (turn_thread, ticket_thread, outbox_thread)):
+            for t in (turn_thread, ticket_thread, outbox_thread):
+                t.join(0.5)
     except KeyboardInterrupt:
         stop.set()
-        turn_thread.join(5)
-        ticket_thread.join(5)
+        for t in (turn_thread, ticket_thread, outbox_thread):
+            t.join(5)
     print("worker: stopped")
     return 0
 

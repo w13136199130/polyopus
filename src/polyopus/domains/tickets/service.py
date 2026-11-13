@@ -204,8 +204,8 @@ def run_assignment(
         if exceeded
         else f"执行 {status}（{total_tokens} tokens）"
     )
-    _record_report(conn, store, ticket_id, assignment_id, thread_id, state,
-                   summary, facts={"total_tokens": total_tokens})
+    report_id = _record_report(conn, store, ticket_id, assignment_id, thread_id,
+                               state, summary, facts={"total_tokens": total_tokens})
 
     now = _now()
     conn.execute(
@@ -242,7 +242,31 @@ def run_assignment(
             (_now(), ticket_id),
         )
         conn.commit()
+
+    if state in ("ready", "blocked", "failed"):
+        _enqueue_reply(conn, ticket_id, report_id, state, summary)
     return state
+
+
+def _enqueue_reply(
+    conn: sqlite3.Connection,
+    ticket_id: str,
+    report_id: str,
+    state: str,
+    summary: str,
+) -> None:
+    """Queue the outbound reply after all ticket state is committed. A broken
+    outbound must never fail the turn that produced the report (V05-08 risk
+    note: outbox 异步，绝不阻塞 turn)."""
+    from polyopus.platform.telemetry import log as tlog
+
+    try:
+        from polyopus.domains.outbound import service as outbound
+
+        outbound.on_report(conn, ticket_id, report_id, state, summary)
+    except Exception as exc:  # noqa: BLE001 - log and move on
+        tlog.log(tlog.get_logger("polyopus.tickets"), 30, "outbound.enqueue_failed",
+                 ticket_id=ticket_id, report_id=report_id, error=str(exc))
 
 
 def _record_report(
@@ -255,7 +279,7 @@ def _record_report(
     summary: str,
     *,
     facts: dict[str, Any] | None = None,
-) -> None:
+) -> str:
     report_id = "rp_" + secrets.token_hex(8)
     conn.execute(
         """
@@ -280,6 +304,7 @@ def _record_report(
         },
         tenant_id=TENANT,
     )
+    return report_id
 
 
 def _block_on_budget(

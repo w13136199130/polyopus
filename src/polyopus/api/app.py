@@ -14,6 +14,7 @@ from polyopus import __version__
 from polyopus.api.routers import (
     attentions,
     auth,
+    outbound_api,
     threads,
     tickets_api,
     usage_api,
@@ -47,11 +48,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         stops: list[threading.Event] = []
         if effective.embedded_worker:
+            from polyopus.workers.outbox_loop import start_embedded as start_outbox
             from polyopus.workers.ticket_loop import start_embedded as start_tickets
             from polyopus.workers.worker_loop import start_embedded as start_turns
 
             stops.append(start_turns(effective.resolved_db_path))
             stops.append(start_tickets(effective.resolved_db_path))
+            stops.append(start_outbox(effective.resolved_db_path))
         try:
             yield
         finally:
@@ -67,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(webhooks.router, prefix="/api/v1")
     app.include_router(tickets_api.router, prefix="/api/v1")
     app.include_router(usage_api.router, prefix="/api/v1")
+    app.include_router(outbound_api.router, prefix="/api/v1")
 
     @app.middleware("http")
     async def trace_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]

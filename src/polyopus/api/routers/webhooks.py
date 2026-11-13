@@ -43,6 +43,10 @@ class CreateSourceBody(BaseModel):
         gt=0,
         validation_alias=AliasChoices("max_total_tokens", "maxTotalTokens"),
     )
+    callback_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("callback_url", "callbackUrl"),
+    )
     generate_secret: bool = Field(
         default=True,
         validation_alias=AliasChoices("generate_secret", "generateSecret"),
@@ -76,6 +80,10 @@ def create_source(
     }
     if body.max_total_tokens is not None:
         config["max_total_tokens"] = body.max_total_tokens
+    if body.callback_url:
+        from polyopus.domains.outbound import service as outbound
+
+        config["callback_url"] = outbound.validate_callback_url(body.callback_url)
     now = int(time.time())
     conn.execute(
         """
