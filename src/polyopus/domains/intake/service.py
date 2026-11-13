@@ -225,16 +225,23 @@ def open_ticket(
     source_cfg = json.loads(source["config_json"] or "{}")
     max_tokens = source_cfg.get("max_total_tokens")
     budget = {"max_total_tokens": int(max_tokens)} if max_tokens else None
+    # V05-12: the mandate pins the ACTIVE bundle version (bootstrap publishes
+    # the built-in defaults as v1 on the first ticket); later publishes never
+    # touch this mandate — it keeps executing its snapshot.
+    from polyopus.domains.policy import service as policy
+
+    policy_version = policy.active_version_or_bootstrap(conn)
     conn.execute(
         """
         INSERT INTO tickets
           (tenant_id, ticket_id, title, state, bucket, source_id, trigger_id,
            actor_json, strength, policy_version, scope_json, budget_json,
            created_at, updated_at)
-        VALUES (?, ?, ?, 'open', 'queued', ?, ?, ?, 'explicit', 1, ?, ?, ?, ?)
+        VALUES (?, ?, ?, 'open', 'queued', ?, ?, ?, 'explicit', ?, ?, ?, ?, ?)
         """,
         (TENANT, ticket_id, title, cfg.source_id, trigger_id,
          json.dumps({"id": str(trigger["actor_id"]), "kind": str(trigger["actor_kind"])}),
+         policy_version,
          json.dumps(scope),
          json.dumps(budget) if budget else None, now, now),
     )
@@ -243,9 +250,9 @@ def open_ticket(
         INSERT INTO mandates
           (tenant_id, mandate_id, ticket_id, policy_version, scope_json, strength,
            matched_rules_json, created_at)
-        VALUES (?, ?, ?, 1, ?, 'explicit', ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'explicit', ?, ?)
         """,
-        (TENANT, mandate_id, ticket_id, json.dumps(scope),
+        (TENANT, mandate_id, ticket_id, policy_version, json.dumps(scope),
          json.dumps(["gate:explicit"]), now),
     )
     conn.execute(
@@ -267,7 +274,7 @@ def open_ticket(
             "title": title,
             "source_id": cfg.source_id,
             "mandate": {
-                "policy_version": 1,
+                "policy_version": policy_version,
                 "scope": scope,
                 "strength": "explicit",
                 "matched_rules": ["gate:explicit"],

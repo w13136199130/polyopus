@@ -320,6 +320,48 @@ def cmd_worker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _policy_conn() -> sqlite3.Connection:
+    from polyopus.platform.db import migrator as m
+
+    settings = load_settings()
+    conn = m.connect(settings.resolved_db_path())
+    m.apply(conn, m.discover(MIGRATIONS_DIR))
+    return conn
+
+
+def cmd_policy(args: argparse.Namespace) -> int:
+    """`poly policy show|publish|rollback|dry-run` (V05-12)."""
+    import json as _json
+
+    from polyopus.domains.policy import service as policy
+
+    conn = _policy_conn()
+    try:
+        if args.action == "show":
+            rules, version, source = policy.resolve_rules(conn)
+            print(f"active: version={version} source={source} rules={len(rules)}")
+            for rule in rules:
+                print(f"  [{rule.priority:>3}] {rule.rid}: {rule.effect} {rule.when}")
+        elif args.action == "publish":
+            rows = _json.loads(Path(args.file).read_text(encoding="utf-8"))
+            rules = [policy.rule_from_dict(row) for row in rows]
+            out = policy.publish(conn, rules, by=os.environ.get("USERNAME") or "cli")
+            print(f"published: version={out['version']} rules={out['rules']}")
+        elif args.action == "rollback":
+            out = policy.rollback(conn, int(args.to), by="cli")
+            print(f"rolled back: version={out['version']}")
+        elif args.action == "dry-run":
+            samples = _json.loads(Path(args.file).read_text(encoding="utf-8"))
+            version = int(args.version) if args.version else None
+            out = policy.dry_run(conn, samples, version=version)
+            print(f"dry-run: version={out['version']} counts={out['counts']}")
+            for result in out["results"]:
+                print(f"  {result['tool']}: {result['effect']} ({result['reason']})")
+        return 0
+    finally:
+        conn.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poly", description="PolyOpus CLI")
     parser.add_argument("--version", action="version", version=f"poly {__version__}")
@@ -332,6 +374,21 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--sql", action="store_true", help="print SQL instead of applying")
     migrate.add_argument("--check", action="store_true", help="report pending migrations only")
     migrate.set_defaults(func=cmd_migrate)
+
+    policy = sub.add_parser("policy", help="policy bundles: show/publish/rollback/dry-run")
+    policy_sub = policy.add_subparsers(dest="action", required=True)
+    policy_show = policy_sub.add_parser("show", help="print the resolved active rules")
+    policy_show.set_defaults(func=cmd_policy)
+    policy_publish = policy_sub.add_parser("publish", help="publish a rules JSON as the next version")
+    policy_publish.add_argument("--file", required=True, help="rules JSON file")
+    policy_publish.set_defaults(func=cmd_policy)
+    policy_rollback = policy_sub.add_parser("rollback", help="re-activate a previous version (LKG)")
+    policy_rollback.add_argument("--to", required=True, help="target version")
+    policy_rollback.set_defaults(func=cmd_policy)
+    policy_dry = policy_sub.add_parser("dry-run", help="evaluate samples without touching the gate")
+    policy_dry.add_argument("--file", required=True, help="samples JSON file")
+    policy_dry.add_argument("--version", default=None, help="evaluate this version (default: resolved)")
+    policy_dry.set_defaults(func=cmd_policy)
 
     recover = sub.add_parser("recover", help="resume runs whose lease expired")
     recover.add_argument("--owner", default="cli")

@@ -30,10 +30,14 @@ GATEWAY_SPECS = {
     FS_WRITE_SPEC.name: FS_WRITE_SPEC,
 }
 
-# policy specs keyed by internal name (docs/09 §8.2 capability matrix)
+# policy specs keyed by internal name (docs/09 §8.2 capability matrix).
+# required_scope: write-class tools must be covered by mandate.scope (V05-12);
+# read tools stay open — chat threads run read-only by convention.
 POLICY_SPECS = {
     FS_READ_SPEC.name: ToolPolicySpec(FS_READ_SPEC.name, "low", False),
-    FS_WRITE_SPEC.name: ToolPolicySpec(FS_WRITE_SPEC.name, "high", True),
+    FS_WRITE_SPEC.name: ToolPolicySpec(
+        FS_WRITE_SPEC.name, "high", True, required_scope="fs:write"
+    ),
 }
 
 

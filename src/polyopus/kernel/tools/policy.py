@@ -23,6 +23,8 @@ class ToolPolicySpec:
     side_effects: bool
     source: str = "builtin"  # builtin|mcp|plugin|openapi|skill
     signed: bool = True
+    # docs/09 §6.3: write-class tools must appear explicitly in mandate scope
+    required_scope: str | None = None
 
 
 @dataclass(frozen=True)

@@ -30,7 +30,6 @@ from polyopus.kernel.tools import (
     Rule,
     ToolError,
     ToolRuntime,
-    default_rules,
     dispatch,
     internal_name,
 )
@@ -362,9 +361,8 @@ async def run_turn(
         source = resolved.gateway
 
     toolspecs = tuple(GATEWAY_SPECS.values()) if cfg.workspace is not None else ()
-    runtime = ToolRuntime(
-        PolicyEngine(list(cfg.policy_rules) if cfg.policy_rules else default_rules())
-    )
+    ticket_id = turn["ticket_id"]
+    runtime = ToolRuntime(PolicyEngine(_gate_rules(conn, cfg, ticket_id)))
 
     tool_round = 0
     while True:
@@ -398,6 +396,19 @@ async def run_turn(
                 decision = Decision("deny", (), "unknown tool")
             else:
                 decision = runtime.check(spec, args)
+                # V05-12 scope enforcement (docs/09 §6.3): a write-class tool
+                # on a TICKET turn must be covered by the mandate's scope.
+                # Chat turns (no ticket) keep today's behaviour.
+                if (
+                    decision.effect != "deny"
+                    and spec.required_scope
+                    and ticket_id
+                    and not _scope_covers(conn, str(ticket_id), spec.required_scope)
+                ):
+                    decision = Decision(
+                        "deny", decision.matched,
+                        f"scope_violation: {spec.required_scope} not in mandate scope",
+                    )
 
             if spec is not None and decision.effect == "allow":
                 output_json, _ok = _execute_call(
@@ -532,10 +543,16 @@ def resume_after_approval(
     user_content = _user_content(conn, turn_id)
 
     if decision in ("approved", "approved_session"):
-        # execution-time re-evaluation (ADR-011); deny still wins over approval
+        # execution-time re-evaluation (ADR-011); deny still wins over approval.
+        # V05-12: the re-check runs against the CURRENT active bundle — an
+        # approval granted minutes ago must not survive a stricter publish.
         spec = POLICY_SPECS.get(internal)
+        from polyopus.domains.policy import service as policy_service
+
         policy = PolicyEngine(
-            list(cfg.policy_rules) if cfg.policy_rules else default_rules()
+            list(cfg.policy_rules)
+            if cfg.policy_rules
+            else list(policy_service.resolve_rules(conn)[0])
         )
         verdict = (
             policy.evaluate(spec, _args_of(arguments_json)) if spec
@@ -717,6 +734,49 @@ def _record_usage(
         tenant_id=tenant_id,
         turn_id=turn_id,
     )
+
+
+def _gate_rules(
+    conn: sqlite3.Connection, cfg: EngineConfig, ticket_id: str | None
+) -> list[Rule]:
+    """V05-12 rule source chain for the tool gate: explicit injection
+    (tests) > the mandate's PINNED bundle snapshot (in-flight mandates keep
+    executing their version across publishes) > the resolved active bundle
+    (chat turns / empty DB fall back to in-memory defaults)."""
+    if cfg.policy_rules:
+        return list(cfg.policy_rules)
+    from polyopus.domains.policy import service as policy_service
+
+    if ticket_id:
+        row = conn.execute(
+            "SELECT policy_version FROM mandates WHERE ticket_id = ? "
+            "AND invalidated_at IS NULL ORDER BY id DESC LIMIT 1",
+            (str(ticket_id),),
+        ).fetchone()
+        if row is not None:
+            pinned = policy_service.rules_for(conn, int(row[0]))
+            if pinned is not None:
+                return pinned
+    return list(policy_service.resolve_rules(conn)[0])
+
+
+def _scope_covers(
+    conn: sqlite3.Connection, ticket_id: str, required_scope: str
+) -> bool:
+    """docs/09 §6.3: write-class scopes must appear explicitly in the
+    mandate (no wildcard promotions)."""
+    row = conn.execute(
+        "SELECT scope_json FROM mandates WHERE ticket_id = ? "
+        "AND invalidated_at IS NULL ORDER BY id DESC LIMIT 1",
+        (ticket_id,),
+    ).fetchone()
+    if row is None or not row[0]:
+        return False
+    try:
+        scope = json.loads(row[0])
+    except ValueError:
+        return False
+    return required_scope in scope
 
 
 def _finish(
