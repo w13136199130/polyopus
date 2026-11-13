@@ -28,7 +28,10 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "uv run python -m polyopus serve --port 8901 --host 127.0.0.1",
+      // --no-sync: a locally running `poly serve` locks the venv scripts and
+      // uv's re-install step would fail before the server even starts
+      command:
+        "uv run --no-sync python -m polyopus serve --port 8901 --host 127.0.0.1",
       url: `http://127.0.0.1:${API_PORT}/healthz`,
       cwd: "..",
       reuseExistingServer: !process.env.CI,

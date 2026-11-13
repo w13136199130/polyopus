@@ -306,15 +306,23 @@ def cmd_worker(args: argparse.Namespace) -> int:
         kwargs={"stop": stop},
         name="outbox-worker", daemon=True,
     )
-    for thread in (turn_thread, ticket_thread, outbox_thread):
+    from polyopus.workers.scheduler_loop import run_scheduler_loop
+
+    scheduler_thread = threading.Thread(
+        target=run_scheduler_loop, args=(db_path,),
+        kwargs={"stop": stop},
+        name="scheduler-worker", daemon=True,
+    )
+    crew = (turn_thread, ticket_thread, outbox_thread, scheduler_thread)
+    for thread in crew:
         thread.start()
     try:
-        while any(t.is_alive() for t in (turn_thread, ticket_thread, outbox_thread)):
-            for t in (turn_thread, ticket_thread, outbox_thread):
+        while any(t.is_alive() for t in crew):
+            for t in crew:
                 t.join(0.5)
     except KeyboardInterrupt:
         stop.set()
-        for t in (turn_thread, ticket_thread, outbox_thread):
+        for t in crew:
             t.join(5)
     print("worker: stopped")
     return 0
