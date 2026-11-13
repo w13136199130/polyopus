@@ -59,9 +59,12 @@ def _open_ticket(client: TestClient, text: str) -> str:
         "name": f"auto-{time.time_ns()}", "generate_secret": False,
         "allow_actors": ["alice"], "explicit_patterns": ["/polyopus"],
     }).json()
+    # unique thread per ticket: same-thread follow-ups now fan out to the
+    # open ticket instead of opening new ones (V05-10)
     accepted = client.post(
         f"/api/v1/webhooks/{created['sourceId']}",
-        json={"external_id": f"auto-{time.time_ns()}", "thread_key": "auto",
+        json={"external_id": f"auto-{time.time_ns()}",
+              "thread_key": f"auto-{time.time_ns()}",
               "actor": {"id": "alice"}, "text": text},
     ).json()
     return str(accepted["ticketId"])
@@ -197,7 +200,10 @@ class _Api:
             "allowActors": ["alice"], "explicitPatterns": ["/polyopus"],
         })
         accepted = self._call("POST", f"/api/v1/webhooks/{source['sourceId']}", {
-            "externalId": f"restart-{time.time_ns()}", "threadKey": "auto",
+            # unique thread per ticket: same-thread follow-ups now fan out to
+            # the open ticket instead of opening new ones (V05-10)
+            "externalId": f"restart-{time.time_ns()}",
+            "threadKey": f"auto-{time.time_ns()}",
             "actor": {"id": "alice"}, "text": text,
         })
         return str(accepted["ticketId"])

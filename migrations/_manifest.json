@@ -781,9 +781,9 @@
       "sha256": "9a4546cf7be5a69bcd90d527706da34ec95cea9c97f97f0e0a16e0ed8b57867d"
     },
     "subscriptions": {
-      "ddl": "CREATE TABLE subscriptions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  subscription_id TEXT NOT NULL UNIQUE,\n  ticket_id     TEXT NOT NULL REFERENCES tickets(ticket_id),\n  event_thread_id TEXT NOT NULL,\n  filter_json   TEXT,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (ticket_id, event_thread_id)\n);",
+      "ddl": "CREATE TABLE subscriptions (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  subscription_id TEXT NOT NULL UNIQUE,\n  ticket_id     TEXT NOT NULL REFERENCES tickets(ticket_id),\n  event_thread_id TEXT NOT NULL,\n  filter_json   TEXT,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (ticket_id, event_thread_id)\n);",
       "indexes": [],
-      "sha256": "f3e03f69ded9e926848db702b522096955afd357e3f41cff6aa5eb17253adc46"
+      "sha256": "f2b5caa23c002239410d0085a9d691b18f127e2e59787138c8c5a9224b4f5287"
     },
     "team_members": {
       "ddl": "CREATE TABLE team_members (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  tenant_id     TEXT NOT NULL,\n  team_id       TEXT NOT NULL,\n  agent_id      TEXT NOT NULL,\n  role          TEXT NOT NULL DEFAULT 'member', -- lead|member\n  created_at    INTEGER NOT NULL,\n  UNIQUE (team_id, agent_id)\n);",

@@ -862,6 +862,7 @@ CREATE INDEX idx_deleg_lease ON delegations(state, lease_until);
 
 CREATE TABLE subscriptions (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id     TEXT NOT NULL,
   subscription_id TEXT NOT NULL UNIQUE,
   ticket_id     TEXT NOT NULL REFERENCES tickets(ticket_id),
   event_thread_id TEXT NOT NULL,

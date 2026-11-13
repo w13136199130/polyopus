@@ -62,12 +62,15 @@ async function seedTickets(
 
   const ids: string[] = [];
   for (const text of texts) {
+    // unique thread per ticket: same-thread follow-ups fan out to the open
+    // ticket instead of opening new ones (V05-10)
+    const nonce = `${Date.now()}-${Math.random().toFixed(9)}`;
     const response = await page.request.post(
       `/api/v1/webhooks/${source.sourceId}`,
       {
         data: {
-          externalId: `tasks-e2e-${Date.now()}-${Math.random().toFixed(9)}`,
-          threadKey: "tasks-e2e",
+          externalId: `tasks-e2e-${nonce}`,
+          threadKey: `tasks-e2e-${nonce}`,
           actor: { id: "alice", kind: "user" },
           text,
         },

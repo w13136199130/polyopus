@@ -82,15 +82,23 @@ def verify_signature(secret: str, body: bytes, signature: str | None) -> None:
 # ---- receive: normalize + dedupe (docs/09 §2) -------------------------------
 
 
+def _alias(body: dict[str, Any], snake: str, camel: str) -> Any:
+    """The webhook contract is snake_case (docs/09), but callers keep
+    sending camelCase (V05-04 `generateSecret` catch, V05-10 `threadKey`
+    collapse-to-default) — accept both, snake_case wins."""
+    value = body.get(snake)
+    return value if value is not None else body.get(camel)
+
+
 def normalize(body: dict[str, Any], headers_actor: str | None) -> dict[str, Any]:
     actor_raw = body.get("actor") or {}
     return {
         "kind": str(body.get("kind", "webhook.received")),
         "actor_id": str(actor_raw.get("id") or headers_actor or "anonymous"),
         "actor_kind": str(actor_raw.get("kind", "user")),
-        "thread_key": str(body.get("thread_key") or "default"),
+        "thread_key": str(_alias(body, "thread_key", "threadKey") or "default"),
         "text": str(body.get("text", "")),
-        "external_id": body.get("external_id"),
+        "external_id": _alias(body, "external_id", "externalId"),
     }
 
 
@@ -248,6 +256,8 @@ def open_ticket(
 
     from polyopus.domains.tickets import service as tickets
     tickets.link_thread(conn, ticket_id, thread_id)
+    subscribe_ticket(conn, store, thread_id=thread_id, ticket_id=ticket_id,
+                     event_thread_key=str(trigger["thread_key"]))
 
     store.append(
         thread_id,
@@ -297,19 +307,162 @@ def filter_trigger(
     )
 
 
+# ---- subscription fan-out (V05-10, docs/09 §2.4 / docs/32 §13A) --------------
+
+TERMINAL_TURN_STATES = ("completed", "failed", "cancelled")
+
+
+def subscribe_ticket(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    thread_id: str,
+    ticket_id: str,
+    event_thread_key: str,
+) -> None:
+    """An open ticket owns its event thread: later triggers on the thread
+    fan out to it instead of opening new tickets."""
+    subscription_id = "sub_" + secrets.token_hex(8)
+    cur = conn.execute(
+        """
+        INSERT INTO subscriptions
+          (tenant_id, subscription_id, ticket_id, event_thread_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(ticket_id, event_thread_id) DO NOTHING
+        """,
+        (TENANT, subscription_id, ticket_id, event_thread_key, int(time.time())),
+    )
+    conn.commit()
+    if cur.rowcount:
+        store.append(
+            thread_id,
+            "subscription.created",
+            {
+                "subscription_id": subscription_id,
+                "ticket_id": ticket_id,
+                "event_thread_id": event_thread_key,
+            },
+            tenant_id=TENANT,
+        )
+
+
+def release_ticket_subscriptions(conn: sqlite3.Connection, ticket_id: str) -> int:
+    """Ticket ended -> its event thread may open new tickets again (the
+    anti-leak invariant of V05-10). The fan-out lookup re-checks
+    tickets.state anyway; this keeps the table honest. Called from stop()
+    and the ready tail of run_assignment."""
+    cur = conn.execute(
+        "DELETE FROM subscriptions WHERE tenant_id = ? AND ticket_id = ?",
+        (TENANT, ticket_id),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def fan_out(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    source: sqlite3.Row,
+    trigger: sqlite3.Row,
+) -> str | None:
+    """Route a trigger to the open ticket subscribed to its event thread,
+    straight past the Gate (docs/09 §2.4 `fanned_out`). Returns the existing
+    ticket id, or None when no live subscription owns the thread."""
+    key = str(trigger["thread_key"])
+    row = conn.execute(
+        """
+        SELECT s.ticket_id FROM subscriptions s
+        JOIN tickets t ON t.ticket_id = s.ticket_id
+        WHERE s.tenant_id = ? AND s.event_thread_id = ? AND t.state = 'open'
+        ORDER BY s.id LIMIT 1
+        """,
+        (TENANT, key),
+    ).fetchone()
+    if row is None:
+        # hygiene: a ticket ended without hitting its release hook (crash
+        # window) — drop stale rows so the thread can open new tickets again
+        conn.execute(
+            """
+            DELETE FROM subscriptions WHERE tenant_id = ? AND event_thread_id = ?
+              AND ticket_id IN (
+                SELECT ticket_id FROM tickets WHERE state != 'open'
+              )
+            """,
+            (TENANT, key),
+        )
+        conn.commit()
+        return None
+
+    ticket_id = str(row["ticket_id"])
+    conn.execute(
+        "UPDATE triggers SET disposition = 'fanned_out' WHERE trigger_id = ?",
+        (str(trigger["trigger_id"]),),
+    )
+    conn.commit()
+
+    from polyopus.domains.tickets import service as tickets
+
+    thread_id = tickets.thread_of_ticket(conn, ticket_id)
+    text = str(json.loads(str(trigger["payload_json"])).get("text", ""))
+    conn.execute(
+        """
+        INSERT INTO timeline_events
+          (tenant_id, ticket_id, kind, title, description, actor, payload_json,
+           event_id, created_at)
+        VALUES (?, ?, 'trigger_fanned_out', '后续触发已并入', ?, 'system', ?, ?, ?)
+        """,
+        (TENANT, ticket_id, text[:80],
+         json.dumps({"trigger_id": str(trigger["trigger_id"]), "thread_key": key},
+                    ensure_ascii=False),
+         "tl_" + secrets.token_hex(8), int(time.time())),
+    )
+    conn.commit()
+    store.append(
+        str(source["source_id"]),
+        "trigger.fanned_out",
+        {
+            "trigger_id": str(trigger["trigger_id"]),
+            "ticket_id": ticket_id,
+            "event_thread_id": key,
+        },
+        tenant_id=TENANT,
+    )
+
+    # deliver the message as a new turn when the execution thread is idle; a
+    # busy thread just records it (the steer queue is not built in v0.5)
+    latest = conn.execute(
+        "SELECT status FROM turns WHERE thread_id = ? ORDER BY id DESC LIMIT 1",
+        (thread_id,),
+    ).fetchone()
+    if text.strip() and (
+        latest is None or str(latest[0]) in TERMINAL_TURN_STATES
+    ):
+        from polyopus.domains import conversations
+
+        conversations.post_turn(
+            conn, store, tenant_id=TENANT, owner_id="system",
+            thread_id=thread_id, content=text,
+        )
+    return ticket_id
+
+
 def process(
     conn: sqlite3.Connection,
     store: EventStore,
     source: sqlite3.Row,
     trigger_id: str,
 ) -> str | None:
-    """Gate + open. Returns ticket_id, or None when filtered."""
+    """Fan out to a subscribed open ticket, else Gate + open. Returns the
+    ticket id (existing on fan-out, new on open), or None when filtered."""
     cfg = config_of(source)
     trigger = conn.execute(
         "SELECT * FROM triggers WHERE trigger_id = ?", (trigger_id,)
     ).fetchone()
     if trigger is None:
         raise AppError("NOT_FOUND")
+    fanned = fan_out(conn, store, source, trigger)
+    if fanned is not None:
+        return fanned
     result = evaluate_gate(cfg, trigger)
     if not result.accept:
         filter_trigger(conn, store, source, trigger_id, result)

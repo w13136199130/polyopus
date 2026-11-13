@@ -238,6 +238,7 @@ def run_assignment(
         ).rowcount
         if ended:
             conn.commit()
+            _release_subscriptions(conn, ticket_id)
             store.append(
                 thread_id,
                 "ticket.ended",
@@ -427,12 +428,22 @@ def stop(
         (now, now, ticket_id),
     )
     conn.commit()
+    _release_subscriptions(conn, ticket_id)
     store.append(
         thread_id,
         "ticket.ended",
         {"ticket_id": ticket_id, "reason": "stopped_by_human", "by": by},
         tenant_id=TENANT,
     )
+
+
+def _release_subscriptions(conn: sqlite3.Connection, ticket_id: str) -> None:
+    """V05-10: an ended ticket releases its event-thread subscription so the
+    thread can open new tickets. Best-effort — the fan-out lookup re-checks
+    tickets.state, so a failure here can never leak forever."""
+    from polyopus.domains.intake import service as intake
+
+    intake.release_ticket_subscriptions(conn, ticket_id)
 
 
 def watchdog_scan(

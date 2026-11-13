@@ -194,3 +194,42 @@ def test_events_recorded_on_streams(env: tuple[Path, TestClient]) -> None:
     assert opened[0].startswith("th_")
     received = next(r for r in rows if r[1] == "trigger.received")
     assert received[0] == source["sourceId"]
+
+
+def test_same_thread_followup_webhook_fans_out_to_open_ticket(
+    env: tuple[Path, TestClient]
+) -> None:
+    """V05-10 over the wire: a write-intent text parks the ticket in
+    waiting (open forever until a human answers), so the follow-up webhook
+    on the same thread deterministically fans out instead of opening a new
+    ticket."""
+    db, client = env
+    source = _create_source(client)
+    url = f"/api/v1/webhooks/{source['sourceId']}"
+
+    def fire(external: str, text: str) -> dict:
+        payload = {
+            "external_id": external,
+            "thread_key": "ci:fan",
+            "actor": {"id": "alice", "kind": "user"},
+            "text": text,
+        }
+        response = _signed_post(client, url, source["secret"], payload)
+        assert response.status_code == 202, response.text
+        return response.json()
+
+    first = fire("fan-1", "/polyopus 保存结果到 out.txt")
+    assert first["disposition"] == "accepted" and first["ticketId"]
+
+    follow = fire("fan-2", "/polyopus 追加一条上下文")
+    assert follow["disposition"] == "fanned_out"
+    assert follow["ticketId"] == first["ticketId"]
+
+    conn = sqlite3.connect(str(db))
+    try:
+        assert conn.execute("SELECT count(*) FROM tickets").fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT count(*) FROM triggers WHERE disposition = 'fanned_out'"
+        ).fetchone()[0] == 1
+    finally:
+        conn.close()
