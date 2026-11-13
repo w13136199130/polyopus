@@ -53,6 +53,7 @@
     "POST /plugins/{}/install",
     "POST /skill-packages/{}/install",
     "POST /sources/{}/test-reply",
+    "POST /tickets/{}/messages",
     "PUT /admin/settings",
     "PUT /agents/{}/files/{}",
     "PUT /agents/{}/skills",

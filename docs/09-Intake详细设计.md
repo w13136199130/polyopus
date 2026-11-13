@@ -477,7 +477,7 @@ open ──(report ready / 人 stop / policy revoke / abandoned)──► ended
 | `open → ended(completed)` | Report `ready` | 回复渠道 + 事件 |
 | `open → ended(stopped_by_human)` | 人 stop | 撤销 Mandate；取消当前 Assignment |
 | `open → ended(policy_revoked)` | Policy 撤销 | 通知 + 审计 |
-| `ended → open` | 人消息 | 新 Assignment（attempt 从 1 开始），事件 `ticket.resumed` |
+| ~~`ended → open`~~ | ~~人消息~~ | **v0.5 裁决（V05-11，以卡为准）：ended 票不复活**——人工消息恢复只作用于 open+attention 的票（`ticket.resumed` 事件照发）；ended 票的同 thread 新消息经 intake 开新单（V05-10 已释放订阅） |
 
 ### 7.2 与对话的关系
 

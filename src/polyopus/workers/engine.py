@@ -754,3 +754,11 @@ def _finish(
     )
     _set_turn_status(conn, turn_id, status, now)
     _ = note  # reserved for richer finish payloads
+    if status == "completed":
+        # V05-11 (S8): a completed HUMAN-message turn on a parked ticket's
+        # execution thread re-queues the ticket. Auto/approval turns are
+        # filtered out inside (re-running them would loop into the same
+        # pause); plain chat threads no-op; the wake itself never raises.
+        from polyopus.domains.tickets import service as tickets
+
+        tickets.wake_thread_ticket(conn, store, thread_id, turn_id)

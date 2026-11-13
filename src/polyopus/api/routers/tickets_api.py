@@ -6,6 +6,7 @@ import json
 from sqlite3 import Connection
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from polyopus.api.deps import current_user, get_db, get_store
 from polyopus.domains.identity.service import User
@@ -86,6 +87,27 @@ def stop_ticket(
 ) -> dict[str, object]:
     service.stop(conn, store, ticket_id, by=user.user_id)
     return {"ticketId": ticket_id, "state": "ended", "reason": "stopped_by_human"}
+
+
+class HumanMessageBody(BaseModel):
+    content: str = Field(min_length=1)
+
+
+@router.post("/{ticket_id}/messages", status_code=202)
+def post_human_message(
+    ticket_id: str,
+    body: HumanMessageBody,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    """V05-11 (S8): a human message on the ticket's execution thread. A
+    parked open ticket resumes when this turn completes; an ended ticket
+    just records the message (never resurrected)."""
+    out = service.post_human_message(
+        conn, store, ticket_id, user_id=user.user_id, content=body.content
+    )
+    return {"ticketId": ticket_id, **out}
 
 
 @router.post("/watchdog/run")

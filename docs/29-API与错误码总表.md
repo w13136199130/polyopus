@@ -380,6 +380,7 @@
 | GET | `/tickets/counts` | 各 bucket 计数 |
 | GET | `/tickets/{id}` | 详情 |
 | POST | `/tickets/{id}/stop` | 停止 |
+| POST | `/tickets/{id}/messages` | 人工消息：暂停票恢复 / ended 只记录（V05-11） |
 | POST | `/tickets/{id}/assign` | 改派 |
 | POST | `/tickets/{id}/budget` | 调预算 |
 | POST | `/tickets/{id}/merge` | 合并 |
@@ -749,7 +750,7 @@ data: {"seq":124,"type":"message.delta","threadId":"th_...","turnId":"tn_...","d
 
 当前契约覆盖（2026-11）：**M0/M1 36 个 + 记忆/渠道/工具 30 个 + 团队/控制 18 个 + 认证扩展/定时 21 个 + 用户/邀请/角色/分组 23 个 + 任务中心 11 个 + step-up 1 个 + 云主机 12 个 + 资源 ACL 5 个 + 通知 3 个 + 管理端 7 个 = 188 个操作**，148 条路径、229 个 schema。
 Tags：`auth` `agents` `threads` `turns` `attachments` `sources` `health` `memory` `channels` `tools` `teams` `control` `cron` `users` `invites` `roles` `groups` `cloud` `notifications` `admin` `audit` `tickets` `attentions`。
-§3 目录共 244 个端点：**188 已进契约**，其余 58 个在 `contracts/coverage_allowlist.json` 明列（连接器/知识库/管理端等）；新增端点必须先改 spec。
+§3 目录共 245 个端点：**188 已进契约**，其余 59 个在 `contracts/coverage_allowlist.json` 明列（连接器/知识库/管理端等）；新增端点必须先改 spec。
 
 ```bash
 python contracts/generate.py

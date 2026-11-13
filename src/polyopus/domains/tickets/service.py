@@ -33,6 +33,18 @@ def _now() -> int:
     return int(time.time())
 
 
+def _latest_human_message(conn: sqlite3.Connection, ticket_id: str) -> str:
+    """The ticket's newest human instruction (V05-11), '' when none."""
+    row = conn.execute(
+        "SELECT payload_json FROM timeline_events "
+        "WHERE ticket_id = ? AND kind = 'human_message' ORDER BY id DESC LIMIT 1",
+        (ticket_id,),
+    ).fetchone()
+    if row is None:
+        return ""
+    return str(json.loads(row[0]).get("content", "")).strip()
+
+
 def _ticket(conn: sqlite3.Connection, ticket_id: str) -> sqlite3.Row:
     row = conn.execute(
         "SELECT * FROM tickets WHERE tenant_id = ? AND ticket_id = ?", (TENANT, ticket_id)
@@ -66,6 +78,106 @@ def thread_of_ticket(conn: sqlite3.Connection, ticket_id: str) -> str:
     if row is None or not row[0]:
         raise AppError("TICKET_NOT_FOUND", details={"missing": "execution_thread"})
     return str(json.loads(row[0])["thread_id"])
+
+
+def ticket_of_thread(conn: sqlite3.Connection, thread_id: str) -> str | None:
+    """Reverse lookup: the ticket whose execution thread this is, or None
+    for a plain chat thread (V05-11 wake hook)."""
+    row = conn.execute(
+        "SELECT ticket_id FROM timeline_events WHERE kind = 'execution_thread' "
+        "AND json_extract(payload_json, '$.thread_id') = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (thread_id,),
+    ).fetchone()
+    return str(row[0]) if row is not None else None
+
+
+# ---- V05-11: human message resume (S8) ----------------------------------------
+
+
+def post_human_message(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    ticket_id: str,
+    *,
+    user_id: str,
+    content: str,
+) -> dict[str, object]:
+    """A human message on the ticket's execution thread. A parked OPEN
+    ticket resumes once this turn completes (wake_thread_ticket); an ENDED
+    ticket just records the message — never resurrected (new work on the
+    event thread opens a NEW ticket via intake, V05-10 release)."""
+    ticket = _ticket(conn, ticket_id)
+    thread_id = thread_of_ticket(conn, ticket_id)
+    from polyopus.domains import conversations
+
+    turn_id, message_id = conversations.post_turn(
+        conn, store, tenant_id=TENANT, owner_id=user_id,
+        thread_id=thread_id, content=content, system_thread_ok=True,
+    )
+    conn.execute(
+        """
+        INSERT INTO timeline_events
+          (event_id, tenant_id, ticket_id, kind, title, actor, payload_json,
+           created_at)
+        VALUES (?, ?, ?, 'human_message', '人工消息', ?, ?, ?)
+        """,
+        ("tl_" + secrets.token_hex(8), TENANT, ticket_id, user_id,
+         json.dumps({"turn_id": turn_id, "message_id": message_id,
+                     "content": content[:120]}, ensure_ascii=False), _now()),
+    )
+    conn.commit()
+    return {
+        "turnId": turn_id,
+        "messageId": message_id,
+        "resumed": False if str(ticket["state"]) != "open" else "pending",
+    }
+
+
+def wake_thread_ticket(
+    conn: sqlite3.Connection, store: EventStore, thread_id: str, turn_id: str
+) -> bool:
+    """Called when a turn COMPLETES on a thread: re-queue the parked open
+    ticket this thread belongs to — but ONLY when the completing turn is the
+    ticket's latest human message (S8 人消息恢复). Auto/approval-resume turns
+    must not wake the ticket: re-running would re-send the old prompt and
+    loop straight back into the same pause. Best-effort, never raises."""
+    try:
+        ticket_id = ticket_of_thread(conn, thread_id)
+        if ticket_id is None:
+            return False
+        actor_row = conn.execute(
+            "SELECT actor, payload_json FROM timeline_events "
+            "WHERE ticket_id = ? AND kind = 'human_message' ORDER BY id DESC LIMIT 1",
+            (ticket_id,),
+        ).fetchone()
+        if actor_row is None:
+            return False  # no human message: auto/approval turn — leave the park
+        payload = json.loads(actor_row[1])
+        if str(payload.get("turn_id", "")) != turn_id:
+            return False
+        cur = conn.execute(
+            "UPDATE tickets SET bucket = 'queued', updated_at = ? "
+            "WHERE tenant_id = ? AND ticket_id = ? AND state = 'open' "
+            "AND bucket = 'attention'",
+            (_now(), TENANT, ticket_id),
+        )
+        conn.commit()
+        if not cur.rowcount:
+            return False
+        store.append(
+            thread_id,
+            "ticket.resumed",
+            {
+                "ticket_id": ticket_id,
+                "by": str(actor_row[0]),
+                "input_id": str(payload.get("message_id", "")),
+            },
+            tenant_id=TENANT,
+        )
+        return True
+    except Exception:  # noqa: BLE001 - the turn already finished; wake is extra
+        return False
 
 
 @dataclass(frozen=True)
@@ -169,7 +281,10 @@ def run_assignment(
     )
     conn.commit()
 
-    text = content or str(ticket["title"])
+    # S8 人消息优先：a resumed ticket is driven by the latest human
+    # instruction, not the original webhook title (which may just loop back
+    # into the same approval pause)
+    text = content or _latest_human_message(conn, ticket_id) or str(ticket["title"])
     turn_id, _ = conversations.post_turn(
         conn, store,
         tenant_id=TENANT, owner_id="system", thread_id=thread_id, content=text,

@@ -90,9 +90,23 @@ def post_turn(
     thread_id: str,
     content: str,
     idempotency_key: str | None = None,
+    system_thread_ok: bool = False,
 ) -> tuple[str, str]:
-    """Append a user message + queued turn. Returns (turn_id, message_id)."""
-    get_thread(conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id)
+    """Append a user message + queued turn. Returns (turn_id, message_id).
+
+    `system_thread_ok` lets a human write into a system-owned thread (a
+    ticket execution thread — V05-11 human resume); everything else keeps
+    the private-by-default ownership check."""
+    if system_thread_ok:
+        row = conn.execute(
+            "SELECT thread_id FROM threads WHERE tenant_id = ? AND thread_id = ? "
+            "AND owner_id = 'system' AND deleted_at IS NULL",
+            (tenant_id, thread_id),
+        ).fetchone()
+        if row is None:
+            raise AppError("NOT_FOUND", details={"reason": "hidden"})
+    else:
+        get_thread(conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id)
     if not content.strip():
         raise AppError("VALIDATION_FAILED", details={"fields": {"content": "required"}})
 

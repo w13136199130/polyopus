@@ -1,5 +1,5 @@
 {
-  "count": 22,
+  "count": 23,
   "ops": [
     {
       "method": "GET",
@@ -80,6 +80,10 @@
     {
       "method": "POST",
       "path": "/api/v1/tickets/watchdog/run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{ticket_id}/messages"
     },
     {
       "method": "POST",
