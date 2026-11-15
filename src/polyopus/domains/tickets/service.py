@@ -543,6 +543,11 @@ def stop(
         (now, now, ticket_id),
     )
     conn.commit()
+    # V05-17: a stopped ticket also cancels its running async tools; each
+    # cancel emits tool.async_cancelled on the original turn.
+    from polyopus.workers import async_tools
+
+    async_tools.cancel_for_thread(conn, store, thread_id)
     _release_subscriptions(conn, ticket_id)
     store.append(
         thread_id,

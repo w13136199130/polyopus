@@ -55,6 +55,10 @@ class ToolSpec:
     name: str
     description: str
     parameters_json_schema: dict[str, Any] = field(default_factory=dict)
+    # V05-17: async tools return a handle immediately; the result arrives as
+    # a `tool.async_completed` event carrying the original turn_id.
+    execution: Literal["sync", "async"] = "sync"
+    timeout_seconds: float = 300.0
 
 
 @dataclass(frozen=True)

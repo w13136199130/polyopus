@@ -38,6 +38,7 @@ class FakeModel:
         self.chunk_words = chunk_words
         self.delay_seconds = delay_seconds
         self.calls: list[str] = []
+        self._async_started = False
 
     def capabilities(self, model: str) -> ModelCaps:
         return ModelCaps()
@@ -48,6 +49,27 @@ class FakeModel:
 
     _WRITE_INTENT = re.compile(r"写|保存|write|save", re.IGNORECASE)
     _FILENAME = re.compile(r"[\w.-]+\.(?:txt|md|yml|yaml|py|json)")
+    _ASYNC_INTENT = re.compile(r"异步|async", re.IGNORECASE)
+    _SECONDS = re.compile(r"(\d+(?:\.\d+)?)\s*(?:秒|s\b|sec(?:onds?)?)", re.I)
+
+    def _sleep_call(self, req: ModelRequest) -> ToolCallDelta | None:
+        """Simulate an async tool call (V05-17): "异步 10 秒" -> demo.sleep.
+        Only the first tool round starts it; later rounds answer."""
+        if self._async_started:
+            return None
+        if not any(t.name == "demo.sleep" for t in req.tools):
+            return None
+        prompt = self._prompt_of(req)
+        if not self._ASYNC_INTENT.search(prompt):
+            return None
+        match = self._SECONDS.search(prompt)
+        seconds = float(match.group(1)) if match else 1.0
+        seconds = min(seconds, 30.0)
+        self._async_started = True
+        return ToolCallDelta(
+            id="tc_fake_sleep", name="demo_sleep",
+            arguments_json=json.dumps({"seconds": seconds}),
+        )
 
     def _write_call(self, req: ModelRequest) -> ToolCallDelta | None:
         """Simulate a model that decides to write a file (fs.write is high
@@ -69,7 +91,7 @@ class FakeModel:
     async def stream(self, req: ModelRequest) -> AsyncIterator[ModelDelta]:
         prompt = self._prompt_of(req)
         self.calls.append(prompt)
-        write = self._write_call(req)
+        write = self._sleep_call(req) or self._write_call(req)
         if write is not None:
             yield write
             yield UsageDelta(input_tokens=len(prompt.split()), output_tokens=1)

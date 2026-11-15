@@ -37,6 +37,7 @@ from polyopus.platform.errors import AppError
 from polyopus.platform.events import projection
 from polyopus.platform.events.store import EventStore
 from polyopus.platform.queue import lease
+from polyopus.workers import async_tools
 
 
 @dataclass(frozen=True)
@@ -418,13 +419,31 @@ async def run_turn(
                     )
 
             if spec is not None and decision.effect == "allow":
-                output_json, _ok = _execute_call(
-                    conn, store,
-                    internal=internal, arguments_json=call.arguments_json,
-                    call_id=call_id, risk=risk, run_id=run_id, thread_id=thread_id,
-                    turn_id=turn_id, tenant_id=tenant_id, tool_round=tool_round,
-                    workspace=cfg.workspace,
-                )
+                gateway_spec = GATEWAY_SPECS.get(internal)
+                if gateway_spec is not None and gateway_spec.execution == "async":
+                    output_json = json.dumps(
+                        async_tools.start_async_call(
+                            conn, store,
+                            internal=internal,
+                            arguments_json=call.arguments_json,
+                            risk=risk,
+                            workspace=cfg.workspace,
+                            timeout_seconds=gateway_spec.timeout_seconds,
+                            tenant_id=tenant_id,
+                            thread_id=thread_id,
+                            turn_id=turn_id,
+                            run_id=run_id,
+                        ),
+                        ensure_ascii=False,
+                    )
+                else:
+                    output_json, _ok = _execute_call(
+                        conn, store,
+                        internal=internal, arguments_json=call.arguments_json,
+                        call_id=call_id, risk=risk, run_id=run_id, thread_id=thread_id,
+                        turn_id=turn_id, tenant_id=tenant_id, tool_round=tool_round,
+                        workspace=cfg.workspace,
+                    )
             elif spec is not None and decision.effect == "ask":
                 # pipeline step 6: pause with the REAL tool and args
                 approval_id, _ = attention.request(
@@ -575,12 +594,30 @@ def resume_after_approval(
                 arguments_json=arguments_json,
             )
         else:
-            output_json, _ok = _execute_call(
-                conn, store, internal=internal, arguments_json=arguments_json,
-                call_id=call_id, risk=risk, run_id=run_id, thread_id=thread_id,
-                turn_id=turn_id, tenant_id=tenant_id, tool_round=99,
-                workspace=workspace,
-            )
+            gateway_spec = GATEWAY_SPECS.get(internal)
+            if gateway_spec is not None and gateway_spec.execution == "async":
+                output_json = json.dumps(
+                    async_tools.start_async_call(
+                        conn, store,
+                        internal=internal,
+                        arguments_json=arguments_json,
+                        risk=risk,
+                        workspace=workspace,
+                        timeout_seconds=gateway_spec.timeout_seconds,
+                        tenant_id=tenant_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        run_id=run_id,
+                    ),
+                    ensure_ascii=False,
+                )
+            else:
+                output_json, _ok = _execute_call(
+                    conn, store, internal=internal, arguments_json=arguments_json,
+                    call_id=call_id, risk=risk, run_id=run_id, thread_id=thread_id,
+                    turn_id=turn_id, tenant_id=tenant_id, tool_round=99,
+                    workspace=workspace,
+                )
     else:
         output_json = _refuse_call(
             conn, store, call_id=call_id, internal=internal,

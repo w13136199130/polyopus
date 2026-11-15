@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from polyopus.kernel.tools.demo_sleep import DEMO_SLEEP_SPEC, execute_demo_sleep
 from polyopus.kernel.tools.fs_read import (
     FS_READ_SPEC,
     ToolError,
@@ -22,12 +23,14 @@ from polyopus.kernel.tools.policy import (
 WIRE_NAMES = {
     "fs_read": FS_READ_SPEC.name,
     "fs_write": FS_WRITE_SPEC.name,
+    "demo_sleep": DEMO_SLEEP_SPEC.name,
 }
 
 # gateway specs (model-visible) keyed by internal name
 GATEWAY_SPECS = {
     FS_READ_SPEC.name: FS_READ_SPEC,
     FS_WRITE_SPEC.name: FS_WRITE_SPEC,
+    DEMO_SLEEP_SPEC.name: DEMO_SLEEP_SPEC,
 }
 
 # policy specs keyed by internal name (docs/09 §8.2 capability matrix).
@@ -38,6 +41,7 @@ POLICY_SPECS = {
     FS_WRITE_SPEC.name: ToolPolicySpec(
         FS_WRITE_SPEC.name, "high", True, required_scope="fs:write"
     ),
+    DEMO_SLEEP_SPEC.name: ToolPolicySpec(DEMO_SLEEP_SPEC.name, "low", False),
 }
 
 
@@ -52,10 +56,13 @@ def dispatch(internal: str, root: Path, arguments_json: str) -> ToolResult:
         return execute_fs_read(root, arguments_json)
     if internal == FS_WRITE_SPEC.name:
         return execute_fs_write(root, arguments_json)
+    if internal == DEMO_SLEEP_SPEC.name:
+        return execute_demo_sleep(root, arguments_json)
     raise ToolError("TOOL_NOT_FOUND", f"unknown builtin tool: {internal}")
 
 
 __all__ = [
+    "DEMO_SLEEP_SPEC",
     "FS_READ_SPEC",
     "FS_WRITE_SPEC",
     "Decision",
@@ -69,6 +76,7 @@ __all__ = [
     "ToolRuntime",
     "default_rules",
     "dispatch",
+    "execute_demo_sleep",
     "execute_fs_read",
     "execute_fs_write",
     "fs_read",
