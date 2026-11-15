@@ -221,6 +221,74 @@ def _expire(
     return "denied"
 
 
+def expire_due(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    now: int | None = None,
+    tenant_id: str | None = None,
+) -> list[dict[str, str]]:
+    """V05-16 sweep: pending approvals past `expires_at` become `expired`.
+
+    Returns the approvals that flipped so the caller can resume their turns
+    with a denied decision (docs/09 §9: 拒绝并记 expired). The CAS on
+    `status='pending'` makes concurrent sweeps harmless.
+    """
+    ts = now or int(time.time())
+    where = ("a.status = 'pending' AND a.expires_at IS NOT NULL "
+             "AND a.expires_at < ?")
+    params: list[object] = [ts]
+    if tenant_id is not None:
+        where += " AND a.tenant_id = ?"
+        params.append(tenant_id)
+    rows = conn.execute(
+        "SELECT a.approval_id, a.tenant_id, a.turn_id, t.thread_id "
+        "FROM approvals a LEFT JOIN turns t ON t.turn_id = a.turn_id "
+        f"WHERE {where}",
+        params,
+    ).fetchall()
+
+    expired: list[dict[str, str]] = []
+    for row in rows:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            changed = conn.execute(
+                "UPDATE approvals SET status = 'expired', resolved_at = ? "
+                "WHERE approval_id = ? AND status = 'pending'",
+                (ts, row["approval_id"]),
+            ).rowcount
+            if not changed:
+                conn.execute("ROLLBACK")
+                continue
+            conn.execute(
+                "UPDATE attentions SET status = 'expired', resolved_at = ? "
+                "WHERE source_type = 'approval' AND source_id = ? "
+                "AND status = 'pending'",
+                (ts, row["approval_id"]),
+            )
+            conn.commit()
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+        approval_id = str(row["approval_id"])
+        turn_id = str(row["turn_id"])
+        thread_id = str(row["thread_id"] or "")
+        if thread_id:
+            store.append(
+                thread_id,
+                "approval.resolved",
+                {"approval_id": approval_id, "decision": "expired"},
+                tenant_id=str(row["tenant_id"]),
+                turn_id=turn_id,
+            )
+        expired.append(
+            {"approvalId": approval_id, "turnId": turn_id,
+             "threadId": thread_id}
+        )
+    return expired
+
+
 def pending_for_run(conn: sqlite3.Connection, run_id: str) -> list[sqlite3.Row]:
     return list(
         conn.execute(

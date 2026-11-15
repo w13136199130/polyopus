@@ -558,6 +558,12 @@ WHERE assignment_id = (
 | `blocked` | 预算/权限/依赖 | 24 h | 升级给管理员 |
 | `failed` | `Report.state=failed`（V05-09） | 24 h | 升级给管理员 |
 
+**v0.5 实现（V05-16）**：approval 过期由 ticket worker 的 5s sweep 自动
+标记 `expired`，并以 denied 决策恢复对应 turn（不会永远停在
+`waiting_approval`）；批量答复只接受同一 tool/risk 的选中项。auto-approve
+是 source 级显式工具白名单（默认空），只把 `ask` 升为 `allow`，`deny`
+永远优先，`critical` 永不自动批准。
+
 - **合并同类**：同一 Ticket 的多个 question 合并为一张卡。
 - **上限**：每用户 20 条待决；超出时新工单进"排队"。
 - **回答**：`POST /attentions/{id}/answer`，幂等（同 id 重复提交返回同结果）。

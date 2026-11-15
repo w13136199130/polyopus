@@ -388,6 +388,7 @@
 | GET | `/tickets/{id}/timeline` | 时间线 |
 | GET | `/attentions` | 待决列表 |
 | POST | `/attentions/{id}/answer` | 回答/批准/拒绝 |
+| POST | `/attentions/answer-batch` | 批量批准/拒绝（仅同类 action；V05-16） |
 | GET | `/sources` | 来源列表 |
 | POST | `/sources` | 新建来源 |
 | POST | `/sources/{id}/pause` | 暂停 |

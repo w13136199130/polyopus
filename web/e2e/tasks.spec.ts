@@ -55,6 +55,9 @@ async function seedTickets(
       generateSecret: false,
       allowActors: ["alice"],
       explicitPatterns: ["/polyopus"],
+      // V05-16: ticket turns now carry their ticket, so the scope gate runs;
+      // the write-intent fixture needs fs:write in the mandate scope.
+      defaultScope: ["workspace:default", "fs:write"],
     },
   });
   expect(created.ok()).toBe(true);

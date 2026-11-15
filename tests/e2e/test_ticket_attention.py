@@ -48,6 +48,9 @@ def _open_ticket(client: TestClient, **source_overrides: object) -> str:
         "name": "ci",
         "allow_actors": ["alice"],
         "explicit_patterns": ["/polyopus"],
+        # V05-16: turns now carry their ticket, so V05-12's scope gate is
+        # live — the write-intent flows need fs:write in the mandate scope.
+        "default_scope": ["workspace:default", "fs:write"],
     }
     body.update(source_overrides)
     source = client.post("/api/v1/sources", json=body).json()

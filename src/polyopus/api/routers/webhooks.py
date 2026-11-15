@@ -54,6 +54,19 @@ class CreateSourceBody(BaseModel):
         "full = web markdown",
         validation_alias=AliasChoices("reply_style", "replyStyle"),
     )
+    auto_approve_tools: list[str] = Field(
+        default_factory=list,
+        description="V05-16 explicit tool whitelist; empty = every ask "
+        "still needs a human",
+        validation_alias=AliasChoices("auto_approve_tools", "autoApproveTools"),
+    )
+    auto_approve_max_risk: Literal["low", "medium", "high"] = Field(
+        default="high",
+        description="critical tools are never auto-approved",
+        validation_alias=AliasChoices(
+            "auto_approve_max_risk", "autoApproveMaxRisk"
+        ),
+    )
     assessment: Literal["off", "dry_run", "auto"] = Field(
         default="off",
         description="model-based admission (V05-13): off = rule Gate only",
@@ -99,6 +112,10 @@ def create_source(
         config["assessment"] = body.assessment
     if body.reply_style != "structured":
         config["reply_style"] = body.reply_style
+    if body.auto_approve_tools:
+        config["auto_approve_tools"] = body.auto_approve_tools
+        if body.auto_approve_max_risk != "high":
+            config["auto_approve_max_risk"] = body.auto_approve_max_risk
     now = int(time.time())
     conn.execute(
         """

@@ -10,10 +10,13 @@ allow). Any exception or deadline overrun denies — never allows.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 type Effect = str  # "allow" | "ask" | "deny"
+
+_RISK_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,13 @@ class Decision:
 
 POLICY_ERROR = Decision("deny", (), "policy_error", ())
 POLICY_TIMEOUT = Decision("deny", (), "policy_timeout", ())
+
+
+def _risk_at_most(risk: str, ceiling: str) -> bool:
+    """Fail closed: an unknown risk or ceiling never qualifies."""
+    rank = _RISK_RANK.get(risk)
+    limit = _RISK_RANK.get(ceiling)
+    return rank is not None and limit is not None and rank <= limit
 
 
 @dataclass
@@ -64,9 +74,21 @@ class Rule:
 
 
 class PolicyEngine:
-    def __init__(self, rules: list[Rule], deadline_ms: int = 50) -> None:
+    def __init__(
+        self,
+        rules: list[Rule],
+        deadline_ms: int = 50,
+        *,
+        auto_approve: Iterable[str] = (),
+        auto_approve_max_risk: str = "high",
+    ) -> None:
         self.rules = sorted(rules, key=lambda r: -r.priority)
         self.deadline_ms = deadline_ms
+        # V05-16: source-scoped auto-approve. Only an `ask` can be upgraded —
+        # an explicit `deny` always wins (fail-closed). The tool must be
+        # listed by name AND its risk must not exceed the source's ceiling.
+        self.auto_approve = frozenset(auto_approve)
+        self.auto_approve_max_risk = auto_approve_max_risk
         self.decisions: list[Decision] = []
 
     def evaluate(self, tool: ToolPolicySpec, args: dict[str, Any]) -> Decision:
@@ -83,8 +105,22 @@ class PolicyEngine:
     def _evaluate(self, tool: ToolPolicySpec, args: dict[str, Any]) -> Decision:
         for rule in self.rules:
             if rule.matches(tool, args):
-                return Decision(rule.effect, (rule.rid,), f"rule {rule.rid}")
-        return self._default(tool)
+                return self._maybe_auto_approve(
+                    tool, Decision(rule.effect, (rule.rid,), f"rule {rule.rid}")
+                )
+        return self._maybe_auto_approve(tool, self._default(tool))
+
+    def _maybe_auto_approve(
+        self, tool: ToolPolicySpec, decision: Decision
+    ) -> Decision:
+        if (
+            decision.effect == "ask"
+            and tool.tool_key in self.auto_approve
+            and _risk_at_most(tool.risk, self.auto_approve_max_risk)
+        ):
+            return Decision("allow", decision.matched,
+                            f"auto_approved: {tool.tool_key}")
+        return decision
 
     @staticmethod
     def _default(tool: ToolPolicySpec) -> Decision:

@@ -145,6 +145,43 @@ def recover_stale_running(
     return requeued
 
 
+def expire_pending_approvals(conn: sqlite3.Connection) -> int:
+    """V05-16 sweep: approvals past their TTL auto-deny.
+
+    The approval row flips to `expired` in the attention service; the turn is
+    then resumed with a denied decision so it finishes instead of hanging in
+    `waiting_approval` forever (docs/09 §9: 拒绝并记 expired).
+    """
+    from polyopus.domains.attention import service as attention
+    from polyopus.workers import engine
+
+    store = EventStore(conn)
+    expired = attention.expire_due(conn, store)
+    resumed = 0
+    for item in expired:
+        turn_id = item["turnId"]
+        if not turn_id:
+            continue
+        turn = conn.execute(
+            "SELECT status FROM turns WHERE turn_id = ?", (turn_id,)
+        ).fetchone()
+        if turn is None or str(turn[0]) != "waiting_approval":
+            continue  # stopped/finished turns are not resurrected
+        try:
+            engine.resume_after_approval(
+                conn, store, turn_id, decision="denied",
+                config=engine.EngineConfig(workspace=_workspace()),
+            )
+            resumed += 1
+        except Exception as exc:  # noqa: BLE001 - one bad turn must not stop the sweep
+            tlog.log(logger, 40, "approval.expire_resume_failed",
+                     turn_id=turn_id, error=str(exc))
+    if expired:
+        tlog.log(logger, 30, "approvals.expired", count=len(expired),
+                 resumed=resumed)
+    return resumed
+
+
 def run_ticket_loop(
     db_path_factory: Callable[[], Path],
     *,
@@ -168,6 +205,7 @@ def run_ticket_loop(
                 # transient error mid-run (the final bucket update is the
                 # only non-transactional tail of run_assignment)
                 recover_stale_running(conn)
+                expire_pending_approvals(conn)
                 last_sweep = now
             state = process_next(conn, EventStore(conn))
             if state is None:

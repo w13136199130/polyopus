@@ -362,7 +362,14 @@ async def run_turn(
 
     toolspecs = tuple(GATEWAY_SPECS.values()) if cfg.workspace is not None else ()
     ticket_id = turn["ticket_id"]
-    runtime = ToolRuntime(PolicyEngine(_gate_rules(conn, cfg, ticket_id)))
+    auto_tools, auto_max_risk = _auto_approve_of(conn, tenant_id, ticket_id)
+    runtime = ToolRuntime(
+        PolicyEngine(
+            _gate_rules(conn, cfg, ticket_id),
+            auto_approve=auto_tools,
+            auto_approve_max_risk=auto_max_risk,
+        )
+    )
 
     tool_round = 0
     while True:
@@ -734,6 +741,34 @@ def _record_usage(
         tenant_id=tenant_id,
         turn_id=turn_id,
     )
+
+
+def _auto_approve_of(
+    conn: sqlite3.Connection, tenant_id: str, ticket_id: str | None
+) -> tuple[tuple[str, ...], str]:
+    """V05-16: source-scoped auto-approve whitelist for a ticket turn.
+
+    Chat turns (no ticket) and sources without the config return an empty
+    set — the default is still "every ask opens a card".
+    """
+    if not ticket_id:
+        return (), "high"
+    row = conn.execute(
+        "SELECT source_id FROM tickets WHERE tenant_id = ? AND ticket_id = ?",
+        (tenant_id, str(ticket_id)),
+    ).fetchone()
+    if row is None or not row["source_id"]:
+        return (), "high"
+    source = conn.execute(
+        "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
+        (tenant_id, str(row["source_id"])),
+    ).fetchone()
+    if source is None:
+        return (), "high"
+    from polyopus.domains.intake import service as intake
+
+    cfg = intake.config_of(source)
+    return cfg.auto_approve_tools, cfg.auto_approve_max_risk
 
 
 def _gate_rules(

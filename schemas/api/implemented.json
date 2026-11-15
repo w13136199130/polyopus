@@ -1,5 +1,5 @@
 {
-  "count": 23,
+  "count": 24,
   "ops": [
     {
       "method": "GET",
@@ -48,6 +48,10 @@
     {
       "method": "GET",
       "path": "/healthz"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/attentions/answer-batch"
     },
     {
       "method": "POST",

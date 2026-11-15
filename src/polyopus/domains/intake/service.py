@@ -43,6 +43,10 @@ class SourceConfig:
     # (structured = webhook payload, full = web). Unknown values fall back
     # to structured in outbound.shaper.
     reply_style: str = "structured"
+    # V05-16: explicit source-scoped tool whitelist for auto-approve. Empty
+    # (the default) means every `ask` still opens an attention card.
+    auto_approve_tools: tuple[str, ...] = ()
+    auto_approve_max_risk: str = "high"  # critical is never auto-approved
     # V05-13: model-based admission. off = rule Gate only (default,
     # explicit_only); dry_run = judge + write dispositions, never open;
     # auto = judge + open on accept
@@ -63,6 +67,14 @@ def config_of(row: sqlite3.Row) -> SourceConfig:
         default_scope=tuple(cfg.get("default_scope", ("workspace:default",))),
         callback_url=str(cfg.get("callback_url", "")),
         reply_style=str(cfg.get("reply_style", cfg.get("replyStyle", "structured"))),
+        auto_approve_tools=tuple(
+            str(t) for t in cfg.get(
+                "auto_approve_tools", cfg.get("autoApproveTools", ())
+            )
+        ),
+        auto_approve_max_risk=str(
+            cfg.get("auto_approve_max_risk", cfg.get("autoApproveMaxRisk", "high"))
+        ),
         assessment=str(cfg.get("assessment", "off")),
     )
 

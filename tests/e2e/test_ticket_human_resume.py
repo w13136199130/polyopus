@@ -46,6 +46,9 @@ def _make_source(client: TestClient) -> tuple[dict, str]:
     response = client.post("/api/v1/sources", json={
         "name": "resume", "allow_actors": ["alice"],
         "explicit_patterns": ["/polyopus"],
+        # V05-16: ticket turns now carry their ticket, so the V05-12 scope
+        # gate is live for the write-intent approval flows.
+        "default_scope": ["workspace:default", "fs:write"],
     })
     assert response.status_code == 201, response.text
     source = response.json()

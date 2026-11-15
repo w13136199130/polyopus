@@ -132,6 +132,16 @@ def post_turn(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM turns WHERE thread_id = ?", (thread_id,)
         ).fetchone()[0]
     )
+    # ADR-012: a turn on a ticket execution thread carries the back-reference.
+    # Without it the engine cannot see the mandate/source (V05-12 scope gate,
+    # V05-16 source-scoped auto-approve).
+    ticket_row = conn.execute(
+        "SELECT ticket_id FROM timeline_events WHERE kind = 'execution_thread' "
+        "AND json_extract(payload_json, '$.thread_id') = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (thread_id,),
+    ).fetchone()
+    ticket_id = str(ticket_row[0]) if ticket_row is not None and ticket_row[0] else None
 
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -148,10 +158,10 @@ def post_turn(
             """
             INSERT INTO turns
               (tenant_id, turn_id, thread_id, user_message_id, status, mode, seq,
-               created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'queued', 'act', ?, ?, ?)
+               ticket_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'queued', 'act', ?, ?, ?, ?)
             """,
-            (tenant_id, turn_id, thread_id, message_id, turn_seq, now, now),
+            (tenant_id, turn_id, thread_id, message_id, turn_seq, ticket_id, now, now),
         )
         conn.execute(
             "UPDATE threads SET last_message_at = ?, updated_at = ? WHERE thread_id = ?",
