@@ -750,18 +750,25 @@ def _record_usage(
         output_tokens=output_tokens, cached_tokens=cached_tokens,
     )
     entry_id = "us_" + secrets.token_hex(8)
+    ticket_row = conn.execute(
+        "SELECT ticket_id FROM turns WHERE turn_id = ?", (turn_id,)
+    ).fetchone()
+    ticket_id = str(ticket_row[0]) if ticket_row is not None and ticket_row[0] else None
     conn.execute(
         """
         INSERT INTO usage_ledger
-          (tenant_id, entry_id, turn_id, model, input_tokens, output_tokens,
-           cache_read, latency_ms, cost_micros, currency, price_version, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (tenant_id, entry_id, ticket_id, turn_id, model, input_tokens,
+           output_tokens, cache_read, latency_ms, cost_micros, currency,
+           price_version, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (tenant_id, entry_id, turn_id, model, input_tokens, output_tokens,
-         cached_tokens, first_token_ms, cost.cost_micros, cost.currency,
-         cost.price_version, _now()),
+        (tenant_id, entry_id, ticket_id, turn_id, model, input_tokens,
+         output_tokens, cached_tokens, first_token_ms, cost.cost_micros,
+         cost.currency, cost.price_version, _now()),
     )
     conn.commit()
+    if ticket_id:
+        usage_svc.refresh_ticket_cost(conn, ticket_id, tenant_id=tenant_id)
     store.append(
         thread_id,
         "usage.recorded",

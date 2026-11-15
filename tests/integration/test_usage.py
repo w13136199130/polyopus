@@ -35,14 +35,14 @@ def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
 def test_price_upsert_bumps_version_and_keeps_history(
     conn: sqlite3.Connection,
 ) -> None:
-    v1 = usage.upsert_price(conn, model="deepseek-flash", currency="CNY",
+    v1 = usage.upsert_price(conn, model="upsert-test", currency="CNY",
                             input_per_mtok=2.0, output_per_mtok=8.0)
-    v2 = usage.upsert_price(conn, model="deepseek-flash", currency="CNY",
+    v2 = usage.upsert_price(conn, model="upsert-test", currency="CNY",
                             input_per_mtok=1.0, output_per_mtok=4.0)
     assert (v1, v2) == (1, 2)
     rows = conn.execute(
         "SELECT version, input_per_mtok FROM model_prices WHERE model=? ORDER BY version",
-        ("deepseek-flash",),
+        ("upsert-test",),
     ).fetchall()
     assert [r[0] for r in rows] == [1, 2]
     assert rows[0][1] == 2.0  # history untouched

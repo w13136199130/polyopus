@@ -183,6 +183,7 @@ def wake_thread_ticket(
 @dataclass(frozen=True)
 class Budget:
     max_total_tokens: int | None = None
+    max_cost_micros: int | None = None
 
     @staticmethod
     def of(ticket_row: sqlite3.Row) -> Budget:
@@ -190,8 +191,79 @@ class Budget:
         if not raw:
             return Budget()
         data: dict[str, Any] = json.loads(raw)
-        value = data.get("max_total_tokens")
-        return Budget(max_total_tokens=int(value) if value else None)
+        tokens = data.get("max_total_tokens")
+        cost = data.get("max_cost_micros")
+        return Budget(
+            max_total_tokens=int(tokens) if tokens else None,
+            max_cost_micros=int(cost) if cost else None,
+        )
+
+
+def _budget_exceeded(
+    conn: sqlite3.Connection, ticket: sqlite3.Row, budget: Budget
+) -> tuple[bool, str]:
+    """V05-18 three-layer budget check: ticket (tokens/cost), source/day,
+    instance/day. Returns (exceeded, reason)."""
+    from polyopus.config import load_settings
+    from polyopus.domains.intake import service as intake
+    from polyopus.domains.usage import service as usage_svc
+
+    ticket_id = str(ticket["ticket_id"])
+    thread_id = thread_of_ticket(conn, ticket_id)
+    total_tokens = _usage_of_thread(conn, thread_id)
+    if (
+        budget.max_total_tokens is not None
+        and total_tokens > budget.max_total_tokens
+    ):
+        return True, "ticket_tokens"
+
+    cost = usage_svc.ticket_cost_micros(conn, ticket_id)
+    if budget.max_cost_micros is not None and cost > budget.max_cost_micros:
+        return True, "ticket_cost"
+
+    source_id = ticket["source_id"]
+    if source_id:
+        source = conn.execute(
+            "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
+            (TENANT, str(source_id)),
+        ).fetchone()
+        if source is not None:
+            cfg = intake.config_of(source)
+            if cfg.max_cost_micros_per_day is not None:
+                daily = usage_svc.source_day_cost_micros(conn, str(source_id))
+                if daily > cfg.max_cost_micros_per_day:
+                    return True, "source_daily_cost"
+
+    instance_daily = int(load_settings().daily_cost_budget_micros)
+    if instance_daily > 0:
+        daily = usage_svc.tenant_day_cost_micros(conn)
+        if daily > instance_daily:
+            return True, "tenant_daily_cost"
+    return False, ""
+
+
+def _budget_summary(
+    conn: sqlite3.Connection,
+    ticket: sqlite3.Row,
+    budget: Budget,
+    reason: str,
+    total_tokens: int,
+) -> str:
+    from polyopus.domains.usage import service as usage_svc
+
+    ticket_id = str(ticket["ticket_id"])
+    if reason == "ticket_tokens":
+        return f"预算超限：已用 {total_tokens} tokens > 上限 {budget.max_total_tokens}"
+    if reason == "ticket_cost":
+        cost = usage_svc.ticket_cost_micros(conn, ticket_id)
+        return f"预算超限：ticket 已用 {cost} micros > 上限 {budget.max_cost_micros} micros"
+    if reason == "source_daily_cost":
+        cost = usage_svc.source_day_cost_micros(conn, str(ticket["source_id"]))
+        return f"预算超限：source 今日已用 {cost} micros > 每日上限"
+    if reason == "tenant_daily_cost":
+        cost = usage_svc.tenant_day_cost_micros(conn)
+        return f"预算超限：实例今日已用 {cost} micros > 每日上限"
+    return f"预算超限：{reason or 'unknown'}"
 
 
 # ---- card 4: assignment + run + report --------------------------------------
@@ -281,32 +353,37 @@ def run_assignment(
     )
     conn.commit()
 
-    # S8 人消息优先：a resumed ticket is driven by the latest human
-    # instruction, not the original webhook title (which may just loop back
-    # into the same approval pause)
-    text = content or _latest_human_message(conn, ticket_id) or str(ticket["title"])
-    turn_id, _ = conversations.post_turn(
-        conn, store,
-        tenant_id=TENANT, owner_id="system", thread_id=thread_id, content=text,
-    )
-    try:
-        config = engine_config or _default_engine_config()
-        result = asyncio.run(
-            engine.run_turn(conn, store, turn_id, owner=f"as:{assignment_id}",
-                            config=config)
+    # V05-18: source/day and instance/day can already be over budget before
+    # this assignment starts; then no turn is launched at all.
+    status = "blocked"
+    pre_exceeded, pre_reason = _budget_exceeded(conn, ticket, budget)
+    if not pre_exceeded:
+        # S8 人消息优先：a resumed ticket is driven by the latest human
+        # instruction, not the original webhook title (which may just loop back
+        # into the same approval pause)
+        text = content or _latest_human_message(conn, ticket_id) or str(ticket["title"])
+        turn_id, _ = conversations.post_turn(
+            conn, store,
+            tenant_id=TENANT, owner_id="system", thread_id=thread_id, content=text,
         )
-        status = result if result in ("completed", "waiting_approval") else "failed"
-    except AppError as exc:
-        if exc.normalized_code() == "THREAD_TURN_ACTIVE":
-            status = "waiting_approval"
-        else:
-            raise
+        try:
+            config = engine_config or _default_engine_config()
+            result = asyncio.run(
+                engine.run_turn(conn, store, turn_id, owner=f"as:{assignment_id}",
+                                config=config)
+            )
+            status = result if result in ("completed", "waiting_approval") else "failed"
+        except AppError as exc:
+            if exc.normalized_code() == "THREAD_TURN_ACTIVE":
+                status = "waiting_approval"
+            else:
+                raise
 
     total_tokens = _usage_of_thread(conn, thread_id)
-    exceeded = (
-        budget.max_total_tokens is not None
-        and total_tokens > budget.max_total_tokens
-    )
+    if pre_exceeded:
+        exceeded, budget_reason = True, pre_reason
+    else:
+        exceeded, budget_reason = _budget_exceeded(conn, ticket, budget)
     if exceeded:
         state = "blocked"
     elif status == "completed":
@@ -314,13 +391,18 @@ def run_assignment(
     else:
         state = "waiting" if status == "waiting_approval" else "failed"
 
+    from polyopus.domains.usage import service as usage_svc
+
+    ticket_cost = usage_svc.ticket_cost_micros(conn, ticket_id)
     summary = (
-        f"预算超限：已用 {total_tokens} tokens > 上限 {budget.max_total_tokens}"
+        _budget_summary(conn, ticket, budget, budget_reason, total_tokens)
         if exceeded
-        else f"执行 {status}（{total_tokens} tokens）"
+        else f"执行 {status}（{total_tokens} tokens / {ticket_cost} micros）"
     )
     report_id = _record_report(conn, store, ticket_id, assignment_id, thread_id,
-                               state, summary, facts={"total_tokens": total_tokens})
+                               state, summary,
+                               facts={"total_tokens": total_tokens,
+                                      "cost_micros": ticket_cost})
 
     now = _now()
     conn.execute(

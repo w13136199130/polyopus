@@ -44,6 +44,20 @@ class CreateSourceBody(BaseModel):
         gt=0,
         validation_alias=AliasChoices("max_total_tokens", "maxTotalTokens"),
     )
+    max_cost_micros: int | None = Field(
+        default=None,
+        gt=0,
+        description="V05-18 per-ticket cost cap (micros)",
+        validation_alias=AliasChoices("max_cost_micros", "maxCostMicros"),
+    )
+    max_cost_micros_per_day: int | None = Field(
+        default=None,
+        gt=0,
+        description="V05-18 per-source daily cost cap (micros)",
+        validation_alias=AliasChoices(
+            "max_cost_micros_per_day", "maxCostMicrosPerDay"
+        ),
+    )
     callback_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("callback_url", "callbackUrl"),
@@ -104,6 +118,10 @@ def create_source(
     }
     if body.max_total_tokens is not None:
         config["max_total_tokens"] = body.max_total_tokens
+    if body.max_cost_micros is not None:
+        config["max_cost_micros"] = body.max_cost_micros
+    if body.max_cost_micros_per_day is not None:
+        config["max_cost_micros_per_day"] = body.max_cost_micros_per_day
     if body.callback_url:
         from polyopus.domains.outbound import service as outbound
 

@@ -22,7 +22,8 @@ def list_tickets(
     user: User = Depends(current_user), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
     rows = conn.execute(
-        "SELECT ticket_id, title, state, bucket, strength, source_id, created_at "
+        "SELECT ticket_id, title, state, bucket, strength, source_id, "
+        "cost_micros, created_at "
         "FROM tickets WHERE tenant_id = ? ORDER BY id DESC LIMIT 100",
         (user.tenant_id,),
     ).fetchall()
@@ -35,6 +36,7 @@ def list_tickets(
                 "bucket": r["bucket"],
                 "strength": r["strength"],
                 "sourceId": r["source_id"],
+                "costMicros": int(r["cost_micros"] or 0),
                 "createdAt": r["created_at"],
             }
             for r in rows
@@ -66,6 +68,7 @@ def get_ticket(
         "bucket": row["bucket"],
         "scope": json.loads(row["scope_json"] or "[]"),
         "budget": json.loads(row["budget_json"]) if row["budget_json"] else None,
+        "costMicros": int(row["cost_micros"] or 0),
         "report": (
             {
                 "state": report["state"],

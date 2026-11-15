@@ -79,6 +79,64 @@ def price_usage(
     return Cost(micros, str(row["currency"]), f"v{row['version']}")
 
 
+# ---- cost rollups (V05-18) ----------------------------------------------------
+
+
+def ticket_cost_micros(
+    conn: sqlite3.Connection, ticket_id: str, *, tenant_id: str = TENANT
+) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(cost_micros), 0) FROM usage_ledger "
+        "WHERE tenant_id = ? AND ticket_id = ?",
+        (tenant_id, ticket_id),
+    ).fetchone()
+    return int(row[0] or 0)
+
+
+def refresh_ticket_cost(
+    conn: sqlite3.Connection, ticket_id: str, *, tenant_id: str = TENANT
+) -> int:
+    """Write the ledger rollup back to tickets.cost_micros (the tasks UI)."""
+    total = ticket_cost_micros(conn, ticket_id, tenant_id=tenant_id)
+    conn.execute(
+        "UPDATE tickets SET cost_micros = ? WHERE tenant_id = ? AND ticket_id = ?",
+        (total, tenant_id, ticket_id),
+    )
+    conn.commit()
+    return total
+
+
+def source_day_cost_micros(
+    conn: sqlite3.Connection, source_id: str, *, now: int | None = None,
+    tenant_id: str = TENANT,
+) -> int:
+    ts = now or int(time.time())
+    start = _window_start("day", ts)
+    row = conn.execute(
+        "SELECT COALESCE(SUM(u.cost_micros), 0) FROM usage_ledger u "
+        "JOIN tickets t ON t.tenant_id = u.tenant_id "
+        "AND t.ticket_id = u.ticket_id "
+        "WHERE u.tenant_id = ? AND t.source_id = ? "
+        "AND u.created_at >= ? AND u.created_at < ?",
+        (tenant_id, source_id, start, start + 86400),
+    ).fetchone()
+    return int(row[0] or 0)
+
+
+def tenant_day_cost_micros(
+    conn: sqlite3.Connection, *, now: int | None = None,
+    tenant_id: str = TENANT,
+) -> int:
+    ts = now or int(time.time())
+    start = _window_start("day", ts)
+    row = conn.execute(
+        "SELECT COALESCE(SUM(cost_micros), 0) FROM usage_ledger "
+        "WHERE tenant_id = ? AND created_at >= ? AND created_at < ?",
+        (tenant_id, start, start + 86400),
+    ).fetchone()
+    return int(row[0] or 0)
+
+
 # ---- summary (USE-001/USE-002) -----------------------------------------------
 
 

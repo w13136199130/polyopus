@@ -47,10 +47,17 @@ class SourceConfig:
     # (the default) means every `ask` still opens an attention card.
     auto_approve_tools: tuple[str, ...] = ()
     auto_approve_max_risk: str = "high"  # critical is never auto-approved
+    # V05-18 budgets: per-ticket cost cap and per-source daily cost cap.
+    max_cost_micros: int | None = None
+    max_cost_micros_per_day: int | None = None
     # V05-13: model-based admission. off = rule Gate only (default,
     # explicit_only); dry_run = judge + write dispositions, never open;
     # auto = judge + open on accept
     assessment: str = "off"
+
+
+def _opt_int(value: Any) -> int | None:
+    return int(value) if value is not None else None
 
 
 def config_of(row: sqlite3.Row) -> SourceConfig:
@@ -74,6 +81,14 @@ def config_of(row: sqlite3.Row) -> SourceConfig:
         ),
         auto_approve_max_risk=str(
             cfg.get("auto_approve_max_risk", cfg.get("autoApproveMaxRisk", "high"))
+        ),
+        max_cost_micros=_opt_int(
+            cfg.get("max_cost_micros", cfg.get("maxCostMicros"))
+        ),
+        max_cost_micros_per_day=_opt_int(
+            cfg.get(
+                "max_cost_micros_per_day", cfg.get("maxCostMicrosPerDay")
+            )
         ),
         assessment=str(cfg.get("assessment", "off")),
     )
@@ -254,7 +269,12 @@ def open_ticket(
     )
     source_cfg = json.loads(source["config_json"] or "{}")
     max_tokens = source_cfg.get("max_total_tokens")
-    budget = {"max_total_tokens": int(max_tokens)} if max_tokens else None
+    budget: dict[str, int] = {}
+    if max_tokens:
+        budget["max_total_tokens"] = int(max_tokens)
+    if cfg.max_cost_micros is not None:
+        budget["max_cost_micros"] = cfg.max_cost_micros
+    budget_json = json.dumps(budget) if budget else None
     # V05-12: the mandate pins the ACTIVE bundle version (bootstrap publishes
     # the built-in defaults as v1 on the first ticket); later publishes never
     # touch this mandate — it keeps executing its snapshot.
@@ -274,7 +294,7 @@ def open_ticket(
          strength,
          policy_version,
          json.dumps(scope),
-         json.dumps(budget) if budget else None, now, now),
+         budget_json, now, now),
     )
     conn.execute(
         """
