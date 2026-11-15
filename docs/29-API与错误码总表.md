@@ -392,6 +392,8 @@
 | GET | `/sources` | 来源列表 |
 | POST | `/sources` | 新建来源 |
 | POST | `/sources/{id}/pause` | 暂停 |
+| POST | `/sources/{id}/resume` | 恢复（V05-20） |
+| DELETE | `/sources/{id}` | 删除来源（含定时任务；V05-20） |
 | POST | `/sources/{id}/test-reply` | 测试回调（同步单次，HMAC 同正式回复；V05-08） |
 | GET | `/outbox` | 出站发送状态 status=pending/sent/failed/topic/limit（V05-08） |
 | GET | `/triggers` | 触发记录 |

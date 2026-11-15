@@ -195,6 +195,131 @@ def create_schedule_source(
     return source_id
 
 
+# ---- job read/manage surface (V05-20) ---------------------------------------
+
+
+def _job_sql(where: str = "1=1") -> str:
+    return (
+        "SELECT j.*, s.name AS source_name, s.status AS source_status, "
+        "json_extract(j.payload_json, '$.source_id') AS source_id, "
+        "json_extract(j.payload_json, '$.text') AS text "
+        "FROM cron_jobs j LEFT JOIN sources s "
+        "ON s.source_id = json_extract(j.payload_json, '$.source_id') "
+        f"WHERE j.tenant_id = ? AND {where}"
+    )
+
+
+def job_view(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "cronJobId": row["cron_job_id"],
+        "sourceId": row["source_id"],
+        "sourceName": row["source_name"],
+        "sourceStatus": row["source_status"],
+        "name": row["name"],
+        "schedule": row["schedule"],
+        "timezone": row["timezone"],
+        "text": row["text"] or "",
+        "enabled": bool(row["enabled"]),
+        "nextRunAt": row["next_run_at"],
+        "lastRunAt": row["last_run_at"],
+        "createdAt": row["created_at"],
+    }
+
+
+def list_jobs(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        _job_sql() + " ORDER BY j.id DESC", (TENANT,)
+    ).fetchall()
+    return [job_view(row) for row in rows]
+
+
+def job(conn: sqlite3.Connection, cron_job_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        _job_sql("j.cron_job_id = ?"), (TENANT, cron_job_id)
+    ).fetchone()
+    return job_view(row) if row is not None else None
+
+
+def latest_job_for_source(
+    conn: sqlite3.Connection, source_id: str
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        _job_sql("json_extract(j.payload_json, '$.source_id') = ?")
+        + " ORDER BY j.id DESC LIMIT 1",
+        (TENANT, source_id),
+    ).fetchone()
+    return job_view(row) if row is not None else None
+
+
+def set_enabled(
+    conn: sqlite3.Connection, cron_job_id: str, enabled: bool
+) -> dict[str, Any]:
+    row = conn.execute(
+        "SELECT * FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
+        (TENANT, cron_job_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("NOT_FOUND")
+    next_run = row["next_run_at"]
+    if enabled and next_run is None:
+        spec = parse_schedule(str(row["schedule"]))
+        next_run = next_after(spec, timezone_of(str(row["timezone"])), int(time.time()))
+    conn.execute(
+        "UPDATE cron_jobs SET enabled = ?, next_run_at = ? WHERE cron_job_id = ?",
+        (1 if enabled else 0, next_run, cron_job_id),
+    )
+    source_id = json.loads(row["payload_json"] or "{}").get("source_id")
+    if source_id:
+        conn.execute(
+            "UPDATE sources SET status = ?, updated_at = ? WHERE source_id = ?",
+            ("active" if enabled else "paused", int(time.time()), str(source_id)),
+        )
+    conn.commit()
+    view = job(conn, cron_job_id)
+    assert view is not None
+    return view
+
+
+def delete_job(conn: sqlite3.Connection, cron_job_id: str) -> None:
+    row = conn.execute(
+        "SELECT payload_json FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
+        (TENANT, cron_job_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("NOT_FOUND")
+    source_id = json.loads(row["payload_json"] or "{}").get("source_id")
+    conn.execute(
+        "DELETE FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
+        (TENANT, cron_job_id),
+    )
+    if source_id:
+        conn.execute(
+            "DELETE FROM sources WHERE tenant_id = ? AND source_id = ?",
+            (TENANT, str(source_id)),
+        )
+    conn.commit()
+
+
+def runs(conn: sqlite3.Connection, cron_job_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM cron_runs WHERE tenant_id = ? AND cron_job_id = ? "
+        "ORDER BY scheduled_at DESC LIMIT 50",
+        (TENANT, cron_job_id),
+    ).fetchall()
+    return [
+        {
+            "runId": row["run_id"],
+            "status": row["status"],
+            "scheduledAt": row["scheduled_at"],
+            "startedAt": row["started_at"],
+            "endedAt": row["ended_at"],
+            "error": row["error"],
+            "triggerId": row["trigger_id"],
+        }
+        for row in rows
+    ]
+
+
 # ---- the tick -----------------------------------------------------------------------
 
 

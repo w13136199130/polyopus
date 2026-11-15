@@ -1,7 +1,7 @@
 /**
  * Tasks page (V05-04): inbox strip + four-bucket board + detail drawer.
- * Counts aggregate client-side until V05-22 ships GET /tickets/counts;
- * the timeline section arrives with V05-22 as well.
+ * V05-20 adds source/schedule filters; counts still aggregate client-side
+ * until V05-22 ships GET /tickets/counts.
  */
 
 import { useState } from "react";
@@ -15,6 +15,7 @@ import {
   useTickets,
   type BucketFilter,
 } from "@/features/tasks/api";
+import { useSources } from "@/features/sources/api";
 import { InboxStrip } from "@/features/tasks/components/InboxStrip";
 import { TicketBoard } from "@/features/tasks/components/TicketBoard";
 import { TicketDetailDrawer } from "@/features/tasks/components/TicketDetailDrawer";
@@ -28,13 +29,24 @@ export function TasksPage() {
     ? (bucketParam as BucketFilter)
     : "all";
   const ticketId = params.get("ticketId");
+  const sourceParam = params.get("source") ?? "";
+  const scheduleOnly = params.get("kind") === "schedule";
 
   const ticketsQuery = useTickets();
   const attentionsQuery = useAttentions();
+  const sourcesQuery = useSources();
   const [seeding, setSeeding] = useState(false);
 
-  const rows = inBucket(ticketsQuery.data?.items, filter);
-  const counts = bucketCounts(ticketsQuery.data?.items);
+  const sources = sourcesQuery.data?.items ?? [];
+  const scheduleIds = new Set(
+    sources.filter((source) => source.kind === "schedule").map((source) => source.sourceId),
+  );
+  const rows = inBucket(ticketsQuery.data?.items, filter).filter((row) => {
+    if (sourceParam && row.sourceId !== sourceParam) return false;
+    if (scheduleOnly && (!row.sourceId || !scheduleIds.has(row.sourceId))) return false;
+    return true;
+  });
+  const counts = bucketCounts(rows);
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(params);
@@ -66,6 +78,47 @@ export function TasksPage() {
           error={attentionsQuery.isError}
           onRetry={() => void attentionsQuery.refetch()}
         />
+        <div
+          style={{
+            display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap",
+            padding: "8px 0",
+          }}
+        >
+          <label htmlFor="source-filter" style={{ fontSize: 12, color: "var(--text-2)" }}>
+            来源
+          </label>
+          <select
+            id="source-filter"
+            data-testid="source-filter"
+            value={sourceParam}
+            onChange={(event) => setParam("source", event.target.value || null)}
+            style={{ padding: "5px 8px", fontSize: 12 }}
+          >
+            <option value="">全部来源</option>
+            {sources.map((source) => (
+              <option key={source.sourceId} value={source.sourceId}>
+                {source.name}（{source.kind}）
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            data-testid="kind-schedule"
+            aria-pressed={scheduleOnly}
+            onClick={() => setParam("kind", scheduleOnly ? null : "schedule")}
+            style={{
+              padding: "5px 10px",
+              fontSize: 12,
+              borderRadius: 999,
+              border: "1px solid var(--line)",
+              background: scheduleOnly ? "var(--accent)" : "var(--surface)",
+              color: scheduleOnly ? "#fff" : "var(--text)",
+              cursor: "pointer",
+            }}
+          >
+            仅定时任务
+          </button>
+        </div>
         <TicketBoard
           rows={rows}
           loading={ticketsQuery.isLoading}

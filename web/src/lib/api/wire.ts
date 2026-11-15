@@ -92,18 +92,44 @@ export interface AnswerResponse {
   decision: string;
 }
 
+export interface CronJobView {
+  cronJobId: string;
+  sourceId: string;
+  sourceName: string | null;
+  sourceStatus: string | null;
+  name: string;
+  schedule: string;
+  timezone: string;
+  text: string;
+  enabled: boolean;
+  nextRunAt: number | null;
+  lastRunAt: number | null;
+  createdAt: number;
+}
+
 export interface SourceView {
   sourceId: string;
   kind: string;
   name: string;
   status: string;
-  webhookUrl: string;
+  webhookUrl?: string;
   secret?: string;
   secretNote?: string;
+  createdAt?: number;
+  callbackUrl?: string | null;
+  assessment?: string;
+  replyStyle?: string;
+  allowActors?: string[];
+  explicitPatterns?: string[];
+  schedule?: CronJobView | null;
 }
 
 export interface SourceListResponse {
-  items: Array<Pick<SourceView, "sourceId" | "name" | "status">>;
+  items: SourceView[];
+}
+
+export interface CronJobListResponse {
+  items: CronJobView[];
 }
 
 export interface WebhookAccepted {
@@ -129,7 +155,8 @@ export interface TicketListResponse {
 
 export interface TicketDetail extends TicketRow {
   scope: string[];
-  budget: { maxTotalTokens: number } | null;
+  budget: { maxTotalTokens?: number; maxCostMicros?: number } | null;
+  costMicros?: number;
   report: { state: string; summary: string; facts: Record<string, unknown> } | null;
 }
 

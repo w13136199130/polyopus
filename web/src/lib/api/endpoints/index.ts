@@ -9,6 +9,8 @@ import { apiFetch } from "../client";
 import type {
   AnswerResponse,
   AttentionListResponse,
+  CronJobListResponse,
+  CronJobView,
   LoginRequest,
   LoginResponse,
   MessageListResponse,
@@ -95,6 +97,15 @@ export interface CreateSourceBody {
   defaultScope?: string[];
   maxTotalTokens?: number;
   generateSecret?: boolean;
+  callbackUrl?: string;
+  replyStyle?: "structured" | "full";
+}
+
+export interface TestReplyResult {
+  delivered: boolean;
+  statusCode: number | null;
+  callbackUrl: string;
+  error?: string;
 }
 
 export interface WebhookPayload {
@@ -111,6 +122,33 @@ export const sources = {
       body: JSON.stringify(body),
     })),
   list: op("GET", "/sources", () => apiFetch<SourceListResponse>("/sources")),
+  pause: op("POST", "/sources/{source_id}/pause", (sourceId: string) =>
+    apiFetch<{ sourceId: string; status: string }>(
+      `/sources/${encodeURIComponent(sourceId)}/pause`,
+      { method: "POST" },
+    )),
+  resume: op("POST", "/sources/{source_id}/resume", (sourceId: string) =>
+    apiFetch<{ sourceId: string; status: string }>(
+      `/sources/${encodeURIComponent(sourceId)}/resume`,
+      { method: "POST" },
+    )),
+  remove: op("DELETE", "/sources/{source_id}", (sourceId: string) =>
+    apiFetch<{ sourceId: string; deleted: boolean }>(
+      `/sources/${encodeURIComponent(sourceId)}`,
+      { method: "DELETE" },
+    )),
+  testReply: op(
+    "POST",
+    "/sources/{source_id}/test-reply",
+    (sourceId: string, callbackUrl?: string) =>
+      apiFetch<TestReplyResult>(
+        `/sources/${encodeURIComponent(sourceId)}/test-reply`,
+        {
+          method: "POST",
+          body: JSON.stringify(callbackUrl ? { callbackUrl } : {}),
+        },
+      ),
+  ),
   /** Public webhook intake (HMAC-signed by the caller). */
   postWebhook: op(
     "POST",
@@ -122,6 +160,37 @@ export const sources = {
         ...(signature ? { headers: { "X-Signature": signature } } : {}),
       }),
   ),
+};
+
+export interface CreateCronBody {
+  name: string;
+  schedule: string;
+  timezone: string;
+  text: string;
+}
+
+export const cronJobs = {
+  list: op("GET", "/cron-jobs", () =>
+    apiFetch<CronJobListResponse>("/cron-jobs")),
+  create: op("POST", "/cron-jobs", (body: CreateCronBody) =>
+    apiFetch<CronJobView>("/cron-jobs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    })),
+  setEnabled: op(
+    "PATCH",
+    "/cron-jobs/{job_id}",
+    (jobId: string, enabled: boolean) =>
+      apiFetch<CronJobView>(`/cron-jobs/${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      }),
+  ),
+  remove: op("DELETE", "/cron-jobs/{job_id}", (jobId: string) =>
+    apiFetch<{ cronJobId: string; deleted: boolean }>(
+      `/cron-jobs/${encodeURIComponent(jobId)}`,
+      { method: "DELETE" },
+    )),
 };
 
 export const tickets = {
@@ -169,4 +238,6 @@ export const usage = {
 };
 
 /** All wrapper groups — tests walk this for whitelist enforcement. */
-export const ENDPOINT_GROUPS = [auth, threads, attentions, sources, tickets, usage];
+export const ENDPOINT_GROUPS = [
+  auth, threads, attentions, sources, cronJobs, tickets, usage,
+];

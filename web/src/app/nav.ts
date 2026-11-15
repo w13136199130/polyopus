@@ -12,7 +12,7 @@ export const NAV_PRIMARY: readonly NavItem[] = [
   { path: "/tasks", label: "任务", icon: "inbox", milestone: "v0.5" },
   { path: "/agents", label: "专家", icon: "bot", milestone: "v1.0" },
   { path: "/knowledge", label: "知识", icon: "book", milestone: "v1.0" },
-  { path: "/connections", label: "连接", icon: "plug", milestone: "v1.0" },
+  { path: "/connections", label: "连接", icon: "plug", milestone: "v0.5" },
   { path: "/extensions", label: "扩展", icon: "puzzle", milestone: "v1.0" },
   { path: "/workbench", label: "工作台", icon: "monitor", milestone: "v1.0" },
   { path: "/usage", label: "用量", icon: "chart", milestone: "v0.5" },

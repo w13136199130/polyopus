@@ -14,6 +14,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from polyopus.api.deps import current_user, get_db, get_store
 from polyopus.domains.identity.service import User
 from polyopus.domains.intake import service
+from polyopus.platform.errors import AppError
 from polyopus.platform.events.store import EventStore
 
 router = APIRouter(tags=["intake"])
@@ -155,16 +156,102 @@ def create_source(
 def list_sources(
     user: User = Depends(current_user), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
+    from polyopus.domains.intake import schedule as schedule_svc
+    from polyopus.domains.intake import service as intake
+
     rows = conn.execute(
-        "SELECT source_id, name, status FROM sources WHERE tenant_id='default' "
-        "ORDER BY id"
+        "SELECT * FROM sources WHERE tenant_id='default' ORDER BY id"
     ).fetchall()
-    return {
-        "items": [
-            {"sourceId": r["source_id"], "name": r["name"], "status": r["status"]}
-            for r in rows
-        ]
-    }
+    items: list[dict[str, object]] = []
+    for row in rows:
+        cfg = intake.config_of(row)
+        item: dict[str, object] = {
+            "sourceId": row["source_id"],
+            "kind": row["kind"],
+            "name": row["name"],
+            "status": row["status"],
+            "createdAt": row["created_at"],
+            "callbackUrl": cfg.callback_url or None,
+            "assessment": cfg.assessment,
+            "replyStyle": cfg.reply_style,
+            "allowActors": list(cfg.allow_actors),
+            "explicitPatterns": list(cfg.explicit_patterns),
+            "schedule": None,
+        }
+        if str(row["kind"]) == "schedule":
+            item["schedule"] = schedule_svc.latest_job_for_source(
+                conn, str(row["source_id"])
+            )
+        items.append(item)
+    return {"items": items}
+
+
+@router.post("/sources/{source_id}/pause")
+def pause_source(
+    source_id: str,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return _set_source_status(conn, source_id, "paused")
+
+
+@router.post("/sources/{source_id}/resume")
+def resume_source(
+    source_id: str,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return _set_source_status(conn, source_id, "active")
+
+
+@router.delete("/sources/{source_id}")
+def delete_source(
+    source_id: str,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    row = conn.execute(
+        "SELECT kind FROM sources WHERE tenant_id='default' AND source_id = ?",
+        (source_id,),
+    ).fetchone()
+    if row is None:
+        raise AppError("SOURCE_NOT_FOUND")
+    conn.execute(
+        "DELETE FROM cron_jobs WHERE tenant_id='default' "
+        "AND json_extract(payload_json, '$.source_id') = ?",
+        (source_id,),
+    )
+    conn.execute(
+        "DELETE FROM sources WHERE tenant_id='default' AND source_id = ?",
+        (source_id,),
+    )
+    conn.commit()
+    return {"sourceId": source_id, "deleted": True}
+
+
+def _set_source_status(
+    conn: Connection, source_id: str, status: str
+) -> dict[str, object]:
+    row = conn.execute(
+        "SELECT kind FROM sources WHERE tenant_id='default' AND source_id = ?",
+        (source_id,),
+    ).fetchone()
+    if row is None:
+        raise AppError("SOURCE_NOT_FOUND")
+    now = int(time.time())
+    conn.execute(
+        "UPDATE sources SET status = ?, updated_at = ? WHERE source_id = ?",
+        (status, now, source_id),
+    )
+    if str(row["kind"]) == "schedule":
+        conn.execute(
+            "UPDATE cron_jobs SET enabled = ? "
+            "WHERE tenant_id='default' "
+            "AND json_extract(payload_json, '$.source_id') = ?",
+            (1 if status == "active" else 0, source_id),
+        )
+    conn.commit()
+    return {"sourceId": source_id, "status": status}
 
 
 @router.post("/webhooks/{source_id}", status_code=202)

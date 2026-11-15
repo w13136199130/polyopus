@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -118,12 +119,26 @@ def test_two_workers_never_double_run_a_turn(
     threads = [threading.Thread(target=run, args=(s,)) for s in stops]
     for t in threads:
         t.start()
-    for t in threads:
-        t.join(timeout=120)
-    for s in stops:
-        s.set()
 
     import sqlite3
+
+    # Wait until all four turns are completed, THEN stop the loops. Joining
+    # first deadlocks when the workers split the queue (2/2): both sit in
+    # stop.wait() until max_turns, which the test would have to time out.
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        conn = sqlite3.connect(str(db))
+        done = conn.execute(
+            "SELECT count(*) FROM runs WHERE status = 'completed'"
+        ).fetchone()[0]
+        conn.close()
+        if done >= 4:
+            break
+        time.sleep(0.05)
+    for s in stops:
+        s.set()
+    for t in threads:
+        t.join(timeout=10)
 
     conn = sqlite3.connect(str(db))
     runs_per_turn = conn.execute(

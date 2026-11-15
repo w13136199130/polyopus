@@ -4,6 +4,7 @@ import { LoginPage } from "@/routes/auth/LoginPage";
 import { ComingSoonPage } from "@/routes/ComingSoonPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
 import { ChatPage } from "@/routes/chat/ChatPage";
+import { ConnectionsPage } from "@/routes/connections/ConnectionsPage";
 import { KitPage } from "@/routes/kit/KitPage";
 import { TasksPage } from "@/routes/tasks/TasksPage";
 import { UsagePage } from "@/routes/usage/UsagePage";
@@ -32,7 +33,7 @@ export const appRoutes: RouteObject[] = [
       { path: "usage", element: <UsagePage /> },
       { path: "agents", element: <ComingSoonPage title="专家" milestone="v1.0" /> },
       { path: "knowledge", element: <ComingSoonPage title="知识" milestone="v1.0" /> },
-      { path: "connections", element: <ComingSoonPage title="连接" milestone="v1.0" /> },
+      { path: "connections", element: <ConnectionsPage /> },
       { path: "extensions", element: <ComingSoonPage title="扩展" milestone="v1.0" /> },
       { path: "workbench", element: <ComingSoonPage title="工作台" milestone="v1.0" /> },
       { path: "settings", element: <ComingSoonPage title="设置" milestone="v1.0" /> },

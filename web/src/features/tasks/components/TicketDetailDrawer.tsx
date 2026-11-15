@@ -60,9 +60,22 @@ export function TicketDetailDrawer({ ticketId, onClose }: Props) {
             <dt>预算</dt>
             <dd>
               {detail.data.budget
-                ? `≤ ${detail.data.budget.maxTotalTokens} tokens`
+                ? [
+                    detail.data.budget.maxTotalTokens
+                      ? `≤ ${detail.data.budget.maxTotalTokens} tokens`
+                      : "",
+                    detail.data.budget.maxCostMicros
+                      ? `≤ ${detail.data.budget.maxCostMicros} micros`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "未设置"
                 : "未设置"}
             </dd>
+          </div>
+          <div>
+            <dt>成本</dt>
+            <dd>{detail.data.costMicros ? `${detail.data.costMicros} micros` : "—"}</dd>
           </div>
           <div>
             <dt>Report</dt>
@@ -77,6 +90,16 @@ export function TicketDetailDrawer({ ticketId, onClose }: Props) {
                     {detail.data.report.state}
                   </span>
                   <p className={styles.reportSummary}>{detail.data.report.summary}</p>
+                  <ul className={styles.factsList}>
+                    {Object.entries(detail.data.report.facts).map(([key, value]) => (
+                      <li key={key}>
+                        <code>{key}</code>
+                        <span>
+                          {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </>
               ) : (
                 "暂无（等待执行，V05-07 接自动执行）"
