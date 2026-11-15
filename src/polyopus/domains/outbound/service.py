@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from polyopus.domains.intake import service as intake
+from polyopus.domains.outbound import shaper
 from polyopus.domains.outbound.port import DeliveryResult, ReplyTransport, UrllibTransport
 from polyopus.platform.errors import AppError
 from polyopus.platform.queue.outbox import Outbox, OutboxItem
@@ -124,17 +125,38 @@ def build_payload(
     title: str,
     summary: str,
     base_url: str,
+    reply_style: str = shaper.DEFAULT_STYLE,
 ) -> dict[str, Any]:
-    """Whitelist-only fields; V05-15's shaper branches here on reply_style."""
+    """Whitelist-only fields; the body comes from V05-15's shaper, so one
+    Report renders differently per `source.reply_style`."""
+    link = f"{base_url}/tasks?ticketId={ticket_id}"
+    rendered = shaper.shape(
+        reply_style,
+        shaper.ReportView(
+            ticket_id=ticket_id,
+            report_id=report_id,
+            state=state,
+            title=str(title),
+            summary=str(summary),
+            link=link,
+        ),
+    )
+    # The link is a URL, not free text: never run it through path redaction.
+    # Whitelist renderer output too, so a future renderer cannot smuggle
+    # internal fields (trace/tool args) into the envelope.
+    body = {
+        key: redact(str(value))
+        for key, value in rendered.items()
+        if key in ("title", "summary", "text")
+    }
     return {
         "kind": "reply",
         "sourceId": source_id,
         "ticketId": ticket_id,
         "reportId": report_id,
         "state": state,
-        "title": redact(str(title)[:120]),
-        "summary": redact(str(summary)[:600]),
-        "link": f"{base_url}/tasks?ticketId={ticket_id}",
+        **body,
+        "link": link,
         "idemKey": reply_event_id(ticket_id, report_id),
         "sentAt": int(time.time()),
     }
@@ -168,6 +190,19 @@ def on_report(
     if not cfg.callback_url:
         return None
 
+    # V05-15: render the Report row itself, not the caller's copy — the same
+    # Report can land on sources with different reply styles. `_record_report`
+    # commits before `_enqueue_reply`, so the row is always visible here.
+    report = conn.execute(
+        "SELECT state, summary FROM reports WHERE tenant_id = ? AND report_id = ?",
+        (TENANT, report_id),
+    ).fetchone()
+    if report is not None:
+        state = str(report["state"])
+        summary = str(report["summary"])
+        if state not in REPLY_STATES:
+            return None
+
     from polyopus.config import load_settings
 
     payload = build_payload(
@@ -178,6 +213,7 @@ def on_report(
         title=str(ticket["title"]),
         summary=summary,
         base_url=load_settings().public_base_url,
+        reply_style=cfg.reply_style,
     )
     return Outbox(conn).enqueue(
         TENANT, TOPIC, payload, event_id=str(payload["idemKey"])

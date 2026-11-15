@@ -39,6 +39,10 @@ class SourceConfig:
     explicit_patterns: tuple[str, ...]
     default_scope: tuple[str, ...]
     callback_url: str = ""  # outbound replies (V05-08)
+    # V05-15: how the same Report is rendered for this source's channel
+    # (structured = webhook payload, full = web). Unknown values fall back
+    # to structured in outbound.shaper.
+    reply_style: str = "structured"
     # V05-13: model-based admission. off = rule Gate only (default,
     # explicit_only); dry_run = judge + write dispositions, never open;
     # auto = judge + open on accept
@@ -58,6 +62,7 @@ def config_of(row: sqlite3.Row) -> SourceConfig:
         explicit_patterns=tuple(cfg.get("explicit_patterns", ())),
         default_scope=tuple(cfg.get("default_scope", ("workspace:default",))),
         callback_url=str(cfg.get("callback_url", "")),
+        reply_style=str(cfg.get("reply_style", cfg.get("replyStyle", "structured"))),
         assessment=str(cfg.get("assessment", "off")),
     )
 

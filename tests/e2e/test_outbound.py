@@ -188,6 +188,28 @@ def test_reply_delivered_once_with_valid_signature(
     assert recorder.count == 1
 
 
+def test_full_reply_style_adds_web_text_end_to_end(
+    callback: tuple[_Recorder, int], env: tuple[Path, TestClient]
+) -> None:
+    """V05-15: replyStyle=full is persisted at source creation and the same
+    Report arrives with a markdown `text` body, link included."""
+    recorder, port = callback
+    db, client = env
+    source, secret = _make_source(client, f"http://127.0.0.1:{port}/hook",
+                                  **{"replyStyle": "full"})
+
+    accepted = _fire_webhook(client, source, secret,
+                             external="full-1", text="full 风格回复测试")
+    ticket_id = str(accepted["ticketId"])
+    recorder.wait_for(1)
+
+    payload = json.loads(recorder.requests[0]["body"])
+    assert payload["state"] == "ready"
+    assert payload["link"].endswith(f"/tasks?ticketId={ticket_id}")
+    assert payload["text"].endswith(payload["link"])
+    assert ticket_id in payload["text"]
+
+
 def test_callback_500_retries_three_times_then_dead_letter(
     callback: tuple[_Recorder, int], env: tuple[Path, TestClient],
     monkeypatch: pytest.MonkeyPatch,

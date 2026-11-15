@@ -589,6 +589,12 @@ WHERE assignment_id = (
 
 由 `ChannelPolicy.style` 决定；同一 Report 渲染成不同渠道文本。
 
+**v0.5 实现（V05-15）**：`SourceConfig.reply_style ∈ {"structured", "full"}`，
+由 `domains/outbound/shaper.py` 对同一 `ReportView`（state/title/summary/link
+白名单）渲染——`structured` 保持 webhook 紧凑 JSON，`full` 追加 Markdown
+`text`；内部 trace/工具参数/facts 不进塑形。IM（≤100 词）留
+`RENDERERS` 注册位，v1.1 接渠道时再加；未知 style 回退 `structured`。
+
 ### 10.3 附件
 
 - 大文件走 artifact 链接（签名 URL），不在 IM 里直接发。

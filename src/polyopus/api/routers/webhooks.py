@@ -48,6 +48,12 @@ class CreateSourceBody(BaseModel):
         default=None,
         validation_alias=AliasChoices("callback_url", "callbackUrl"),
     )
+    reply_style: Literal["structured", "full"] = Field(
+        default="structured",
+        description="V05-15 reply shaping: structured = webhook payload, "
+        "full = web markdown",
+        validation_alias=AliasChoices("reply_style", "replyStyle"),
+    )
     assessment: Literal["off", "dry_run", "auto"] = Field(
         default="off",
         description="model-based admission (V05-13): off = rule Gate only",
@@ -91,6 +97,8 @@ def create_source(
         config["callback_url"] = outbound.validate_callback_url(body.callback_url)
     if body.assessment != "off":
         config["assessment"] = body.assessment
+    if body.reply_style != "structured":
+        config["reply_style"] = body.reply_style
     now = int(time.time())
     conn.execute(
         """
