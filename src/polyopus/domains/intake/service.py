@@ -363,6 +363,25 @@ def filter_trigger(
         },
         tenant_id=TENANT,
     )
+    trigger = conn.execute(
+        "SELECT actor_id FROM triggers WHERE trigger_id = ?", (trigger_id,)
+    ).fetchone()
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn,
+        action="gate.filtered",
+        result="denied",
+        actor_id=str(trigger["actor_id"]) if trigger is not None else None,
+        resource_type="trigger",
+        resource_id=trigger_id,
+        detail={
+            "sourceId": cfg.source_id,
+            "reason": result.reason,
+            "ruleId": result.rule_id,
+            "disposition": "filtered",
+        },
+    )
 
 
 # ---- subscription fan-out (V05-10, docs/09 §2.4 / docs/32 §13A) --------------
@@ -525,6 +544,18 @@ def process(
     if not result.accept:
         filter_trigger(conn, store, source, trigger_id, result)
         return None
+
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn,
+        action="gate.accepted",
+        result="ok",
+        actor_id=str(trigger["actor_id"]),
+        resource_type="trigger",
+        resource_id=trigger_id,
+        detail={"sourceId": cfg.source_id, "disposition": "accepted"},
+    )
     if cfg.assessment != "off":
         # V05-13: model judgement between the Gate and the ticket. The Gate
         # already accepted; assessment may still ignore/stop/duplicate or
@@ -536,12 +567,42 @@ def process(
             gate_explicit=bool(cfg.explicit_patterns),
             dry_run=cfg.assessment == "dry_run",
         )
-        if outcome.status != "decided" or outcome.decision != "accept":
+        accepted = outcome.status == "decided" and outcome.decision == "accept"
+        detail = {
+            "sourceId": cfg.source_id,
+            "evalId": outcome.eval_id,
+            "status": outcome.status,
+            "decision": outcome.decision,
+            "strength": outcome.strength,
+            "confidence": outcome.confidence,
+            "scope": list(outcome.scope),
+            "duplicateOf": outcome.duplicate_of,
+            "reasons": list(outcome.reasons),
+        }
+        if not accepted or outcome.duplicate_of or cfg.assessment == "dry_run":
+            audit.record(
+                conn,
+                action="assessment.decided",
+                result="ok" if accepted else "denied",
+                actor_id=str(trigger["actor_id"]),
+                resource_type="trigger",
+                resource_id=trigger_id,
+                detail={**detail, "triggerId": trigger_id},
+            )
             return None
-        if outcome.duplicate_of or cfg.assessment == "dry_run":
-            return None
-        return open_ticket(conn, store, source, trigger_id,
-                           strength=outcome.strength,
-                           matched_rules=[f"assessment:{outcome.eval_id}"],
-                           scope=list(outcome.scope))
+        ticket_id = open_ticket(conn, store, source, trigger_id,
+                                strength=outcome.strength,
+                                matched_rules=[f"assessment:{outcome.eval_id}"],
+                                scope=list(outcome.scope))
+        audit.record(
+            conn,
+            action="assessment.decided",
+            result="ok",
+            actor_id=str(trigger["actor_id"]),
+            resource_type="ticket",
+            resource_id=ticket_id,
+            ticket_id=ticket_id,
+            detail={**detail, "triggerId": trigger_id},
+        )
+        return ticket_id
     return open_ticket(conn, store, source, trigger_id)

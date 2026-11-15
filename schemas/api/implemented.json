@@ -1,6 +1,14 @@
 {
-  "count": 24,
+  "count": 26,
   "ops": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/audit"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/audit/export"
+    },
     {
       "method": "GET",
       "path": "/api/v1/attentions"

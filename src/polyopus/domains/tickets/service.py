@@ -625,6 +625,19 @@ def stop(
         (now, now, ticket_id),
     )
     conn.commit()
+    # V05-19: human stop is an auditable, ticket-scoped action.
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn,
+        action="ticket.stop",
+        result="ok",
+        actor_id=by,
+        resource_type="ticket",
+        resource_id=ticket_id,
+        ticket_id=ticket_id,
+        detail={"reason": "stopped_by_human"},
+    )
     # V05-17: a stopped ticket also cancels its running async tools; each
     # cancel emits tool.async_cancelled on the original turn.
     from polyopus.workers import async_tools

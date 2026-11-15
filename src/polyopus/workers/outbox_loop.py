@@ -70,6 +70,28 @@ def _notify(
         fields["retryable"] = False
     store.append(thread_id, kind, fields, tenant_id=outbound.TENANT)
 
+    # V05-19: terminal delivery outcome is auditable by ticket. `record` is
+    # best-effort and never lets an audit failure break the delivery loop.
+    from polyopus.domains.audit import service as audit
+
+    sent = kind == "channel.sent"
+    audit.record(
+        conn,
+        action="reply.sent" if sent else "reply.failed",
+        result="ok" if sent else "failed",
+        actor_id="system",
+        resource_type="ticket",
+        resource_id=str(ticket_id),
+        ticket_id=str(ticket_id),
+        detail={
+            "eventId": item_id,
+            "reportId": payload.get("reportId"),
+            "sourceId": payload.get("sourceId"),
+            "code": code,
+            "message": message,
+        },
+    )
+
 
 def dispatch_once(
     conn: sqlite3.Connection,
