@@ -23,7 +23,8 @@ def usage_summary(
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return service.summary(
-        conn, window=window, as_user=as_user, agent_id=agent_id
+        conn, window=window, as_user=as_user, agent_id=agent_id,
+        tenant_id=user.tenant_id,
     )
 
 
@@ -36,7 +37,8 @@ def usage_export(
     conn: Connection = Depends(get_db),
 ) -> PlainTextResponse:
     data = service.summary(
-        conn, window=window, as_user=as_user, agent_id=agent_id
+        conn, window=window, as_user=as_user, agent_id=agent_id,
+        tenant_id=user.tenant_id,
     )
     csv = service.export_csv(data["items"])  # type: ignore[arg-type]
     return PlainTextResponse(csv, media_type="text/csv")

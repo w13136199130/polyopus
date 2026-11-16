@@ -94,11 +94,18 @@ def config_of(row: sqlite3.Row) -> SourceConfig:
     )
 
 
-def get_source(conn: sqlite3.Connection, source_id: str) -> sqlite3.Row:
-    row = conn.execute(
-        "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
-        (TENANT, source_id),
-    ).fetchone()
+def get_source(
+    conn: sqlite3.Connection, source_id: str, tenant_id: str | None = None
+) -> sqlite3.Row:
+    if tenant_id is None:
+        row = conn.execute(
+            "SELECT * FROM sources WHERE source_id = ?", (source_id,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
+            (tenant_id, source_id),
+        ).fetchone()
     if row is None:
         raise AppError("SOURCE_NOT_FOUND")
     if str(row["status"]) != "active":
@@ -158,6 +165,7 @@ def receive(
 ) -> tuple[str, str, bool]:
     """Insert the trigger idempotently. Returns (trigger_id, dedupe_key, duplicate)."""
     cfg = config_of(source)
+    tenant = str(source["tenant_id"] or TENANT)
     event = normalize(body, headers_actor)
     key = dedupe_key(event)
     trigger_id = "tr_" + secrets.token_hex(8)
@@ -171,7 +179,7 @@ def receive(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         ON CONFLICT(source_id, dedupe_key) DO NOTHING
         """,
-        (TENANT, trigger_id, cfg.source_id, key, event["thread_key"],
+        (tenant, trigger_id, cfg.source_id, key, event["thread_key"],
          event["actor_id"], event["actor_kind"],
          json.dumps({**event, "raw": body}, ensure_ascii=False)[:4000], now),
     )
@@ -195,7 +203,7 @@ def receive(
             "thread_key": event["thread_key"],
             "dedupe_key": key,
         },
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
     return trigger_id, key, False
 
@@ -243,6 +251,7 @@ def open_ticket(
     Gate ('explicit' + gate:explicit + default scope) or a V05-13 assessment
     (judged strength + assessment:<eval_id> + judged scope)."""
     cfg = config_of(source)
+    tenant = str(source["tenant_id"] or TENANT)
     matched = matched_rules if matched_rules is not None else ["gate:explicit"]
     trigger = conn.execute(
         "SELECT * FROM triggers WHERE trigger_id = ?", (trigger_id,)
@@ -265,7 +274,7 @@ def open_ticket(
           (tenant_id, thread_id, owner_id, title, status, created_at, updated_at)
         VALUES (?, ?, 'system', ?, 'active', ?, ?)
         """,
-        (TENANT, thread_id, title, now, now),
+        (tenant, thread_id, title, now, now),
     )
     source_cfg = json.loads(source["config_json"] or "{}")
     max_tokens = source_cfg.get("max_total_tokens")
@@ -280,7 +289,7 @@ def open_ticket(
     # touch this mandate — it keeps executing its snapshot.
     from polyopus.domains.policy import service as policy
 
-    policy_version = policy.active_version_or_bootstrap(conn)
+    policy_version = policy.active_version_or_bootstrap(conn, tenant)
     conn.execute(
         """
         INSERT INTO tickets
@@ -289,7 +298,7 @@ def open_ticket(
            created_at, updated_at)
         VALUES (?, ?, ?, 'open', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (TENANT, ticket_id, title, cfg.source_id, trigger_id,
+        (tenant, ticket_id, title, cfg.source_id, trigger_id,
          json.dumps({"id": str(trigger["actor_id"]), "kind": str(trigger["actor_kind"])}),
          strength,
          policy_version,
@@ -303,7 +312,7 @@ def open_ticket(
            matched_rules_json, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (TENANT, mandate_id, ticket_id, policy_version, json.dumps(scope),
+        (tenant, mandate_id, ticket_id, policy_version, json.dumps(scope),
          strength, json.dumps(matched), now),
     )
     conn.execute(
@@ -314,7 +323,8 @@ def open_ticket(
 
     from polyopus.domains.tickets import service as tickets
     tickets.link_thread(conn, ticket_id, thread_id)
-    subscribe_ticket(conn, store, thread_id=thread_id, ticket_id=ticket_id,
+    subscribe_ticket(conn, store, tenant_id=tenant, thread_id=thread_id,
+                     ticket_id=ticket_id,
                      event_thread_key=str(trigger["thread_key"]))
 
     store.append(
@@ -335,7 +345,7 @@ def open_ticket(
             },
             "event_thread_id": thread_id,
         },
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
     return ticket_id
 
@@ -348,6 +358,7 @@ def filter_trigger(
     result: GateResult,
 ) -> None:
     cfg = config_of(source)
+    tenant = str(source["tenant_id"] or TENANT)
     conn.execute(
         "UPDATE triggers SET disposition = 'filtered' WHERE trigger_id = ?",
         (trigger_id,),
@@ -361,7 +372,7 @@ def filter_trigger(
             "reason": result.reason,
             **({"rule_id": result.rule_id} if result.rule_id else {}),
         },
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
     trigger = conn.execute(
         "SELECT actor_id FROM triggers WHERE trigger_id = ?", (trigger_id,)
@@ -370,6 +381,7 @@ def filter_trigger(
 
     audit.record(
         conn,
+        tenant_id=tenant,
         action="gate.filtered",
         result="denied",
         actor_id=str(trigger["actor_id"]) if trigger is not None else None,
@@ -396,6 +408,7 @@ def subscribe_ticket(
     thread_id: str,
     ticket_id: str,
     event_thread_key: str,
+    tenant_id: str = TENANT,
 ) -> None:
     """An open ticket owns its event thread: later triggers on the thread
     fan out to it instead of opening new tickets."""
@@ -407,7 +420,7 @@ def subscribe_ticket(
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(ticket_id, event_thread_id) DO NOTHING
         """,
-        (TENANT, subscription_id, ticket_id, event_thread_key, int(time.time())),
+        (tenant_id, subscription_id, ticket_id, event_thread_key, int(time.time())),
     )
     conn.commit()
     if cur.rowcount:
@@ -419,7 +432,7 @@ def subscribe_ticket(
                 "ticket_id": ticket_id,
                 "event_thread_id": event_thread_key,
             },
-            tenant_id=TENANT,
+            tenant_id=tenant_id,
         )
 
 
@@ -428,9 +441,13 @@ def release_ticket_subscriptions(conn: sqlite3.Connection, ticket_id: str) -> in
     anti-leak invariant of V05-10). The fan-out lookup re-checks
     tickets.state anyway; this keeps the table honest. Called from stop()
     and the ready tail of run_assignment."""
+    row = conn.execute(
+        "SELECT tenant_id FROM tickets WHERE ticket_id = ?", (ticket_id,)
+    ).fetchone()
+    tenant = str(row[0]) if row is not None and row[0] else TENANT
     cur = conn.execute(
         "DELETE FROM subscriptions WHERE tenant_id = ? AND ticket_id = ?",
-        (TENANT, ticket_id),
+        (tenant, ticket_id),
     )
     conn.commit()
     return cur.rowcount
@@ -445,6 +462,7 @@ def fan_out(
     """Route a trigger to the open ticket subscribed to its event thread,
     straight past the Gate (docs/09 §2.4 `fanned_out`). Returns the existing
     ticket id, or None when no live subscription owns the thread."""
+    tenant = str(source["tenant_id"] or TENANT)
     key = str(trigger["thread_key"])
     row = conn.execute(
         """
@@ -453,7 +471,7 @@ def fan_out(
         WHERE s.tenant_id = ? AND s.event_thread_id = ? AND t.state = 'open'
         ORDER BY s.id LIMIT 1
         """,
-        (TENANT, key),
+        (tenant, key),
     ).fetchone()
     if row is None:
         # hygiene: a ticket ended without hitting its release hook (crash
@@ -465,7 +483,7 @@ def fan_out(
                 SELECT ticket_id FROM tickets WHERE state != 'open'
               )
             """,
-            (TENANT, key),
+            (tenant, key),
         )
         conn.commit()
         return None
@@ -488,7 +506,7 @@ def fan_out(
            event_id, created_at)
         VALUES (?, ?, 'trigger_fanned_out', '后续触发已并入', ?, 'system', ?, ?, ?)
         """,
-        (TENANT, ticket_id, text[:80],
+        (tenant, ticket_id, text[:80],
          json.dumps({"trigger_id": str(trigger["trigger_id"]), "thread_key": key},
                     ensure_ascii=False),
          "tl_" + secrets.token_hex(8), int(time.time())),
@@ -502,7 +520,7 @@ def fan_out(
             "ticket_id": ticket_id,
             "event_thread_id": key,
         },
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
 
     # deliver the message as a new turn when the execution thread is idle; a
@@ -517,7 +535,7 @@ def fan_out(
         from polyopus.domains import conversations
 
         conversations.post_turn(
-            conn, store, tenant_id=TENANT, owner_id="system",
+            conn, store, tenant_id=tenant, owner_id="system",
             thread_id=thread_id, content=text,
         )
     return ticket_id
@@ -532,6 +550,7 @@ def process(
     """Fan out to a subscribed open ticket, else Gate + open. Returns the
     ticket id (existing on fan-out, new on open), or None when filtered."""
     cfg = config_of(source)
+    tenant = str(source["tenant_id"] or TENANT)
     trigger = conn.execute(
         "SELECT * FROM triggers WHERE trigger_id = ?", (trigger_id,)
     ).fetchone()
@@ -549,6 +568,7 @@ def process(
 
     audit.record(
         conn,
+        tenant_id=tenant,
         action="gate.accepted",
         result="ok",
         actor_id=str(trigger["actor_id"]),
@@ -582,6 +602,7 @@ def process(
         if not accepted or outcome.duplicate_of or cfg.assessment == "dry_run":
             audit.record(
                 conn,
+                tenant_id=tenant,
                 action="assessment.decided",
                 result="ok" if accepted else "denied",
                 actor_id=str(trigger["actor_id"]),
@@ -596,6 +617,7 @@ def process(
                                 scope=list(outcome.scope))
         audit.record(
             conn,
+            tenant_id=tenant,
             action="assessment.decided",
             result="ok",
             actor_id=str(trigger["actor_id"]),

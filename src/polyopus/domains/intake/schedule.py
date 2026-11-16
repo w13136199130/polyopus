@@ -149,7 +149,7 @@ def timezone_of(name: str) -> ZoneInfo:
 
 def upsert_job(
     conn: sqlite3.Connection, *, source_id: str, name: str, schedule: str,
-    timezone: str, text: str,
+    timezone: str, text: str, tenant_id: str = TENANT,
 ) -> str:
     """Create (or re-arm) a job against a kind='schedule' source. The next
     fire is computed from now; `payload_json` carries the source link and the
@@ -166,7 +166,7 @@ def upsert_job(
            payload_json, enabled, next_run_at, created_at)
         VALUES (?, ?, ?, ?, ?, 'notify', ?, 1, ?, ?)
         """,
-        (cron_job_id, TENANT, name, schedule, timezone,
+        (cron_job_id, tenant_id, name, schedule, timezone,
          json.dumps({"source_id": source_id, "text": text}, ensure_ascii=False),
          nxt, now),
     )
@@ -176,6 +176,7 @@ def upsert_job(
 
 def create_schedule_source(
     conn: sqlite3.Connection, *, name: str, timezone: str,
+    tenant_id: str = TENANT,
 ) -> str:
     """A kind='schedule' source whose Gate config admits the scheduler actor
     and needs no explicit pattern: the job's existence IS the explicit signal."""
@@ -186,7 +187,7 @@ def create_schedule_source(
         "INSERT INTO sources (tenant_id, source_id, kind, name, config_json,"
         " status, created_at, updated_at) VALUES (?, ?, 'schedule', ?, ?,"
         " 'active', ?, ?)",
-        (TENANT, source_id, name,
+        (tenant_id, source_id, name,
          json.dumps({"secret": "", "allow_actors": [SCHEDULER_ACTOR],
                      "explicit_patterns": [], "timezone": timezone}),
          now, now),
@@ -226,37 +227,42 @@ def job_view(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def list_jobs(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def list_jobs(
+    conn: sqlite3.Connection, tenant_id: str = TENANT
+) -> list[dict[str, Any]]:
     rows = conn.execute(
-        _job_sql() + " ORDER BY j.id DESC", (TENANT,)
+        _job_sql() + " ORDER BY j.id DESC", (tenant_id,)
     ).fetchall()
     return [job_view(row) for row in rows]
 
 
-def job(conn: sqlite3.Connection, cron_job_id: str) -> dict[str, Any] | None:
+def job(
+    conn: sqlite3.Connection, cron_job_id: str, tenant_id: str = TENANT
+) -> dict[str, Any] | None:
     row = conn.execute(
-        _job_sql("j.cron_job_id = ?"), (TENANT, cron_job_id)
+        _job_sql("j.cron_job_id = ?"), (tenant_id, cron_job_id)
     ).fetchone()
     return job_view(row) if row is not None else None
 
 
 def latest_job_for_source(
-    conn: sqlite3.Connection, source_id: str
+    conn: sqlite3.Connection, source_id: str, tenant_id: str = TENANT
 ) -> dict[str, Any] | None:
     row = conn.execute(
         _job_sql("json_extract(j.payload_json, '$.source_id') = ?")
         + " ORDER BY j.id DESC LIMIT 1",
-        (TENANT, source_id),
+        (tenant_id, source_id),
     ).fetchone()
     return job_view(row) if row is not None else None
 
 
 def set_enabled(
-    conn: sqlite3.Connection, cron_job_id: str, enabled: bool
+    conn: sqlite3.Connection, cron_job_id: str, enabled: bool,
+    tenant_id: str = TENANT,
 ) -> dict[str, Any]:
     row = conn.execute(
         "SELECT * FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
-        (TENANT, cron_job_id),
+        (tenant_id, cron_job_id),
     ).fetchone()
     if row is None:
         raise AppError("NOT_FOUND")
@@ -275,36 +281,40 @@ def set_enabled(
             ("active" if enabled else "paused", int(time.time()), str(source_id)),
         )
     conn.commit()
-    view = job(conn, cron_job_id)
+    view = job(conn, cron_job_id, tenant_id)
     assert view is not None
     return view
 
 
-def delete_job(conn: sqlite3.Connection, cron_job_id: str) -> None:
+def delete_job(
+    conn: sqlite3.Connection, cron_job_id: str, tenant_id: str = TENANT
+) -> None:
     row = conn.execute(
         "SELECT payload_json FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
-        (TENANT, cron_job_id),
+        (tenant_id, cron_job_id),
     ).fetchone()
     if row is None:
         raise AppError("NOT_FOUND")
     source_id = json.loads(row["payload_json"] or "{}").get("source_id")
     conn.execute(
         "DELETE FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
-        (TENANT, cron_job_id),
+        (tenant_id, cron_job_id),
     )
     if source_id:
         conn.execute(
             "DELETE FROM sources WHERE tenant_id = ? AND source_id = ?",
-            (TENANT, str(source_id)),
+            (tenant_id, str(source_id)),
         )
     conn.commit()
 
 
-def runs(conn: sqlite3.Connection, cron_job_id: str) -> list[dict[str, Any]]:
+def runs(
+    conn: sqlite3.Connection, cron_job_id: str, tenant_id: str = TENANT
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT * FROM cron_runs WHERE tenant_id = ? AND cron_job_id = ? "
         "ORDER BY scheduled_at DESC LIMIT 50",
-        (TENANT, cron_job_id),
+        (tenant_id, cron_job_id),
     ).fetchall()
     return [
         {
@@ -331,9 +341,9 @@ def run_due(conn: sqlite3.Connection, store: EventStore, *,
     ts = now if now is not None else int(time.time())
     fired = 0
     rows = conn.execute(
-        "SELECT * FROM cron_jobs WHERE tenant_id = ? AND enabled = 1 "
+        "SELECT * FROM cron_jobs WHERE enabled = 1 "
         "AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at",
-        (TENANT, ts),
+        (ts,),
     ).fetchall()
     for job in rows:
         if _fire(conn, store, job, ts):
@@ -344,6 +354,7 @@ def run_due(conn: sqlite3.Connection, store: EventStore, *,
 def _fire(conn: sqlite3.Connection, store: EventStore, job: sqlite3.Row,
           ts: int) -> bool:
     cron_job_id = str(job["cron_job_id"])
+    tenant = str(job["tenant_id"] or TENANT)
     spec = parse_schedule(str(job["schedule"]))
     tz = timezone_of(str(job["timezone"]))
     previous = job["next_run_at"]
@@ -374,7 +385,7 @@ def _fire(conn: sqlite3.Connection, store: EventStore, job: sqlite3.Row,
     conn.execute(
         "INSERT INTO cron_runs (run_id, tenant_id, cron_job_id, status,"
         " scheduled_at, started_at) VALUES (?, ?, ?, 'running', ?, ?)",
-        (run_id, TENANT, cron_job_id, scheduled_at, ts),
+        (run_id, tenant, cron_job_id, scheduled_at, ts),
     )
     conn.commit()
 
@@ -384,7 +395,7 @@ def _fire(conn: sqlite3.Connection, store: EventStore, job: sqlite3.Row,
     try:
         source = conn.execute(
             "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
-            (TENANT, str(payload.get("source_id", ""))),
+            (tenant, str(payload.get("source_id", ""))),
         ).fetchone()
         if source is None:
             raise AppError("SOURCE_NOT_FOUND")
@@ -421,7 +432,7 @@ def _fire(conn: sqlite3.Connection, store: EventStore, job: sqlite3.Row,
             "trigger_id": trigger_id or None,
             "late": scheduled_at < ts - 60,
         },
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
     _ = ticket_id
     return not error

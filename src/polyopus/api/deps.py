@@ -12,6 +12,7 @@ from polyopus.platform.db.migrator import connect
 from polyopus.platform.errors import AppError
 from polyopus.platform.events.store import EventStore
 from polyopus.platform.security import tokens
+from polyopus.platform.tenant import TenantContext
 
 COOKIE_NAME = "poly_session"
 
@@ -57,3 +58,7 @@ def current_session(
 
 def current_user(session: Session = Depends(current_session)) -> User:
     return session.user
+
+
+def current_tenant(user: User = Depends(current_user)) -> TenantContext:
+    return TenantContext.of(user.tenant_id)

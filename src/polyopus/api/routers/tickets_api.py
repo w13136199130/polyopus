@@ -231,7 +231,8 @@ def stop_ticket(
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:
-    service.stop(conn, store, ticket_id, by=user.user_id)
+    service.stop(conn, store, ticket_id, by=user.user_id,
+                 tenant_id=user.tenant_id)
     return {"ticketId": ticket_id, "state": "ended", "reason": "stopped_by_human"}
 
 
@@ -251,7 +252,8 @@ def post_human_message(
     parked open ticket resumes when this turn completes; an ended ticket
     just records the message (never resurrected)."""
     out = service.post_human_message(
-        conn, store, ticket_id, user_id=user.user_id, content=body.content
+        conn, store, ticket_id, user_id=user.user_id, content=body.content,
+        tenant_id=user.tenant_id,
     )
     return {"ticketId": ticket_id, **out}
 
@@ -262,5 +264,5 @@ def run_watchdog(
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:
-    alerts = service.watchdog_scan(conn, store)
+    alerts = service.watchdog_scan(conn, store, tenant_id=user.tenant_id)
     return {"alerts": alerts}

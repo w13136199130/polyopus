@@ -176,13 +176,15 @@ def on_report(
     if state not in REPLY_STATES:
         return None
     ticket = conn.execute(
-        "SELECT source_id, title FROM tickets WHERE ticket_id = ?", (ticket_id,)
+        "SELECT tenant_id, source_id, title FROM tickets WHERE ticket_id = ?",
+        (ticket_id,),
     ).fetchone()
     if ticket is None or ticket["source_id"] is None:
         return None
+    tenant = str(ticket["tenant_id"] or TENANT)
     source = conn.execute(
         "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
-        (TENANT, str(ticket["source_id"])),
+        (tenant, str(ticket["source_id"])),
     ).fetchone()
     if source is None:
         return None
@@ -195,7 +197,7 @@ def on_report(
     # commits before `_enqueue_reply`, so the row is always visible here.
     report = conn.execute(
         "SELECT state, summary FROM reports WHERE tenant_id = ? AND report_id = ?",
-        (TENANT, report_id),
+        (tenant, report_id),
     ).fetchone()
     if report is not None:
         state = str(report["state"])
@@ -216,7 +218,7 @@ def on_report(
         reply_style=cfg.reply_style,
     )
     return Outbox(conn).enqueue(
-        TENANT, TOPIC, payload, event_id=str(payload["idemKey"])
+        tenant, TOPIC, payload, event_id=str(payload["idemKey"])
     )
 
 
@@ -231,8 +233,7 @@ def resolve_delivery(
     the dispatcher dead-letters those instead of retrying."""
     source_id = str(payload.get("sourceId", ""))
     row = conn.execute(
-        "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
-        (TENANT, source_id),
+        "SELECT * FROM sources WHERE source_id = ?", (source_id,)
     ).fetchone()
     if row is None:
         return None
@@ -286,10 +287,12 @@ def test_reply(
     source_id: str,
     override_url: str | None = None,
     transport: ReplyTransport | None = None,
+    *,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """Synchronous single-shot probe: same signing scheme as a real reply,
     `kind:"test"` payload, never touches the outbox."""
-    source = intake.get_source(conn, source_id)  # SOURCE_NOT_FOUND / PAUSED
+    source = intake.get_source(conn, source_id, tenant_id)  # NOT_FOUND / PAUSED
     cfg = intake.config_of(source)
     raw = (override_url or cfg.callback_url or "").strip()
     if not raw:
@@ -323,9 +326,10 @@ def list_outbox(
     status: str | None = None,
     topic: str | None = None,
     limit: int = 50,
+    tenant_id: str = TENANT,
 ) -> list[dict[str, Any]]:
-    where: list[str] = ["1=1"]
-    params: list[Any] = []
+    where: list[str] = ["tenant_id = ?"]
+    params: list[Any] = [tenant_id]
     if status:
         where.append("status = ?")
         params.append(status)

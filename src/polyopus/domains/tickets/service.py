@@ -45,25 +45,41 @@ def _latest_human_message(conn: sqlite3.Connection, ticket_id: str) -> str:
     return str(json.loads(row[0]).get("content", "")).strip()
 
 
-def _ticket(conn: sqlite3.Connection, ticket_id: str) -> sqlite3.Row:
-    row = conn.execute(
-        "SELECT * FROM tickets WHERE tenant_id = ? AND ticket_id = ?", (TENANT, ticket_id)
-    ).fetchone()
+def _ticket(
+    conn: sqlite3.Connection, ticket_id: str, tenant_id: str | None = None
+) -> sqlite3.Row:
+    if tenant_id is None:
+        row = conn.execute(
+            "SELECT * FROM tickets WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM tickets WHERE tenant_id = ? AND ticket_id = ?",
+            (tenant_id, ticket_id),
+        ).fetchone()
     if row is None:
         raise AppError("TICKET_NOT_FOUND")
     return row  # type: ignore[no-any-return]
 
 
+def _tenant_of_ticket(conn: sqlite3.Connection, ticket_id: str) -> str:
+    row = conn.execute(
+        "SELECT tenant_id FROM tickets WHERE ticket_id = ?", (ticket_id,)
+    ).fetchone()
+    return str(row[0]) if row is not None and row[0] else TENANT
+
+
 def link_thread(
     conn: sqlite3.Connection, ticket_id: str, thread_id: str
 ) -> None:
+    tenant = _tenant_of_ticket(conn, ticket_id)
     conn.execute(
         """
         INSERT INTO timeline_events
           (event_id, tenant_id, ticket_id, kind, title, actor, payload_json, created_at)
         VALUES (?, ?, ?, 'execution_thread', '执行线程已关联', 'system', ?, ?)
         """,
-        ("tl_" + secrets.token_hex(8), TENANT, ticket_id,
+        ("tl_" + secrets.token_hex(8), tenant, ticket_id,
          json.dumps({"thread_id": thread_id}), _now()),
     )
     conn.commit()
@@ -102,17 +118,19 @@ def post_human_message(
     *,
     user_id: str,
     content: str,
+    tenant_id: str | None = None,
 ) -> dict[str, object]:
     """A human message on the ticket's execution thread. A parked OPEN
     ticket resumes once this turn completes (wake_thread_ticket); an ENDED
     ticket just records the message — never resurrected (new work on the
     event thread opens a NEW ticket via intake, V05-10 release)."""
-    ticket = _ticket(conn, ticket_id)
+    ticket = _ticket(conn, ticket_id, tenant_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
     thread_id = thread_of_ticket(conn, ticket_id)
     from polyopus.domains import conversations
 
     turn_id, message_id = conversations.post_turn(
-        conn, store, tenant_id=TENANT, owner_id=user_id,
+        conn, store, tenant_id=tenant, owner_id=user_id,
         thread_id=thread_id, content=content, system_thread_ok=True,
     )
     conn.execute(
@@ -122,7 +140,7 @@ def post_human_message(
            created_at)
         VALUES (?, ?, ?, 'human_message', '人工消息', ?, ?, ?)
         """,
-        ("tl_" + secrets.token_hex(8), TENANT, ticket_id, user_id,
+        ("tl_" + secrets.token_hex(8), tenant, ticket_id, user_id,
          json.dumps({"turn_id": turn_id, "message_id": message_id,
                      "content": content[:120]}, ensure_ascii=False), _now()),
     )
@@ -146,6 +164,7 @@ def wake_thread_ticket(
         ticket_id = ticket_of_thread(conn, thread_id)
         if ticket_id is None:
             return False
+        tenant = _tenant_of_ticket(conn, ticket_id)
         actor_row = conn.execute(
             "SELECT actor, payload_json FROM timeline_events "
             "WHERE ticket_id = ? AND kind = 'human_message' ORDER BY id DESC LIMIT 1",
@@ -160,7 +179,7 @@ def wake_thread_ticket(
             "UPDATE tickets SET bucket = 'queued', updated_at = ? "
             "WHERE tenant_id = ? AND ticket_id = ? AND state = 'open' "
             "AND bucket = 'attention'",
-            (_now(), TENANT, ticket_id),
+            (_now(), tenant, ticket_id),
         )
         conn.commit()
         if not cur.rowcount:
@@ -173,7 +192,7 @@ def wake_thread_ticket(
                 "by": str(actor_row[0]),
                 "input_id": str(payload.get("message_id", "")),
             },
-            tenant_id=TENANT,
+            tenant_id=tenant,
         )
         return True
     except Exception:  # noqa: BLE001 - the turn already finished; wake is extra
@@ -209,6 +228,7 @@ def _budget_exceeded(
     from polyopus.domains.usage import service as usage_svc
 
     ticket_id = str(ticket["ticket_id"])
+    tenant = str(ticket["tenant_id"] or TENANT)
     thread_id = thread_of_ticket(conn, ticket_id)
     total_tokens = _usage_of_thread(conn, thread_id)
     if (
@@ -217,7 +237,7 @@ def _budget_exceeded(
     ):
         return True, "ticket_tokens"
 
-    cost = usage_svc.ticket_cost_micros(conn, ticket_id)
+    cost = usage_svc.ticket_cost_micros(conn, ticket_id, tenant_id=tenant)
     if budget.max_cost_micros is not None and cost > budget.max_cost_micros:
         return True, "ticket_cost"
 
@@ -225,18 +245,18 @@ def _budget_exceeded(
     if source_id:
         source = conn.execute(
             "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
-            (TENANT, str(source_id)),
+            (tenant, str(source_id)),
         ).fetchone()
         if source is not None:
             cfg = intake.config_of(source)
             if cfg.max_cost_micros_per_day is not None:
-                daily = usage_svc.source_day_cost_micros(conn, str(source_id))
+                daily = usage_svc.source_day_cost_micros(conn, str(source_id), tenant_id=tenant)
                 if daily > cfg.max_cost_micros_per_day:
                     return True, "source_daily_cost"
 
     instance_daily = int(load_settings().daily_cost_budget_micros)
     if instance_daily > 0:
-        daily = usage_svc.tenant_day_cost_micros(conn)
+        daily = usage_svc.tenant_day_cost_micros(conn, tenant_id=tenant)
         if daily > instance_daily:
             return True, "tenant_daily_cost"
     return False, ""
@@ -252,16 +272,17 @@ def _budget_summary(
     from polyopus.domains.usage import service as usage_svc
 
     ticket_id = str(ticket["ticket_id"])
+    tenant = str(ticket["tenant_id"] or TENANT)
     if reason == "ticket_tokens":
         return f"预算超限：已用 {total_tokens} tokens > 上限 {budget.max_total_tokens}"
     if reason == "ticket_cost":
-        cost = usage_svc.ticket_cost_micros(conn, ticket_id)
+        cost = usage_svc.ticket_cost_micros(conn, ticket_id, tenant_id=tenant)
         return f"预算超限：ticket 已用 {cost} micros > 上限 {budget.max_cost_micros} micros"
     if reason == "source_daily_cost":
-        cost = usage_svc.source_day_cost_micros(conn, str(ticket["source_id"]))
+        cost = usage_svc.source_day_cost_micros(conn, str(ticket["source_id"]), tenant_id=tenant)
         return f"预算超限：source 今日已用 {cost} micros > 每日上限"
     if reason == "tenant_daily_cost":
-        cost = usage_svc.tenant_day_cost_micros(conn)
+        cost = usage_svc.tenant_day_cost_micros(conn, tenant_id=tenant)
         return f"预算超限：实例今日已用 {cost} micros > 每日上限"
     return f"预算超限：{reason or 'unknown'}"
 
@@ -276,7 +297,8 @@ def assign(conn: sqlite3.Connection, store: EventStore, ticket_id: str) -> str:
     attempt number; exactly one INSERT succeeds (docs/48 V05-07) — the loser
     sees sqlite3.IntegrityError and skips.
     """
-    _ticket(conn, ticket_id)
+    ticket = _ticket(conn, ticket_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
     thread_id = thread_of_ticket(conn, ticket_id)
     assignment_id = "as_" + secrets.token_hex(8)
     now = _now()
@@ -292,7 +314,7 @@ def assign(conn: sqlite3.Connection, store: EventStore, ticket_id: str) -> str:
           (tenant_id, assignment_id, ticket_id, executor, state, attempt, started_at)
         VALUES (?, ?, ?, ?, 'pending', ?, ?)
         """,
-        (TENANT, assignment_id, ticket_id, EXECUTOR, attempt, now),
+        (tenant, assignment_id, ticket_id, EXECUTOR, attempt, now),
     )
     conn.execute(
         "UPDATE tickets SET bucket = 'running', updated_at = ? WHERE ticket_id = ?",
@@ -304,7 +326,7 @@ def assign(conn: sqlite3.Connection, store: EventStore, ticket_id: str) -> str:
         "assignment.started",
         {"assignment_id": assignment_id, "ticket_id": ticket_id,
          "executor_kind": EXECUTOR, "attempt": attempt},
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
     return assignment_id
 
@@ -342,6 +364,7 @@ def run_assignment(
     from polyopus.workers import engine
 
     ticket = _ticket(conn, ticket_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
     thread_id = thread_of_ticket(conn, ticket_id)
     budget = Budget.of(ticket)
     assignment_id = assign(conn, store, ticket_id)
@@ -364,7 +387,8 @@ def run_assignment(
         text = content or _latest_human_message(conn, ticket_id) or str(ticket["title"])
         turn_id, _ = conversations.post_turn(
             conn, store,
-            tenant_id=TENANT, owner_id="system", thread_id=thread_id, content=text,
+            tenant_id=tenant, owner_id="system", thread_id=thread_id,
+            content=text, status="running",
         )
         try:
             config = engine_config or _default_engine_config()
@@ -393,7 +417,7 @@ def run_assignment(
 
     from polyopus.domains.usage import service as usage_svc
 
-    ticket_cost = usage_svc.ticket_cost_micros(conn, ticket_id)
+    ticket_cost = usage_svc.ticket_cost_micros(conn, ticket_id, tenant_id=tenant)
     summary = (
         _budget_summary(conn, ticket, budget, budget_reason, total_tokens)
         if exceeded
@@ -414,7 +438,7 @@ def run_assignment(
         thread_id,
         "assignment.ended",
         {"assignment_id": assignment_id, "state": "ended", "reason": state},
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
 
     # V05-09 停止后不再接新事件: when a human stop already ended the ticket,
@@ -440,7 +464,7 @@ def run_assignment(
                 thread_id,
                 "ticket.ended",
                 {"ticket_id": ticket_id, "reason": "completed", "summary": summary},
-                tenant_id=TENANT,
+                tenant_id=tenant,
             )
         else:
             effects = False
@@ -496,6 +520,7 @@ def _record_report(
     facts: dict[str, Any] | None = None,
 ) -> str:
     report_id = "rp_" + secrets.token_hex(8)
+    tenant = _tenant_of_ticket(conn, ticket_id)
     conn.execute(
         """
         INSERT INTO reports
@@ -503,7 +528,7 @@ def _record_report(
            progress, facts_json, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (report_id, TENANT, ticket_id, assignment_id, state, summary,
+        (report_id, tenant, ticket_id, assignment_id, state, summary,
          1.0 if state == "ready" else 0.0,
          json.dumps(facts or {}, ensure_ascii=False), _now()),
     )
@@ -517,7 +542,7 @@ def _record_report(
             "summary": summary,
             "facts": facts or {},
         },
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
     return report_id
 
@@ -547,6 +572,7 @@ def _open_attention(
     ).fetchone()
     if row is None or str(row["state"]) != "open":
         return False
+    tenant = _tenant_of_ticket(conn, ticket_id)
     attention_id = "at_" + secrets.token_hex(8)
     now = _now()
     expires = now + 24 * 3600
@@ -557,7 +583,7 @@ def _open_attention(
            source_id, payload_json, status, expires_at, created_at)
         VALUES (?, ?, ?, NULL, ?, 'ticket', ?, ?, 'pending', ?, ?)
         """,
-        (TENANT, attention_id, ticket_id, kind, ticket_id,
+        (tenant, attention_id, ticket_id, kind, ticket_id,
          json.dumps({"reason": reason, "next_action": next_action,
                      "summary": summary, "report_id": report_id},
                     ensure_ascii=False),
@@ -580,7 +606,7 @@ def _open_attention(
             "question": summary,
             "expires_at": expires,
         },
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
     return True
 
@@ -589,11 +615,13 @@ def _open_attention(
 
 
 def stop(
-    conn: sqlite3.Connection, store: EventStore, ticket_id: str, by: str
+    conn: sqlite3.Connection, store: EventStore, ticket_id: str, by: str,
+    *, tenant_id: str | None = None,
 ) -> None:
     """Human stop (docs/09 §7.1): end the ticket, cancel assignments,
     invalidate the mandate."""
-    _ticket(conn, ticket_id)
+    ticket = _ticket(conn, ticket_id, tenant_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
     thread_id = thread_of_ticket(conn, ticket_id)
     now = _now()
 
@@ -613,7 +641,7 @@ def stop(
             "assignment.ended",
             {"assignment_id": row["assignment_id"], "state": "ended",
              "reason": "stopped_by_human"},
-            tenant_id=TENANT,
+            tenant_id=tenant,
         )
     conn.execute(
         "UPDATE mandates SET invalidated_at = ? WHERE ticket_id = ?",
@@ -630,6 +658,7 @@ def stop(
 
     audit.record(
         conn,
+        tenant_id=tenant,
         action="ticket.stop",
         result="ok",
         actor_id=by,
@@ -648,7 +677,7 @@ def stop(
         thread_id,
         "ticket.ended",
         {"ticket_id": ticket_id, "reason": "stopped_by_human", "by": by},
-        tenant_id=TENANT,
+        tenant_id=tenant,
     )
 
 
@@ -666,19 +695,26 @@ def watchdog_scan(
     store: EventStore,
     *,
     stale_seconds: int = HEARTBEAT_STALE_SECONDS,
+    tenant_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Card 6: stalled assignments get an alert; requeue capped, then dead."""
     now = _now()
     stale_before = now - stale_seconds
+    scope = ""
+    params: list[object] = [stale_before]
+    if tenant_id is not None:
+        scope = " AND ticket_id IN (SELECT ticket_id FROM tickets WHERE tenant_id = ?)"
+        params.append(tenant_id)
     rows = conn.execute(
         "SELECT * FROM assignments WHERE state = 'running' AND "
-        "(heartbeat_at IS NULL OR heartbeat_at < ?)",
-        (stale_before,),
+        "(heartbeat_at IS NULL OR heartbeat_at < ?)" + scope,
+        params,
     ).fetchall()
     alerts: list[dict[str, Any]] = []
     for row in rows:
         assignment_id = str(row["assignment_id"])
         ticket_id = str(row["ticket_id"])
+        tenant = _tenant_of_ticket(conn, ticket_id)
         thread_id = thread_of_ticket(conn, ticket_id)
         prior = conn.execute(
             "SELECT count(*) FROM watchdog_alerts WHERE assignment_id = ?",
@@ -694,7 +730,7 @@ def watchdog_scan(
                status, created_at)
             VALUES (?, ?, ?, 'stalled', ?, ?, 'open', ?)
             """,
-            ("wa_" + secrets.token_hex(8), TENANT, assignment_id, detail,
+            ("wa_" + secrets.token_hex(8), tenant, assignment_id, detail,
              action, now),
         )
         if action == "requeue":
@@ -719,7 +755,7 @@ def watchdog_scan(
             "watchdog.alert",
             {"assignment_id": assignment_id, "kind": "stalled",
              "detail": detail, "action": action},
-            tenant_id=TENANT,
+            tenant_id=tenant,
         )
         alerts.append({"assignmentId": assignment_id, "action": action})
     return alerts

@@ -91,6 +91,7 @@ def post_turn(
     content: str,
     idempotency_key: str | None = None,
     system_thread_ok: bool = False,
+    status: str = "queued",
 ) -> tuple[str, str]:
     """Append a user message + queued turn. Returns (turn_id, message_id).
 
@@ -159,9 +160,10 @@ def post_turn(
             INSERT INTO turns
               (tenant_id, turn_id, thread_id, user_message_id, status, mode, seq,
                ticket_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'queued', 'act', ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 'act', ?, ?, ?, ?)
             """,
-            (tenant_id, turn_id, thread_id, message_id, turn_seq, ticket_id, now, now),
+            (tenant_id, turn_id, thread_id, message_id, status, turn_seq,
+             ticket_id, now, now),
         )
         conn.execute(
             "UPDATE threads SET last_message_at = ?, updated_at = ? WHERE thread_id = ?",

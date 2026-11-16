@@ -23,6 +23,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class LoginBody(BaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
+    tenant: str | None = Field(default=None, max_length=64)
 
 
 def _user_payload(user: User) -> dict[str, object]:
@@ -43,7 +44,10 @@ def login(
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     settings = request.app.state.settings
-    user = authenticate(conn, body.username, body.password)
+    user = authenticate(
+        conn, body.username, body.password,
+        tenant_id=body.tenant or "default",
+    )
     session_id = create_session(
         conn,
         user,

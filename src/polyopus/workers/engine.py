@@ -366,7 +366,7 @@ async def run_turn(
     auto_tools, auto_max_risk = _auto_approve_of(conn, tenant_id, ticket_id)
     runtime = ToolRuntime(
         PolicyEngine(
-            _gate_rules(conn, cfg, ticket_id),
+            _gate_rules(conn, cfg, ticket_id, tenant_id),
             auto_approve=auto_tools,
             auto_approve_max_risk=auto_max_risk,
         )
@@ -578,7 +578,7 @@ def resume_after_approval(
         policy = PolicyEngine(
             list(cfg.policy_rules)
             if cfg.policy_rules
-            else list(policy_service.resolve_rules(conn)[0])
+            else list(policy_service.resolve_rules(conn, tenant_id)[0])
         )
         verdict = (
             policy.evaluate(spec, _args_of(arguments_json)) if spec
@@ -816,7 +816,8 @@ def _auto_approve_of(
 
 
 def _gate_rules(
-    conn: sqlite3.Connection, cfg: EngineConfig, ticket_id: str | None
+    conn: sqlite3.Connection, cfg: EngineConfig, ticket_id: str | None,
+    tenant_id: str = "default",
 ) -> list[Rule]:
     """V05-12 rule source chain for the tool gate: explicit injection
     (tests) > the mandate's PINNED bundle snapshot (in-flight mandates keep
@@ -833,10 +834,10 @@ def _gate_rules(
             (str(ticket_id),),
         ).fetchone()
         if row is not None:
-            pinned = policy_service.rules_for(conn, int(row[0]))
+            pinned = policy_service.rules_for(conn, int(row[0]), tenant_id)
             if pinned is not None:
                 return pinned
-    return list(policy_service.resolve_rules(conn)[0])
+    return list(policy_service.resolve_rules(conn, tenant_id)[0])
 
 
 def _scope_covers(

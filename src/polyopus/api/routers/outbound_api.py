@@ -32,7 +32,9 @@ def list_outbox(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    return {"items": service.list_outbox(conn, status=status, topic=topic, limit=limit)}
+    return {"items": service.list_outbox(
+        conn, status=status, topic=topic, limit=limit, tenant_id=user.tenant_id,
+    )}
 
 
 @router.post("/sources/{source_id}/test-reply")
@@ -45,5 +47,6 @@ def test_reply(
     """Synchronous single-shot probe of the callback: same HMAC headers as
     a real reply, `kind:"test"` payload, never enqueued."""
     return service.test_reply(
-        conn, source_id, override_url=body.callback_url if body else None
+        conn, source_id, override_url=body.callback_url if body else None,
+        tenant_id=user.tenant_id,
     )

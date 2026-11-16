@@ -140,9 +140,10 @@ def create_source(
         """
         INSERT INTO sources
           (tenant_id, source_id, kind, name, config_json, status, created_at, updated_at)
-        VALUES ('default', ?, 'webhook', ?, ?, 'active', ?, ?)
+        VALUES (?, ?, 'webhook', ?, ?, 'active', ?, ?)
         """,
-        (source_id, body.name, json.dumps(config, ensure_ascii=False), now, now),
+        (user.tenant_id, source_id, body.name,
+         json.dumps(config, ensure_ascii=False), now, now),
     )
     conn.commit()
     out: dict[str, object] = dict(_view(source_id, body.name, "active"))
@@ -160,7 +161,8 @@ def list_sources(
     from polyopus.domains.intake import service as intake
 
     rows = conn.execute(
-        "SELECT * FROM sources WHERE tenant_id='default' ORDER BY id"
+        "SELECT * FROM sources WHERE tenant_id = ? ORDER BY id",
+        (user.tenant_id,),
     ).fetchall()
     items: list[dict[str, object]] = []
     for row in rows:
@@ -180,7 +182,7 @@ def list_sources(
         }
         if str(row["kind"]) == "schedule":
             item["schedule"] = schedule_svc.latest_job_for_source(
-                conn, str(row["source_id"])
+                conn, str(row["source_id"]), user.tenant_id
             )
         items.append(item)
     return {"items": items}
@@ -192,7 +194,7 @@ def pause_source(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    return _set_source_status(conn, source_id, "paused")
+    return _set_source_status(conn, user.tenant_id, source_id, "paused")
 
 
 @router.post("/sources/{source_id}/resume")
@@ -201,7 +203,7 @@ def resume_source(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    return _set_source_status(conn, source_id, "active")
+    return _set_source_status(conn, user.tenant_id, source_id, "active")
 
 
 @router.delete("/sources/{source_id}")
@@ -211,44 +213,45 @@ def delete_source(
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     row = conn.execute(
-        "SELECT kind FROM sources WHERE tenant_id='default' AND source_id = ?",
-        (source_id,),
+        "SELECT kind FROM sources WHERE tenant_id = ? AND source_id = ?",
+        (user.tenant_id, source_id),
     ).fetchone()
     if row is None:
         raise AppError("SOURCE_NOT_FOUND")
     conn.execute(
-        "DELETE FROM cron_jobs WHERE tenant_id='default' "
+        "DELETE FROM cron_jobs WHERE tenant_id = ? "
         "AND json_extract(payload_json, '$.source_id') = ?",
-        (source_id,),
+        (user.tenant_id, source_id),
     )
     conn.execute(
-        "DELETE FROM sources WHERE tenant_id='default' AND source_id = ?",
-        (source_id,),
+        "DELETE FROM sources WHERE tenant_id = ? AND source_id = ?",
+        (user.tenant_id, source_id),
     )
     conn.commit()
     return {"sourceId": source_id, "deleted": True}
 
 
 def _set_source_status(
-    conn: Connection, source_id: str, status: str
+    conn: Connection, tenant_id: str, source_id: str, status: str
 ) -> dict[str, object]:
     row = conn.execute(
-        "SELECT kind FROM sources WHERE tenant_id='default' AND source_id = ?",
-        (source_id,),
+        "SELECT kind FROM sources WHERE tenant_id = ? AND source_id = ?",
+        (tenant_id, source_id),
     ).fetchone()
     if row is None:
         raise AppError("SOURCE_NOT_FOUND")
     now = int(time.time())
     conn.execute(
-        "UPDATE sources SET status = ?, updated_at = ? WHERE source_id = ?",
-        (status, now, source_id),
+        "UPDATE sources SET status = ?, updated_at = ? "
+        "WHERE tenant_id = ? AND source_id = ?",
+        (status, now, tenant_id, source_id),
     )
     if str(row["kind"]) == "schedule":
         conn.execute(
             "UPDATE cron_jobs SET enabled = ? "
-            "WHERE tenant_id='default' "
+            "WHERE tenant_id = ? "
             "AND json_extract(payload_json, '$.source_id') = ?",
-            (1 if status == "active" else 0, source_id),
+            (1 if status == "active" else 0, tenant_id, source_id),
         )
     conn.commit()
     return {"sourceId": source_id, "status": status}

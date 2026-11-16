@@ -49,6 +49,7 @@ def _retry_delay(item_attempt: int, retry_after: float | None) -> float:
 def _notify(
     store: EventStore, conn: sqlite3.Connection, item_id: str,
     payload: Mapping[str, Any], kind: str, *, code: str, message: str | None,
+    tenant_id: str = outbound.TENANT,
 ) -> None:
     ticket_id = payload.get("ticketId")
     if not ticket_id:
@@ -68,7 +69,7 @@ def _notify(
         fields["code"] = code
         fields["message"] = message
         fields["retryable"] = False
-    store.append(thread_id, kind, fields, tenant_id=outbound.TENANT)
+    store.append(thread_id, kind, fields, tenant_id=tenant_id)
 
     # V05-19: terminal delivery outcome is auditable by ticket. `record` is
     # best-effort and never lets an audit failure break the delivery loop.
@@ -77,6 +78,7 @@ def _notify(
     sent = kind == "channel.sent"
     audit.record(
         conn,
+        tenant_id=tenant_id,
         action="reply.sent" if sent else "reply.failed",
         result="ok" if sent else "failed",
         actor_id="system",
@@ -112,7 +114,8 @@ def dispatch_once(
         if target is None:
             box.mark_dead(item)
             _notify(store, conn, item.event_id, item.payload, "channel.failed",
-                    code="undeliverable", message="source or callback_url gone")
+                    code="undeliverable", message="source or callback_url gone",
+                    tenant_id=item.tenant_id)
             stats["dead"] += 1
             continue
         url, secret = target
@@ -121,18 +124,20 @@ def dispatch_once(
         if outcome == "sent":
             box.mark_sent(item)
             _notify(store, conn, item.event_id, item.payload, "channel.sent",
-                    code="ok", message=None)
+                    code="ok", message=None, tenant_id=item.tenant_id)
             stats["sent"] += 1
         elif outcome == "dead":
             box.mark_dead(item)
             _notify(store, conn, item.event_id, item.payload, "channel.failed",
-                    code=f"http_{result.status_code}", message=result.error)
+                    code=f"http_{result.status_code}", message=result.error,
+                    tenant_id=item.tenant_id)
             stats["dead"] += 1
         else:
             backoff = _retry_delay(item.attempts, result.retry_after)
             if box.mark_failed(item, max_attempts=MAX_ATTEMPTS, backoff=backoff) == "failed":
                 _notify(store, conn, item.event_id, item.payload, "channel.failed",
-                        code=f"http_{result.status_code}", message=result.error)
+                        code=f"http_{result.status_code}", message=result.error,
+                        tenant_id=item.tenant_id)
                 stats["dead"] += 1
             else:
                 stats["retried"] += 1

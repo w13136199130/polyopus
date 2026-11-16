@@ -114,8 +114,10 @@ def extract_json(text: str) -> dict[str, Any] | None:
 # ---- thread snapshot (docs/09 §4.1: 5-minute cache) ------------------------------
 
 
-def _thread_snapshot(conn: sqlite3.Connection, thread_key: str) -> str:
-    cache_key = (TENANT, thread_key)
+def _thread_snapshot(
+    conn: sqlite3.Connection, thread_key: str, tenant_id: str = TENANT
+) -> str:
+    cache_key = (tenant_id, thread_key)
     hit = _SNAPSHOT_CACHE.get(cache_key)
     now = time.monotonic()
     if hit is not None and now - hit[0] < SNAPSHOT_TTL_SECONDS:
@@ -123,7 +125,7 @@ def _thread_snapshot(conn: sqlite3.Connection, thread_key: str) -> str:
     rows = conn.execute(
         "SELECT actor_id, payload_json FROM triggers WHERE tenant_id = ? "
         "AND thread_key = ? ORDER BY id DESC LIMIT ?",
-        (TENANT, thread_key, SNAPSHOT_MESSAGES),
+        (tenant_id, thread_key, SNAPSHOT_MESSAGES),
     ).fetchall()
     lines = []
     for row in reversed(rows):
@@ -136,7 +138,7 @@ def _thread_snapshot(conn: sqlite3.Connection, thread_key: str) -> str:
         WHERE s.tenant_id = ? AND s.event_thread_id = ? AND t.state = 'open'
         ORDER BY t.id
         """,
-        (TENANT, thread_key),
+        (tenant_id, thread_key),
     ).fetchall()
     for ticket in tickets:
         lines.append(f"[已有工单] {ticket[0]}（{ticket[1]}）")
@@ -239,7 +241,7 @@ def _valid_scope(item: str) -> bool:
 
 def post_process(
     raw: dict[str, Any], cfg: SourceConfig, gate_explicit: bool,
-    conn: sqlite3.Connection,
+    conn: sqlite3.Connection, tenant_id: str = TENANT,
 ) -> dict[str, Any]:
     """Clamp the model's judgement (docs/09 §4.2). Returns the final dict
     with a `reasons` list of every correction applied."""
@@ -279,7 +281,7 @@ def post_process(
         row = conn.execute(
             "SELECT 1 FROM tickets WHERE tenant_id = ? AND ticket_id = ? "
             "AND state = 'open'",
-            (TENANT, str(duplicate_of)),
+            (tenant_id, str(duplicate_of)),
         ).fetchone()
         if row is None:
             duplicate_of = None
@@ -315,12 +317,13 @@ def run_for_trigger(
     open_ticket when not dry-run). dry_run never opens a ticket (docs/09
     §3.5: 判定照写、不建单)."""
     cfg = config_of(source)
+    tenant = str(source["tenant_id"] or TENANT)
     eval_id = "ev_" + secrets.token_hex(8)
     now = int(time.time())
     conn.execute(
         "INSERT INTO evals (tenant_id, eval_id, trigger_id, status, started_at)"
         " VALUES (?, ?, ?, 'running', ?)",
-        (TENANT, eval_id, str(trigger["trigger_id"]), now),
+        (tenant, eval_id, str(trigger["trigger_id"]), now),
     )
     conn.commit()
 
@@ -335,7 +338,7 @@ def run_for_trigger(
         return AssessResult("unavailable", "unavailable", eval_id=eval_id,
                             reasons=(error,))
 
-    final = post_process(raw, cfg, gate_explicit, conn)
+    final = post_process(raw, cfg, gate_explicit, conn, tenant_id=tenant)
     _finish_eval(conn, eval_id, "decided", final)
     decision = str(final["decision"])
     if decision == "accept":
@@ -358,7 +361,7 @@ def run_for_trigger(
                created_at)
             VALUES (?, ?, ?, 'trigger_fanned_out', '研判判定重复，已并入', 'system', ?, ?)
             """,
-            ("tl_" + secrets.token_hex(8), TENANT, str(final["duplicate_of"]),
+            ("tl_" + secrets.token_hex(8), tenant, str(final["duplicate_of"]),
              json.dumps({"trigger_id": str(trigger["trigger_id"]),
                          "via": "assessment"},
                         ensure_ascii=False), int(time.time())),
@@ -409,7 +412,7 @@ def _emit_decided(
 ) -> None:
     from polyopus.domains.policy import service as policy
 
-    version = policy.active_version(conn)
+    version = policy.active_version(conn, str(source["tenant_id"] or TENANT))
     payload: dict[str, Any] = {
         "eval_id": eval_id,
         "decision": decision,
@@ -422,7 +425,8 @@ def _emit_decided(
         payload["scope"] = final["scope"]
         if final["duplicate_of"]:
             payload["duplicate_of"] = final["duplicate_of"]
-    store.append(str(source["source_id"]), "eval.decided", payload, tenant_id=TENANT)
+    store.append(str(source["source_id"]), "eval.decided", payload,
+                 tenant_id=str(source["tenant_id"] or TENANT))
 
 
 def eval_dry_run(
@@ -436,8 +440,8 @@ def eval_dry_run(
     """`poly eval --dry-run` (V05-13): judge every recent trigger of a
     source, write dispositions + evals, open NOTHING."""
     source = conn.execute(
-        "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
-        (TENANT, source_id),
+        "SELECT * FROM sources WHERE source_id = ?",
+        (source_id,),
     ).fetchone()
     if source is None:
         from polyopus.platform.errors import AppError
@@ -446,9 +450,9 @@ def eval_dry_run(
     cfg = config_of(source)
     cutoff = int(time.time()) - hours * 3600
     triggers = conn.execute(
-        "SELECT * FROM triggers WHERE tenant_id = ? AND source_id = ? "
+        "SELECT * FROM triggers WHERE source_id = ? "
         "AND received_at >= ? ORDER BY id",
-        (TENANT, source_id, cutoff),
+        (source_id, cutoff),
     ).fetchall()
     counts = {"accept": 0, "ignore": 0, "stop": 0, "unavailable": 0}
     for trigger in triggers:

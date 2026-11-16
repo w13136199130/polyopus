@@ -164,12 +164,13 @@ def summary(
     window: str = "day",
     as_user: str | None = None,
     agent_id: str | None = None,
+    tenant_id: str = TENANT,
     now: int | None = None,
 ) -> dict[str, object]:
     ts = now or int(time.time())
     start = _window_start(window, ts)
-    where = "created_at >= ? AND created_at < ?"
-    args: list[object] = [start, ts + 86400]
+    where = "tenant_id = ? AND created_at >= ? AND created_at < ?"
+    args: list[object] = [tenant_id, start, ts + 86400]
     if as_user:
         where += " AND user_id = ?"
         args.append(as_user)

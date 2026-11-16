@@ -50,8 +50,11 @@ def find_user(conn: sqlite3.Connection, tenant_id: str, username: str) -> tuple[
     return row, _row_to_user(row)
 
 
-def authenticate(conn: sqlite3.Connection, username: str, password: str) -> User:
-    row, user = find_user(conn, DEFAULT_TENANT, username)
+def authenticate(
+    conn: sqlite3.Connection, username: str, password: str,
+    tenant_id: str = DEFAULT_TENANT,
+) -> User:
+    row, user = find_user(conn, tenant_id, username)
     if str(row["status"]) != "active":
         raise AppError("USER_DISABLED")
     if not row["password_hash"] or not verify_password(str(row["password_hash"]), password):

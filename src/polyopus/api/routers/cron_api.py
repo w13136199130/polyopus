@@ -36,7 +36,7 @@ class PatchCronBody(BaseModel):
 def list_cron_jobs(
     user: User = Depends(current_user), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
-    return {"items": schedule_svc.list_jobs(conn)}
+    return {"items": schedule_svc.list_jobs(conn, user.tenant_id)}
 
 
 @router.post("/cron-jobs", status_code=201)
@@ -49,18 +49,22 @@ def create_cron_job(
     schedule_svc.parse_schedule(body.schedule)
     schedule_svc.timezone_of(body.timezone)
     source_id = schedule_svc.create_schedule_source(
-        conn, name=body.name, timezone=body.timezone
+        conn, name=body.name, timezone=body.timezone, tenant_id=user.tenant_id
     )
     try:
         job_id = schedule_svc.upsert_job(
             conn, source_id=source_id, name=body.name,
             schedule=body.schedule, timezone=body.timezone, text=body.text,
+            tenant_id=user.tenant_id,
         )
     except Exception:
-        conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
+        conn.execute(
+            "DELETE FROM sources WHERE tenant_id = ? AND source_id = ?",
+            (user.tenant_id, source_id),
+        )
         conn.commit()
         raise
-    view = schedule_svc.job(conn, job_id)
+    view = schedule_svc.job(conn, job_id, user.tenant_id)
     assert view is not None
     return view
 
@@ -71,7 +75,7 @@ def get_cron_job(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    view = schedule_svc.job(conn, job_id)
+    view = schedule_svc.job(conn, job_id, user.tenant_id)
     if view is None:
         raise AppError("NOT_FOUND", details={"cronJobId": job_id})
     return view
@@ -84,12 +88,14 @@ def patch_cron_job(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    view = schedule_svc.job(conn, job_id)
+    view = schedule_svc.job(conn, job_id, user.tenant_id)
     if view is None:
         raise AppError("NOT_FOUND", details={"cronJobId": job_id})
     if body.enabled is None:
         return view
-    return schedule_svc.set_enabled(conn, job_id, body.enabled)
+    return schedule_svc.set_enabled(
+        conn, job_id, body.enabled, tenant_id=user.tenant_id
+    )
 
 
 @router.delete("/cron-jobs/{job_id}")
@@ -98,7 +104,7 @@ def delete_cron_job(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    schedule_svc.delete_job(conn, job_id)
+    schedule_svc.delete_job(conn, job_id, user.tenant_id)
     return {"cronJobId": job_id, "deleted": True}
 
 
@@ -108,6 +114,6 @@ def cron_job_runs(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    if schedule_svc.job(conn, job_id) is None:
+    if schedule_svc.job(conn, job_id, user.tenant_id) is None:
         raise AppError("NOT_FOUND", details={"cronJobId": job_id})
-    return {"items": schedule_svc.runs(conn, job_id)}
+    return {"items": schedule_svc.runs(conn, job_id, user.tenant_id)}

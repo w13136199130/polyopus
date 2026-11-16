@@ -54,32 +54,40 @@ def _parse_rules(text: str | None) -> list[Rule] | None:
 # ---- bundle lifecycle ----------------------------------------------------------
 
 
-def active_row(conn: sqlite3.Connection) -> sqlite3.Row | None:
+def active_row(
+    conn: sqlite3.Connection, tenant_id: str = TENANT
+) -> sqlite3.Row | None:
     row = conn.execute(
         "SELECT * FROM policy_bundles WHERE tenant_id = ? AND status = 'active' "
         "ORDER BY version DESC LIMIT 1",
-        (TENANT,),
+        (tenant_id,),
     ).fetchone()
     return row  # type: ignore[no-any-return]
 
 
-def active_version(conn: sqlite3.Connection) -> int | None:
-    row = active_row(conn)
+def active_version(
+    conn: sqlite3.Connection, tenant_id: str = TENANT
+) -> int | None:
+    row = active_row(conn, tenant_id)
     return int(row["version"]) if row is not None else None
 
 
-def rules_for(conn: sqlite3.Connection, version: int) -> list[Rule] | None:
+def rules_for(
+    conn: sqlite3.Connection, version: int, tenant_id: str = TENANT
+) -> list[Rule] | None:
     """The snapshot a mandate pinned; None when missing or corrupt."""
     row = conn.execute(
         "SELECT rules_json FROM policy_bundles WHERE tenant_id = ? AND version = ?",
-        (TENANT, version),
+        (tenant_id, version),
     ).fetchone()
     return _parse_rules(row[0]) if row is not None else None
 
 
-def resolve_rules(conn: sqlite3.Connection) -> tuple[list[Rule], int | None, str]:
+def resolve_rules(
+    conn: sqlite3.Connection, tenant_id: str = TENANT
+) -> tuple[list[Rule], int | None, str]:
     """(rules, version, source) with source in {active, lkg, default}."""
-    row = active_row(conn)
+    row = active_row(conn, tenant_id)
     if row is not None:
         rules = _parse_rules(row["rules_json"])
         if rules is not None:
@@ -88,7 +96,7 @@ def resolve_rules(conn: sqlite3.Connection) -> tuple[list[Rule], int | None, str
     for candidate in conn.execute(
         "SELECT version, rules_json FROM policy_bundles WHERE tenant_id = ? "
         "AND activated_at IS NOT NULL ORDER BY version DESC",
-        (TENANT,),
+        (tenant_id,),
     ).fetchall():
         rules = _parse_rules(candidate["rules_json"])
         if rules is not None:
@@ -97,7 +105,8 @@ def resolve_rules(conn: sqlite3.Connection) -> tuple[list[Rule], int | None, str
 
 
 def publish(
-    conn: sqlite3.Connection, rules: Sequence[Rule], by: str
+    conn: sqlite3.Connection, rules: Sequence[Rule], by: str,
+    tenant_id: str = TENANT,
 ) -> dict[str, Any]:
     """Snapshot `rules` as the next version and make it the single active
     bundle. In-flight mandates keep their pinned snapshots (only future
@@ -105,13 +114,13 @@ def publish(
     now = int(time.time())
     version = int(conn.execute(
         "SELECT COALESCE(MAX(version), 0) + 1 FROM policy_bundles WHERE tenant_id = ?",
-        (TENANT,),
+        (tenant_id,),
     ).fetchone()[0])
     bundle_id = "pb_" + secrets.token_hex(8)
     conn.execute(
         "UPDATE policy_bundles SET status = 'rolled_back' "
         "WHERE tenant_id = ? AND status = 'active'",
-        (TENANT,),
+        (tenant_id,),
     )
     conn.execute(
         """
@@ -120,21 +129,24 @@ def publish(
            created_at, activated_at)
         VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
         """,
-        (bundle_id, TENANT, version,
+        (bundle_id, tenant_id, version,
          json.dumps([rule_to_dict(r) for r in rules], ensure_ascii=False),
          by, now, now),
     )
-    _sync_rule_rows(conn, bundle_id, version, rules)
+    _sync_rule_rows(conn, bundle_id, version, rules, tenant_id)
     conn.commit()
     return {"version": version, "bundleId": bundle_id, "rules": len(rules)}
 
 
-def rollback(conn: sqlite3.Connection, to_version: int, by: str) -> dict[str, Any]:
+def rollback(
+    conn: sqlite3.Connection, to_version: int, by: str,
+    tenant_id: str = TENANT,
+) -> dict[str, Any]:
     """Re-activate a previously published bundle (LKG rollback). The current
     active bundle is retired; policy_rules is rebuilt from the target."""
     target = conn.execute(
         "SELECT * FROM policy_bundles WHERE tenant_id = ? AND version = ?",
-        (TENANT, to_version),
+        (tenant_id, to_version),
     ).fetchone()
     if target is None:
         from polyopus.platform.errors import AppError
@@ -150,25 +162,26 @@ def rollback(conn: sqlite3.Connection, to_version: int, by: str) -> dict[str, An
     conn.execute(
         "UPDATE policy_bundles SET status = 'rolled_back' "
         "WHERE tenant_id = ? AND status = 'active'",
-        (TENANT,),
+        (tenant_id,),
     )
     conn.execute(
         "UPDATE policy_bundles SET status = 'active', activated_at = ? "
         "WHERE bundle_id = ?",
         (now, target["bundle_id"]),
     )
-    _sync_rule_rows(conn, str(target["bundle_id"]), to_version, rules)
+    _sync_rule_rows(conn, str(target["bundle_id"]), to_version, rules, tenant_id)
     conn.commit()
     return {"version": to_version, "bundleId": str(target["bundle_id"]),
             "by": by}
 
 
 def _sync_rule_rows(
-    conn: sqlite3.Connection, bundle_id: str, version: int, rules: Iterable[Rule]
+    conn: sqlite3.Connection, bundle_id: str, version: int, rules: Iterable[Rule],
+    tenant_id: str = TENANT,
 ) -> None:
     """policy_rules is the flat eval view of the active bundle (docs/31:
     回滚只切 active bundle，不改历史 bundle)."""
-    conn.execute("DELETE FROM policy_rules WHERE tenant_id = ?", (TENANT,))
+    conn.execute("DELETE FROM policy_rules WHERE tenant_id = ?", (tenant_id,))
     now = int(time.time())
     for rule in rules:
         conn.execute(
@@ -178,19 +191,22 @@ def _sync_rule_rows(
                obligations_json, version, enabled, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 1, ?)
             """,
-            (rule.rid, TENANT, bundle_id, rule.priority,
+            (rule.rid, tenant_id, bundle_id, rule.priority,
              json.dumps(rule.when, ensure_ascii=False), rule.effect,
              version, now),
         )
 
 
-def active_version_or_bootstrap(conn: sqlite3.Connection) -> int:
+def active_version_or_bootstrap(
+    conn: sqlite3.Connection, tenant_id: str = TENANT
+) -> int:
     """open_ticket's entry point: the first ticket publishes the built-in
     defaults as v1 so every mandate pins a real, snapshot-backed version."""
-    version = active_version(conn)
+    version = active_version(conn, tenant_id)
     if version is not None:
         return version
-    return int(publish(conn, default_rules(), by="system:bootstrap")["version"])
+    return int(publish(conn, default_rules(), by="system:bootstrap",
+                       tenant_id=tenant_id)["version"])
 
 
 # ---- dry-run ---------------------------------------------------------------------
@@ -199,14 +215,15 @@ def active_version_or_bootstrap(conn: sqlite3.Connection) -> int:
 def dry_run(
     conn: sqlite3.Connection, samples: Sequence[dict[str, Any]], *,
     rules: Sequence[Rule] | None = None, version: int | None = None,
+    tenant_id: str = TENANT,
 ) -> dict[str, Any]:
     """Evaluate samples without touching any live gate (docs/02 §5.2: 发布前
     必须看会拦多少). Rule source: explicit > pinned version > resolved."""
     if rules is None:
         if version is not None:
-            rules = rules_for(conn, version)
+            rules = rules_for(conn, version, tenant_id)
         if rules is None:
-            rules, resolved_version, _source = resolve_rules(conn)
+            rules, resolved_version, _source = resolve_rules(conn, tenant_id)
             version = resolved_version
     engine = PolicyEngine(list(rules))
     results: list[dict[str, Any]] = []
