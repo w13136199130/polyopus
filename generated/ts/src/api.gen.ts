@@ -135,6 +135,17 @@ export interface AttentionList {
   nextCursor?: string;
 }
 
+export interface AnswerResult {
+  attentionId: string;
+  status: string;
+  decision: string;
+}
+
+export interface BatchAnswerResult {
+  items: string[];
+  count: number;
+}
+
 export interface Counts {
   attention: number;
   running: number;

@@ -149,6 +149,17 @@ class AttentionList(BaseModel):
     items: list[Attention]
     nextCursor: str | None = None
 
+class AnswerResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attentionId: str
+    status: str
+    decision: str
+
+class BatchAnswerResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[str]
+    count: int
+
 class Counts(BaseModel):
     model_config = ConfigDict(extra="forbid")
     attention: int

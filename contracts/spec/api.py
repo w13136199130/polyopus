@@ -116,6 +116,10 @@ MODELS: tuple[Model, ...] = (
     Model("ReportList", (f("items", "arr:obj:Report"), f("nextCursor", "str", required=False))),
     Model("TimelineList", (f("items", "arr:obj:TimelineEvent"), f("nextCursor", "str", required=False))),
     Model("AttentionList", (f("items", "arr:obj:Attention"), f("nextCursor", "str", required=False))),
+    Model("AnswerResult", (
+        f("attentionId", "ref:at"), f("status", "str"), f("decision", "str"),
+    )),
+    Model("BatchAnswerResult", (f("items", "arr:ref:AnswerResult"), f("count", "int"))),
     Model("Counts", (f("attention", "int"), f("running", "int"), f("queued", "int"), f("done", "int"))),
     Model("StopRequest", (f("reason", "str", required=False),)),
     Model("AssignRequest", (
@@ -1000,6 +1004,10 @@ OPS: tuple[Op, ...] = (
     Op("POST", "/sources/{sourceId}/pause", "pauseSource", "Pause/resume a source", "sources",
        "Source", params=(Param("sourceId", "path", "str", required=True),),
        body="SourcePauseRequest"),
+    Op("POST", "/sources/{sourceId}/resume", "resumeSource", "Resume a source", "sources",
+       "Source", params=(Param("sourceId", "path", "str", required=True),)),
+    Op("DELETE", "/sources/{sourceId}", "deleteSource", "Delete a source", "sources", "Ok",
+       params=(Param("sourceId", "path", "str", required=True),)),
     Op("GET", "/triggers", "listTriggers", "List triggers for debugging", "sources", "TriggerList",
        params=(
            Param("sourceId", "query", "str"),
@@ -1471,6 +1479,9 @@ OPS: tuple[Op, ...] = (
        )),
     Op("POST", "/attentions/{attentionId}/answer", "answerAttention", "Answer an attention", "attentions", "Attention",
        params=(Param("attentionId", "path", "str", required=True),), body="AnswerRequest"),
+    Op("POST", "/attentions/answer-batch", "answerAttentionBatch",
+       "Answer selected approvals of one action class", "attentions",
+       "BatchAnswerResult", body="AnswerRequest"),
 
     # ---- usage (USE-001/USE-002) -----------------------------------------
     Op("GET", "/usage/summary", "usageSummary", "Usage totals by window/model (USE-001)", "usage", "UsageSummary",
@@ -1503,7 +1514,7 @@ def assert_valid_name(name: str, where: str) -> None:
 
 
 def validate_spec() -> None:
-    assert len(MODELS) == 232, len(MODELS)
+    assert len(MODELS) == 234, len(MODELS)
     names = {m.name for m in MODELS}
     for m in MODELS:
         assert_valid_name(m.name, "model name")
