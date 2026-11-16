@@ -19,8 +19,10 @@ import type {
   SourceListResponse,
   SourceView,
   ThreadListResponse,
+  TicketCounts,
   TicketDetail,
   TicketListResponse,
+  TicketTimelineResponse,
   UsageSummaryResponse,
   WebhookAccepted,
 } from "../wire";
@@ -195,8 +197,14 @@ export const cronJobs = {
 
 export const tickets = {
   list: op("GET", "/tickets", () => apiFetch<TicketListResponse>("/tickets")),
+  counts: op("GET", "/tickets/counts", () =>
+    apiFetch<TicketCounts>("/tickets/counts")),
   detail: op("GET", "/tickets/{ticket_id}", (ticketId: string) =>
     apiFetch<TicketDetail>(`/tickets/${encodeURIComponent(ticketId)}`)),
+  timeline: op("GET", "/tickets/{ticket_id}/timeline", (ticketId: string) =>
+    apiFetch<TicketTimelineResponse>(
+      `/tickets/${encodeURIComponent(ticketId)}/timeline`,
+    )),
   stop: op("POST", "/tickets/{ticket_id}/stop", (ticketId: string) =>
     apiFetch<{ ticketId: string; state: string }>(
       `/tickets/${encodeURIComponent(ticketId)}/stop`,

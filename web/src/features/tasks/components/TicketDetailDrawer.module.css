@@ -81,3 +81,24 @@ dd code {
   font-family: var(--font-mono);
   color: var(--text-3);
 }
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.timeline li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.timeline time {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}

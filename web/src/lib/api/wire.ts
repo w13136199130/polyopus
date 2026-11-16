@@ -153,6 +153,28 @@ export interface TicketListResponse {
   items: TicketRow[];
 }
 
+export interface TicketCounts {
+  attention: number;
+  running: number;
+  queued: number;
+  done: number;
+}
+
+export interface TicketTimelineItem {
+  id: string;
+  at: string;
+  kind: string;
+  title: string;
+  description?: string;
+  actor: { id: string; name: string };
+  tone: string;
+  link?: Record<string, unknown>;
+}
+
+export interface TicketTimelineResponse {
+  items: TicketTimelineItem[];
+}
+
 export interface TicketDetail extends TicketRow {
   scope: string[];
   budget: { maxTotalTokens?: number; maxCostMicros?: number } | null;

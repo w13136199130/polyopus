@@ -21,9 +21,9 @@ describe("endpoint whitelist (P0-2: contract types != implementation)", () => {
         routed.push(wrapper.route);
       }
     }
-    // 35 implemented ops - /healthz - SSE events endpoint - endpoints the UI
-    // does not wrap yet (admin/audit, outbox) = 26 wrappers
-    expect(routed.length).toBe(26);
+    // 37 implemented ops - /healthz - SSE events - unwrapped admin/audit,
+    // outbox and webhook ops = 28 wrappers
+    expect(routed.length).toBe(28);
 
     for (const [method, path] of routed) {
       const full = path.startsWith("/api/") || path === "/healthz"

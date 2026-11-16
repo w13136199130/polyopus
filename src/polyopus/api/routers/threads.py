@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from sqlite3 import Connection
 
@@ -18,6 +19,10 @@ from polyopus.platform.db.migrator import connect
 from polyopus.platform.events.store import EventStore
 
 router = APIRouter(prefix="/threads", tags=["threads"])
+
+# V05-22: an idle follow stream emits a comment heartbeat so proxies and
+# EventSource clients do not consider it dead. Tests patch this value.
+SSE_PING_SECONDS = 15.0
 
 
 class CreateThreadBody(BaseModel):
@@ -114,9 +119,12 @@ def replay_events(
         try:
             stream_store = EventStore(stream_conn)
             cursor = after_seq
+            last_ping = time.monotonic()
             while True:
+                wrote = False
                 for event in stream_store.read(thread_id, after_seq=cursor):
                     cursor = event.seq
+                    wrote = True
                     body = {
                         "seq": event.seq,
                         "type": event.type,
@@ -128,8 +136,22 @@ def replay_events(
                     yield f"id: {event.seq}\ndata: {data}\n\n"
                 if not follow:
                     return
+                now = time.monotonic()
+                if wrote:
+                    last_ping = now
+                elif now - last_ping >= SSE_PING_SECONDS:
+                    # Comment frame: no event row, no cursor advance.
+                    yield ": ping\n\n"
+                    last_ping = now
                 await asyncio.sleep(0.2)
         finally:
             stream_conn.close()
 
-    return StreamingResponse(frames(), media_type="text/event-stream")
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+        },
+    )

@@ -10,6 +10,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createSseTransport } from "@/lib/stream/sseTransport";
 import type { StreamTransport } from "@/lib/stream/transport";
 import { bindTransport, ChatStreamStore } from "./streamStore";
+import {
+  clearInflight,
+  flushInflight,
+  loadInflight,
+  saveInflight,
+} from "./inflight-cache";
 import { chatKeys } from "./api";
 
 const ACK_TIMEOUT_MS = 2_000; // docs/49 §4.4: withdraw + restore on no-ack
@@ -73,11 +79,36 @@ export function useChatStream(
         void client.invalidateQueries({ queryKey: chatKeys.attentions });
       }
     });
+    // V05-23: keep the refresh tail cache in sync with the active turn.
+    const offPersist = store.subscribe(() => {
+      const snapshot = store.getSnapshot();
+      const id = threadIdRef.current;
+      if (!id) return;
+      if (
+        snapshot.turnId &&
+        (snapshot.status === "streaming" || snapshot.status === "waiting_approval")
+      ) {
+        saveInflight({
+          threadId: id,
+          userMessageId: snapshot.userMessageId ?? "",
+          turnId: snapshot.turnId,
+          text: snapshot.text,
+          seq: snapshot.lastEventSeq,
+          status: snapshot.status,
+        });
+      } else if (snapshot.status === "finished") {
+        // Only a terminal turn invalidates the cache; resetToIdle also fires
+        // on thread switches and StrictMode remounts, where it must survive.
+        clearInflight(id);
+      }
+    });
     return () => {
       off();
       offGap();
       offState();
       offFrame();
+      offPersist();
+      flushInflight();
       transport.close();
       store.flush();
     };
@@ -87,10 +118,24 @@ export function useChatStream(
   useEffect(() => {
     if (!threadId) return;
     transport.close();
+    // Load BEFORE resetToIdle: its store notification would clear the cache
+    // of the thread we are about to restore.
+    const cached = loadInflight(threadId);
     store.resetToIdle();
+    if (cached) {
+      store.restore({
+        turnId: cached.turnId,
+        userMessageId: cached.userMessageId,
+        text: cached.text,
+        seq: cached.seq,
+        status: cached.status === "waiting_approval"
+          ? "waiting_approval" : "streaming",
+      });
+    }
     transport.connect({
       threadId,
-      afterSeq: 0, // replay is cheap; store ignores foreign turns
+      // Resume after the cached seq; the cache is only used as a paint hint.
+      afterSeq: cached?.seq ?? 0,
       signal: new AbortController().signal,
     });
     return () => transport.close();
@@ -118,7 +163,7 @@ export function useChatStream(
         afterSeq: store.getSnapshot().lastEventSeq,
         signal: new AbortController().signal,
       });
-      store.ack(result.turnId);
+      store.ack(result.turnId, result.messageId);
       return true;
     } catch {
       if (ackTimer.current) clearTimeout(ackTimer.current);

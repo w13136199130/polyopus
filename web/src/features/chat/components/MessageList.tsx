@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { ChatStreamSnapshot } from "../streamStore";
+import { mergeHistory } from "../merge-history";
 import type { Message } from "@/lib/api/wire";
 import styles from "./MessageList.module.css";
 
@@ -20,7 +21,13 @@ function buildBubbles(
   messages: Message[] | undefined,
   snapshot: ChatStreamSnapshot,
 ): Bubble[] {
-  const bubbles: Bubble[] = (messages ?? []).map((message) => ({
+  const merged = mergeHistory(messages ?? [], {
+    turnId: snapshot.turnId,
+    userMessageId: snapshot.userMessageId,
+    text: snapshot.text,
+    status: snapshot.status,
+  });
+  const bubbles: Bubble[] = merged.messages.map((message) => ({
     key: message.messageId,
     role: message.role === "assistant" ? "assistant" : "user",
     content: message.content,
@@ -35,21 +42,22 @@ function buildBubbles(
     });
   }
 
-  // live assistant text for the active turn (cleared once finished —
-  // the messages projection is authoritative from then on)
-  if (
-    snapshot.turnId &&
-    (snapshot.status === "streaming" ||
-      snapshot.status === "waiting_approval") &&
-    snapshot.text
-  ) {
+  // Live tail: mergeHistory drops this when the same turn already has a
+  // projected assistant row (richer side wins), so two streaming bubbles can
+  // never render for one turn.
+  if (snapshot.turnId && merged.liveText) {
     bubbles.push({
       key: `${snapshot.turnId}-live`,
       role: "assistant",
-      content: snapshot.text,
+      content: merged.liveText,
       streaming: true,
     });
-  } else if (snapshot.status === "waiting_approval") {
+  } else if (
+    snapshot.status === "waiting_approval" &&
+    !merged.messages.some(
+      (message) => message.turnId === snapshot.turnId && message.role === "assistant",
+    )
+  ) {
     bubbles.push({
       key: `${snapshot.turnId ?? "waiting"}-placeholder`,
       role: "assistant",

@@ -21,6 +21,8 @@ export interface ChatStreamSnapshot {
   status: TurnStatus;
   /** Assistant text accumulated for the active turn (may be ""). */
   text: string;
+  /** Server user-message id; the inflight cache merges on this. */
+  userMessageId: string | null;
   /** Connection health, surfaced by StreamConnectingIndicator. */
   connection: TransportState;
   /** Optimistic user message not yet confirmed by the server. */
@@ -36,6 +38,7 @@ export class ChatStreamStore {
     turnId: null,
     status: "idle",
     text: "",
+    userMessageId: null,
     connection: "closed",
     pendingUser: null,
     lastEventSeq: 0,
@@ -92,21 +95,49 @@ export class ChatStreamStore {
       turnId: null,
       status: "optimistic",
       text: "",
+      userMessageId: null,
       pendingUser: { id: pendingId, content },
       lastEventSeq: 0,
     });
   }
 
-  /** Server ack (turn.queued with our turnId). */
-  ack(turnId: string): void {
-    this.commit({ turnId, status: this.snapshot.status === "optimistic"
-      ? "streaming" : this.snapshot.status, pendingUser: null });
+  /** Server ack (turn.queued with our turnId + user message id). */
+  ack(turnId: string, userMessageId: string | null = null): void {
+    this.commit({
+      turnId,
+      userMessageId,
+      status: this.snapshot.status === "optimistic"
+        ? "streaming" : this.snapshot.status,
+      pendingUser: null,
+    });
+  }
+
+  /** Restore the tail cache before the replay catches up (V05-23). */
+  restore(input: {
+    turnId: string;
+    userMessageId: string;
+    text: string;
+    seq: number;
+    status: "streaming" | "waiting_approval";
+  }): void {
+    this.commit({
+      turnId: input.turnId,
+      userMessageId: input.userMessageId || null,
+      text: input.text,
+      lastEventSeq: input.seq,
+      status: input.status,
+      pendingUser: null,
+      connection: "connecting",
+    });
   }
 
   /** Withdraw the optimistic bubble and restore the composer input. */
   rollback(): string | null {
     const content = this.snapshot.pendingUser?.content ?? null;
-    this.commit({ turnId: null, status: "idle", text: "", pendingUser: null });
+    this.commit({
+      turnId: null, status: "idle", text: "", userMessageId: null,
+      pendingUser: null,
+    });
     return content;
   }
 
@@ -168,7 +199,10 @@ export class ChatStreamStore {
   /** After finished: drop the turn so the next send starts clean. */
   resetToIdle(): void {
     this.flush();
-    this.commit({ turnId: null, status: "idle", text: "", pendingUser: null });
+    this.commit({
+      turnId: null, status: "idle", text: "", userMessageId: null,
+      pendingUser: null,
+    });
   }
 }
 

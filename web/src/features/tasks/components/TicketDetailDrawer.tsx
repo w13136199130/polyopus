@@ -1,5 +1,5 @@
 import { Button, Drawer, ErrorState, Loading } from "@/components/ui";
-import { useStopTicket, useTicketDetail } from "../api";
+import { useStopTicket, useTicketDetail, useTicketTimeline } from "../api";
 import { useState } from "react";
 import { Dialog } from "@/components/ui";
 import styles from "./TicketDetailDrawer.module.css";
@@ -12,6 +12,7 @@ interface Props {
 /** Right drawer: scope / budget / report + one-click stop with confirm. */
 export function TicketDetailDrawer({ ticketId, onClose }: Props) {
   const detail = useTicketDetail(ticketId);
+  const timeline = useTicketTimeline(ticketId);
   const stop = useStopTicket();
   const [confirming, setConfirming] = useState(false);
 
@@ -103,6 +104,25 @@ export function TicketDetailDrawer({ ticketId, onClose }: Props) {
                 </>
               ) : (
                 "暂无（等待执行，V05-07 接自动执行）"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>时间线</dt>
+            <dd>
+              {timeline.isLoading ? (
+                "载入…"
+              ) : timeline.isError ? (
+                "时间线加载失败"
+              ) : (
+                <ul className={styles.timeline}>
+                  {(timeline.data?.items ?? []).slice(-20).map((item) => (
+                    <li key={item.id} data-kind={item.kind}>
+                      <span>{item.title}</span>
+                      <time>{new Date(item.at).toLocaleTimeString()}</time>
+                    </li>
+                  ))}
+                </ul>
               )}
             </dd>
           </div>

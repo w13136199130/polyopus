@@ -1,6 +1,6 @@
 /**
- * Tasks data hooks (docs/49 §4.2): tickets list polls 3s; counts are a pure
- * client-side aggregate of the list until V05-22 ships GET /tickets/counts.
+ * Tasks data hooks (docs/49 §4.2): tickets list and server bucket counts poll
+ * 3s; the drawer polls detail + timeline.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +13,9 @@ export type BucketFilter = Bucket | "all";
 
 export const taskKeys = {
   tickets: ["tickets"] as const,
+  counts: ["ticket-counts"] as const,
   ticket: (id: string) => ["ticket", id] as const,
+  timeline: (id: string) => ["ticket-timeline", id] as const,
 };
 
 export function useTickets() {
@@ -21,6 +23,24 @@ export function useTickets() {
     queryKey: taskKeys.tickets,
     queryFn: tickets.list,
     refetchInterval: 3_000, // docs/49 §4.2
+  });
+}
+
+/** Server-side bucket counts (V05-22). */
+export function useTicketCounts() {
+  return useQuery({
+    queryKey: taskKeys.counts,
+    queryFn: tickets.counts,
+    refetchInterval: 3_000,
+  });
+}
+
+export function useTicketTimeline(ticketId: string | null) {
+  return useQuery({
+    queryKey: taskKeys.timeline(ticketId ?? "none"),
+    queryFn: () => tickets.timeline(ticketId as string),
+    enabled: ticketId !== null,
+    refetchInterval: 5_000,
   });
 }
 

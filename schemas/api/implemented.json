@@ -1,5 +1,5 @@
 {
-  "count": 35,
+  "count": 37,
   "ops": [
     {
       "method": "DELETE",
@@ -63,7 +63,15 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tickets/counts"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tickets/{ticket_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tickets/{ticket_id}/timeline"
     },
     {
       "method": "GET",

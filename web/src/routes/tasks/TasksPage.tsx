@@ -12,6 +12,7 @@ import {
   bucketCounts,
   inBucket,
   seedDemoTicket,
+  useTicketCounts,
   useTickets,
   type BucketFilter,
 } from "@/features/tasks/api";
@@ -33,6 +34,7 @@ export function TasksPage() {
   const scheduleOnly = params.get("kind") === "schedule";
 
   const ticketsQuery = useTickets();
+  const countsQuery = useTicketCounts();
   const attentionsQuery = useAttentions();
   const sourcesQuery = useSources();
   const [seeding, setSeeding] = useState(false);
@@ -41,12 +43,18 @@ export function TasksPage() {
   const scheduleIds = new Set(
     sources.filter((source) => source.kind === "schedule").map((source) => source.sourceId),
   );
-  const rows = inBucket(ticketsQuery.data?.items, filter).filter((row) => {
+  const filtered = (ticketsQuery.data?.items ?? []).filter((row) => {
     if (sourceParam && row.sourceId !== sourceParam) return false;
     if (scheduleOnly && (!row.sourceId || !scheduleIds.has(row.sourceId))) return false;
     return true;
   });
-  const counts = bucketCounts(rows);
+  const rows = inBucket(filtered, filter);
+  // Server counts are global; with a source/schedule filter we aggregate the
+  // filtered set locally so the tabs stay truthful.
+  const localCounts = bucketCounts(filtered);
+  const counts = sourceParam || scheduleOnly
+    ? localCounts
+    : (countsQuery.data ?? localCounts);
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(params);

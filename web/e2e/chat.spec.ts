@@ -90,3 +90,52 @@ test("chat: denying the write leaves no approval behind", async ({ page }) => {
     { timeout: 20_000 },
   );
 });
+
+test("chat: inflight cache paints after a refresh", async ({ page }) => {
+  await login(page);
+  await page.getByRole("button", { name: "＋ 新对话" }).click();
+  await page.waitForURL(/threadId=/);
+  const threadId = new URL(page.url()).searchParams.get("threadId")!;
+
+  await page.evaluate(
+    ({ key, entry }) => window.sessionStorage.setItem(key, JSON.stringify(entry)),
+    {
+      key: `poly:inflight:${threadId}`,
+      entry: {
+        threadId,
+        userMessageId: "msg_cached",
+        turnId: "tu_cached",
+        text: "刷新前的缓存尾部，不丢也不重",
+        seq: 42,
+        status: "streaming",
+        updatedAt: Date.now(),
+      },
+    },
+  );
+  await page.reload();
+  await expect(page.getByTestId("bubble-assistant").last()).toContainText(
+    "刷新前的缓存尾部",
+    { timeout: 20_000 },
+  );
+});
+
+test("chat: 5s offline recovers the pending approval", async ({ page, context }) => {
+  await login(page);
+  await page.getByRole("button", { name: "＋ 新对话" }).click();
+  await page.waitForURL(/threadId=/);
+
+  const box = page.getByLabel("消息输入框");
+  await box.fill("请用 fs.write 工具把内容 'offline-ok' 写入 offline.txt");
+  await box.press("Enter");
+
+  const card = page.getByTestId("approval-card");
+  await expect(card).toBeVisible({ timeout: 20_000 });
+
+  await context.setOffline(true);
+  await page.waitForTimeout(5_000);
+  await context.setOffline(false);
+
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByRole("button", { name: "批准" }).click();
+  await expect(card).toBeHidden({ timeout: 20_000 });
+});
