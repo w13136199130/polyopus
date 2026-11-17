@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from polyopus import __version__
 from polyopus.api.routers import (
     admin_audit,
+    admin_data_jobs,
     admin_users,
     attentions,
     auth,
@@ -55,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         stops: list[threading.Event] = []
         if effective.embedded_worker:
+            from polyopus.workers.data_jobs_loop import start_embedded as start_jobs
             from polyopus.workers.outbox_loop import start_embedded as start_outbox
             from polyopus.workers.scheduler_loop import start_embedded as start_scheduler
             from polyopus.workers.ticket_loop import start_embedded as start_tickets
@@ -64,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             stops.append(start_tickets(effective.resolved_db_path))
             stops.append(start_outbox(effective.resolved_db_path))
             stops.append(start_scheduler(effective.resolved_db_path))
+            stops.append(start_jobs(effective.resolved_db_path))
         try:
             yield
         finally:
@@ -84,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(cron_api.router, prefix="/api/v1")
     app.include_router(me_api.router, prefix="/api/v1")
     app.include_router(admin_users.router, prefix="/api/v1")
+    app.include_router(admin_data_jobs.router, prefix="/api/v1")
     app.include_router(roles_api.router, prefix="/api/v1")
     app.include_router(invites_api.router, prefix="/api/v1")
     app.include_router(quota_api.router, prefix="/api/v1")

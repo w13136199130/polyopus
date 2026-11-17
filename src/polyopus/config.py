@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://127.0.0.1:8000"
     # V05-18: instance-wide daily cost ceiling in micros; 0 disables it.
     daily_cost_budget_micros: int = 0
+    # V1-06: audit retention (docs/31 says 12 months); 0 keeps forever.
+    audit_retention_days: int = 365
 
     def resolved_db_path(self) -> Path:
         """Absolute DB path; `db_path` wins over `data_dir`."""

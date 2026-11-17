@@ -12,6 +12,7 @@ gate + assessment rows are reachable from the ticket they admitted.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import re
@@ -188,3 +189,55 @@ def export_csv(items: list[dict[str, Any]]) -> str:
             }
         )
     return buffer.getvalue()
+
+
+def export_jsonl(items: list[dict[str, Any]]) -> str:
+    """One JSON object per line; same filters/columns as `export_csv`."""
+    return "".join(
+        json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n"
+        for item in items
+    )
+
+
+def anonymize_actor(
+    conn: sqlite3.Connection, *, tenant_id: str, actor_id: str,
+) -> int:
+    """Replace a deleted user's actor id, keeping the audit row.
+
+    A stable hash keeps rows correlatable across exports without storing the
+    user id. The audit trail itself is never deleted by an account deletion.
+    """
+    replacement = "deleted:" + hashlib.sha256(
+        f"{tenant_id}:{actor_id}".encode()
+    ).hexdigest()[:12]
+    cur = conn.execute(
+        "UPDATE audit_log SET actor_id = ? WHERE tenant_id = ? AND actor_id = ? "
+        "AND actor_id NOT LIKE 'deleted:%'",
+        (replacement, tenant_id, actor_id),
+    )
+    conn.commit()
+    return int(cur.rowcount)
+
+
+def anonymize_tenant(conn: sqlite3.Connection, tenant_id: str) -> int:
+    """Erase tenant PII from audit rows while keeping the audit trail."""
+    cur = conn.execute(
+        "UPDATE audit_log SET actor_id = NULL, ip = NULL, detail_json = '{}' "
+        "WHERE tenant_id = ?",
+        (tenant_id,),
+    )
+    conn.commit()
+    return int(cur.rowcount)
+
+
+def purge_expired(
+    conn: sqlite3.Connection, *, retention_days: int, now: int | None = None,
+) -> int:
+    """Apply the configured audit retention window. 0 keeps forever."""
+    if retention_days <= 0:
+        return 0
+    cutoff = (now or int(time.time())) - retention_days * 86400
+    cur = conn.execute("DELETE FROM audit_log WHERE created_at < ?", (cutoff,))
+    conn.commit()
+    return int(cur.rowcount)
+

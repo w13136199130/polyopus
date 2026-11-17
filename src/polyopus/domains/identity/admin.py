@@ -167,6 +167,8 @@ def delete_user(
         "AND revoked_at IS NULL", (now, tenant_id, user_id),
     )
     conn.commit()
+    # V1-06: keep the audit trail, drop the deleted user's identity.
+    audit.anonymize_actor(conn, tenant_id=tenant_id, actor_id=user_id)
     _audit(conn, action="user.delete", tenant_id=tenant_id, actor=actor_id,
            resource_id=user_id, detail={"username": str(row["username"])})
 

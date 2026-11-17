@@ -60,7 +60,7 @@ def list_audit(
 
 @router.get("/export")
 def export_audit(
-    fmt: Literal["csv", "json"] = Query(default="csv", alias="format"),
+    fmt: Literal["csv", "json", "jsonl"] = Query(default="csv", alias="format"),
     actor_id: str | None = Query(default=None, alias="actorId"),
     action: str | None = Query(default=None),
     result: str | None = Query(default=None),
@@ -78,6 +78,12 @@ def export_audit(
     )
     if fmt == "json":
         return JSONResponse({"items": items, "count": len(items)})
+    if fmt == "jsonl":
+        return PlainTextResponse(
+            service.export_jsonl(items),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": 'attachment; filename="audit.jsonl"'},
+        )
     return PlainTextResponse(
         service.export_csv(items),
         media_type="text/csv",

@@ -280,6 +280,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
     import threading
 
     from polyopus.platform.events.store import EventStore  # noqa: F401 (warm import)
+    from polyopus.workers.data_jobs_loop import run_data_jobs_loop
     from polyopus.workers.outbox_loop import run_outbox_loop
     from polyopus.workers.ticket_loop import run_ticket_loop
     from polyopus.workers.worker_loop import run_worker_loop
@@ -289,7 +290,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
     settings = load_settings()
     stop = threading.Event()
     db_path = settings.resolved_db_path
-    print(f"worker: polling queued turns + tickets + outbox on {db_path()}")
+    print(f"worker: polling queued turns + tickets + outbox + data jobs on {db_path()}")
 
     turn_thread = threading.Thread(
         target=run_worker_loop, args=(db_path,),
@@ -313,7 +314,15 @@ def cmd_worker(args: argparse.Namespace) -> int:
         kwargs={"stop": stop},
         name="scheduler-worker", daemon=True,
     )
-    crew = (turn_thread, ticket_thread, outbox_thread, scheduler_thread)
+    data_jobs_thread = threading.Thread(
+        target=run_data_jobs_loop, args=(db_path,),
+        kwargs={"stop": stop},
+        name="data-jobs-worker", daemon=True,
+    )
+    crew = (
+        turn_thread, ticket_thread, outbox_thread, scheduler_thread,
+        data_jobs_thread,
+    )
     for thread in crew:
         thread.start()
     try:

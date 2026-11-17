@@ -1,6 +1,10 @@
 {
-  "count": 57,
+  "count": 61,
   "ops": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/tenants/{tenant_id}"
+    },
     {
       "method": "DELETE",
       "path": "/api/v1/auth/mfa/{method}"
@@ -32,6 +36,10 @@
     {
       "method": "GET",
       "path": "/api/v1/admin/audit/export"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/data-jobs/{job_id}"
     },
     {
       "method": "GET",
@@ -68,6 +76,10 @@
     {
       "method": "GET",
       "path": "/api/v1/me/api-keys"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/export/{job_id}"
     },
     {
       "method": "GET",
@@ -184,6 +196,10 @@
     {
       "method": "POST",
       "path": "/api/v1/me/api-keys"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/export"
     },
     {
       "method": "POST",

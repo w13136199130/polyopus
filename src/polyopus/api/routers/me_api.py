@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from sqlite3 import Connection
+from typing import Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from polyopus.api.deps import current_user, get_db, require_step_up
+from polyopus.domains.data_jobs import service as data_jobs
 from polyopus.domains.identity import apikey
 from polyopus.domains.identity.service import Session, User
 
@@ -26,6 +28,38 @@ class CreateKeyBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     scopes: list[str] = Field(default_factory=lambda: ["chat:read"])
     expires_in_seconds: int | None = Field(default=None, gt=0)
+
+
+class ExportBody(BaseModel):
+    fmt: Literal["jsonl", "json"] = Field(
+        default="jsonl", validation_alias=AliasChoices("format", "fmt")
+    )
+    include_artifacts: bool = Field(
+        default=True, validation_alias=AliasChoices("includeArtifacts", "include_artifacts")
+    )
+
+
+@router.post("/export", status_code=202)
+def create_export(
+    body: ExportBody,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return data_jobs.create_export(
+        conn, tenant_id=user.tenant_id, user_id=user.user_id,
+        fmt=body.fmt, include_artifacts=body.include_artifacts,
+    )
+
+
+@router.get("/export/{job_id}")
+def get_export(
+    job_id: str,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return data_jobs.get_job(
+        conn, tenant_id=user.tenant_id, job_id=job_id, user_id=user.user_id
+    )
 
 
 @router.get("/api-keys")
