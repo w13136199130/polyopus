@@ -25,6 +25,9 @@ import type {
   AdminUserRow,
   InviteListResponse,
   InviteRow,
+  KnowledgeBaseRow,
+  KnowledgeDocRow,
+  KnowledgeSearchResult,
   RoleRow,
   SourceListResponse,
   SourceView,
@@ -322,6 +325,44 @@ export const tools = {
   ),
 };
 
+export const knowledge = {
+  listKbs: op("GET", "/knowledge-bases", () =>
+    apiFetch<{ items: KnowledgeBaseRow[] }>("/knowledge-bases")),
+  createKb: op("POST", "/knowledge-bases", (body: {
+    name: string; description?: string;
+  }) => apiFetch<KnowledgeBaseRow>("/knowledge-bases", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  removeKb: op("DELETE", "/knowledge-bases/{kb_id}", (kbId: string) =>
+    apiFetch<{ ok: boolean; kbId: string }>(
+      `/knowledge-bases/${encodeURIComponent(kbId)}`, { method: "DELETE" },
+    )),
+  docs: op("GET", "/knowledge-bases/{kb_id}/docs", (kbId: string) =>
+    apiFetch<{ items: KnowledgeDocRow[] }>(
+      `/knowledge-bases/${encodeURIComponent(kbId)}/docs`,
+    )),
+  upload: op("POST", "/knowledge-bases/{kb_id}/docs", (
+    kbId: string, body: { filename: string; content: string },
+  ) => apiFetch<KnowledgeDocRow>(
+    `/knowledge-bases/${encodeURIComponent(kbId)}/docs`,
+    { method: "POST", body: JSON.stringify(body) },
+  )),
+  removeDoc: op("DELETE", "/knowledge-docs/{doc_id}", (docId: string) =>
+    apiFetch<{ ok: boolean; docId: string }>(
+      `/knowledge-docs/${encodeURIComponent(docId)}`, { method: "DELETE" },
+    )),
+  preview: op("GET", "/knowledge-docs/{doc_id}/preview", (docId: string) =>
+    apiFetch<{ doc: KnowledgeDocRow; chunks: Array<{
+      idx: number; heading: string | null; content: string;
+    }> }>(`/knowledge-docs/${encodeURIComponent(docId)}/preview`)),
+  search: op("POST", "/knowledge-bases/{kb_id}/search", (
+    kbId: string, query: string,
+  ) => apiFetch<KnowledgeSearchResult>(
+    `/knowledge-bases/${encodeURIComponent(kbId)}/search`,
+    { method: "POST", body: JSON.stringify({ query }) },
+  )),
+};
+
 export const agents = {
   list: op("GET", "/agents", (params?: { status?: string; q?: string }) => {
     const query = new URLSearchParams();
@@ -384,5 +425,5 @@ export const notifications = {
 
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
-  users, roles, invites, notifications, agents, tools,
+  users, roles, invites, notifications, agents, tools, knowledge,
 ];

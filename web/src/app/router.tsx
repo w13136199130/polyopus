@@ -8,6 +8,7 @@ import { ChatPage } from "@/routes/chat/ChatPage";
 import { AdminUsersPage } from "@/routes/admin/AdminUsersPage";
 import { ConnectionsPage } from "@/routes/connections/ConnectionsPage";
 import { ExtensionsPage } from "@/routes/extensions/ExtensionsPage";
+import { KnowledgePage } from "@/routes/knowledge/KnowledgePage";
 import { KitPage } from "@/routes/kit/KitPage";
 import { TasksPage } from "@/routes/tasks/TasksPage";
 import { UsagePage } from "@/routes/usage/UsagePage";
@@ -36,7 +37,7 @@ export const appRoutes: RouteObject[] = [
       { path: "tasks", element: <RequirePermission permission="ticket:read"><TasksPage /></RequirePermission> },
       { path: "usage", element: <RequirePermission permission="usage:read"><UsagePage /></RequirePermission> },
       { path: "agents", element: <RequirePermission permission="agent:read"><AgentsPage /></RequirePermission> },
-      { path: "knowledge", element: <ComingSoonPage title="知识" milestone="v1.0" /> },
+      { path: "knowledge", element: <RequirePermission permission="knowledge:read"><KnowledgePage /></RequirePermission> },
       { path: "connections", element: <RequirePermission permission="source:read"><ConnectionsPage /></RequirePermission> },
       { path: "extensions", element: <RequirePermission permission="extension:read"><ExtensionsPage /></RequirePermission> },
       { path: "workbench", element: <ComingSoonPage title="工作台" milestone="v1.0" /> },

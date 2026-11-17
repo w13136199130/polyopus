@@ -1,5 +1,5 @@
 {
-  "count": 84,
+  "count": 96,
   "ops": [
     {
       "method": "DELETE",
@@ -24,6 +24,14 @@
     {
       "method": "DELETE",
       "path": "/api/v1/invites/{invite_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/knowledge-bases/{kb_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/knowledge-docs/{doc_id}"
     },
     {
       "method": "DELETE",
@@ -104,6 +112,22 @@
     {
       "method": "GET",
       "path": "/api/v1/invites/{token}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/knowledge-bases"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/knowledge-bases/{kb_id}/docs"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/knowledge-docs/{doc_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/knowledge-docs/{doc_id}/preview"
     },
     {
       "method": "GET",
@@ -195,6 +219,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/v1/knowledge-bases/{kb_id}"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/v1/tools/{tool_key}"
     },
     {
@@ -272,6 +300,26 @@
     {
       "method": "POST",
       "path": "/api/v1/invites/accept"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/knowledge-bases"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/knowledge-bases/{kb_id}/docs"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/knowledge-bases/{kb_id}/reindex-all"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/knowledge-bases/{kb_id}/search"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/knowledge-docs/{doc_id}/reindex"
     },
     {
       "method": "POST",

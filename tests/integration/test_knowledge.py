@@ -9,9 +9,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from polyopus.api.app import create_app
+from polyopus.config import Settings
 from polyopus.domains import knowledge as kb
 from polyopus.platform.db import migrator as m
+from polyopus.platform.db.seed import ensure_admin
 from polyopus.platform.errors import AppError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -178,3 +182,53 @@ def test_golden_set_recall_at_5(conn: sqlite3.Connection) -> None:
             misses.append(f"{query} -> expected {expected}")
     recall = hits / len(GOLDEN)
     assert recall >= 0.8, f"recall@5 {recall:.2f} < 0.80; misses: {misses}"
+
+
+def test_knowledge_api_crud_upload_preview_search(tmp_path: Path) -> None:
+    db = tmp_path / "kb-api.db"
+    conn = m.connect(db)
+    m.apply(conn, m.discover(MIGRATIONS))
+    ensure_admin(conn, password="p")
+    conn.close()
+    settings = Settings(
+        db_path=db, secret_key="s", access_ttl_seconds=3600,
+        session_ttl_seconds=86400, embedded_worker=False,
+    )
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/api/v1/auth/login", json={
+            "username": "admin", "password": "p",
+        }).status_code == 200
+        created = client.post("/api/v1/knowledge-bases", json={
+            "name": "运维库", "description": "api test",
+        })
+        assert created.status_code == 201, created.text
+        kb_id = created.json()["kbId"]
+        assert client.get("/api/v1/knowledge-bases").json()["items"][0]["kbId"] == kb_id
+
+        upload = client.post(f"/api/v1/knowledge-bases/{kb_id}/docs", json={
+            "filename": "ops.md",
+            "content": "# 运维\n## 备份\n每天备份，保留七份。\n",
+        })
+        assert upload.status_code == 201, upload.text
+        doc_id = upload.json()["docId"]
+        docs = client.get(f"/api/v1/knowledge-bases/{kb_id}/docs").json()["items"]
+        assert docs[0]["docId"] == doc_id
+
+        preview = client.get(f"/api/v1/knowledge-docs/{doc_id}/preview")
+        assert preview.status_code == 200, preview.text
+        assert any(
+            "备份" in str(chunk["heading"])
+            for chunk in preview.json()["chunks"]
+        )
+
+        search = client.post(f"/api/v1/knowledge-bases/{kb_id}/search", json={
+            "query": "备份保留几份",
+        })
+        assert search.status_code == 200, search.text
+        assert search.json()["status"] == "ok"
+        assert search.json()["hits"][0]["doc"] == "ops.md"
+
+        assert client.delete(f"/api/v1/knowledge-docs/{doc_id}").status_code == 200
+        assert client.get(f"/api/v1/knowledge-bases/{kb_id}/docs").json()["items"] == []
+        assert client.delete(f"/api/v1/knowledge-bases/{kb_id}").status_code == 200
+        assert client.get("/api/v1/knowledge-bases").json()["items"] == []

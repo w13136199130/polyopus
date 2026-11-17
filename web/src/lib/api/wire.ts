@@ -309,3 +309,42 @@ export interface AgentToolBinding {
   enabled: boolean;
   config?: Record<string, unknown>;
 }
+
+export interface KnowledgeBaseRow {
+  kbId: string;
+  name: string;
+  description: string | null;
+  status: string;
+  docCount: number;
+  chunkCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface KnowledgeDocRow {
+  docId: string;
+  kbId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  status: string;
+  chunkCount: number;
+  createdAt: number;
+}
+
+export interface KnowledgeHit {
+  chunkId: string;
+  doc: string;
+  heading: string | null;
+  span: [number, number];
+  score: number;
+  content: string;
+}
+
+export interface KnowledgeSearchResult {
+  status: "ok" | "abstain";
+  kb?: { kbId: string; name: string };
+  hits: KnowledgeHit[];
+  reason?: string;
+}
