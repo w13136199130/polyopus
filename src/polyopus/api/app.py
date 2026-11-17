@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from polyopus import __version__
 from polyopus.api.routers import (
     admin_audit,
+    admin_backup,
     admin_data_jobs,
     admin_users,
     attentions,
@@ -88,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(me_api.router, prefix="/api/v1")
     app.include_router(admin_users.router, prefix="/api/v1")
     app.include_router(admin_data_jobs.router, prefix="/api/v1")
+    app.include_router(admin_backup.router, prefix="/api/v1")
     app.include_router(roles_api.router, prefix="/api/v1")
     app.include_router(invites_api.router, prefix="/api/v1")
     app.include_router(quota_api.router, prefix="/api/v1")

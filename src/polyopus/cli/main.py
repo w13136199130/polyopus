@@ -398,6 +398,55 @@ def cmd_eval(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def cmd_backup(args: argparse.Namespace) -> int:
+    """`poly backup`: SQLite snapshot + workspace/artifacts manifest."""
+    import json as _json
+
+    from polyopus.domains.backup import service as backup
+    from polyopus.platform.db import migrator as m
+
+    settings = load_settings()
+    conn = m.connect(settings.resolved_db_path())
+    try:
+        m.apply(conn, m.discover(MIGRATIONS_DIR))
+        wanted = {item.strip() for item in args.include.split(",") if item.strip()}
+        includes = {
+            "db": True,
+            "workspace": "workspace" in wanted,
+            "artifacts": "artifacts" in wanted,
+        }
+        result = backup.create_backup(
+            conn, db_path=settings.resolved_db_path(),
+            data_dir=Path(settings.data_dir),
+            workspace_dir=Path(settings.workspace_dir), includes=includes,
+            auto=args.auto,
+        )
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    finally:
+        conn.close()
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    """`poly restore <backup_id>`: checksum + schema check, then DB restore."""
+    import json as _json
+
+    from polyopus.domains.backup import service as backup
+    from polyopus.platform.db import migrator as m
+
+    settings = load_settings()
+    conn = m.connect(settings.resolved_db_path())
+    try:
+        result = backup.restore_backup(
+            conn, args.backup_id, workspace_dir=Path(settings.workspace_dir),
+            data_dir=Path(settings.data_dir),
+        )
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    finally:
+        conn.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poly", description="PolyOpus CLI")
     parser.add_argument("--version", action="version", version=f"poly {__version__}")
@@ -450,6 +499,16 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--once", type=int, default=None,
                         help="process at most N turns then exit")
     worker.set_defaults(func=cmd_worker)
+
+    backup = sub.add_parser("backup", help="create a consistent backup")
+    backup.add_argument("--include", default="db,workspace,artifacts",
+                        help="comma list: db,workspace,artifacts")
+    backup.add_argument("--auto", action="store_true", help="mark as auto backup")
+    backup.set_defaults(func=cmd_backup)
+
+    restore = sub.add_parser("restore", help="restore a backup by id")
+    restore.add_argument("backup_id", help="bk_... id from `poly backup`")
+    restore.set_defaults(func=cmd_restore)
 
     return parser
 

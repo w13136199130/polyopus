@@ -1,6 +1,10 @@
 {
-  "count": 61,
+  "count": 70,
   "ops": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/backup/{backup_id}"
+    },
     {
       "method": "DELETE",
       "path": "/api/v1/admin/tenants/{tenant_id}"
@@ -36,6 +40,18 @@
     {
       "method": "GET",
       "path": "/api/v1/admin/audit/export"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/backup"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/backup/auto"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/backup/status"
     },
     {
       "method": "GET",
@@ -151,6 +167,22 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/admin/backup"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/backup/auto/run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/backup/import"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/backup/{backup_id}/restore"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/attentions/answer-batch"
     },
     {
@@ -244,6 +276,10 @@
     {
       "method": "POST",
       "path": "/api/v1/webhooks/{source_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/backup/auto"
     }
   ]
 }
