@@ -8,7 +8,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from polyopus.api.deps import current_user, get_db
+from polyopus.api.deps import get_db, require_permission
 from polyopus.domains.audit import service
 from polyopus.domains.identity.service import User
 
@@ -47,7 +47,7 @@ def list_audit(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     order: Literal["asc", "desc"] = Query(default="desc"),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("audit:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     items = _items(
@@ -68,7 +68,7 @@ def export_audit(
     resource_type: str | None = Query(default=None, alias="resourceType"),
     resource_id: str | None = Query(default=None, alias="resourceId"),
     order: Literal["asc", "desc"] = Query(default="desc"),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("audit:read")),
     conn: Connection = Depends(get_db),
 ) -> Response:
     items = _items(

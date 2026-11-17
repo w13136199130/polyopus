@@ -11,7 +11,7 @@ from sqlite3 import Connection
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from polyopus.api.deps import current_user, get_db
+from polyopus.api.deps import get_db, require_permission
 from polyopus.domains.identity.service import User
 from polyopus.domains.intake import schedule as schedule_svc
 from polyopus.platform.errors import AppError
@@ -34,7 +34,7 @@ class PatchCronBody(BaseModel):
 
 @router.get("/cron-jobs")
 def list_cron_jobs(
-    user: User = Depends(current_user), conn: Connection = Depends(get_db)
+    user: User = Depends(require_permission("cron:read")), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
     return {"items": schedule_svc.list_jobs(conn, user.tenant_id)}
 
@@ -42,7 +42,7 @@ def list_cron_jobs(
 @router.post("/cron-jobs", status_code=201)
 def create_cron_job(
     body: CreateCronBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("cron:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     # Validate before creating the source so a bad schedule leaves no orphan.
@@ -72,7 +72,7 @@ def create_cron_job(
 @router.get("/cron-jobs/{job_id}")
 def get_cron_job(
     job_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("cron:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     view = schedule_svc.job(conn, job_id, user.tenant_id)
@@ -85,7 +85,7 @@ def get_cron_job(
 def patch_cron_job(
     job_id: str,
     body: PatchCronBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("cron:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     view = schedule_svc.job(conn, job_id, user.tenant_id)
@@ -101,7 +101,7 @@ def patch_cron_job(
 @router.delete("/cron-jobs/{job_id}")
 def delete_cron_job(
     job_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("cron:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     schedule_svc.delete_job(conn, job_id, user.tenant_id)
@@ -111,7 +111,7 @@ def delete_cron_job(
 @router.get("/cron-jobs/{job_id}/runs")
 def cron_job_runs(
     job_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("cron:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     if schedule_svc.job(conn, job_id, user.tenant_id) is None:

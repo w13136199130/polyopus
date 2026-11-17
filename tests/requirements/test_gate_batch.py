@@ -83,7 +83,11 @@ def test_business_tables_carry_tenant_id(env: tuple[Path, TestClient]) -> None:
     ]
     # global by design in docs/31: migration ledger, price catalog, model
     # catalog, and the KB ACL join (tenancy flows through kb_id)
-    exempt = {"schema_migrations", "model_prices", "models", "knowledge_acl"}
+    exempt = {
+        "schema_migrations", "model_prices", "models", "knowledge_acl",
+        # roles.user_roles: tenancy flows through the role/user join (docs/31)
+        "user_roles",
+    }
     missing = []
     for table in tables:
         if table in exempt:

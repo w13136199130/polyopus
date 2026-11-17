@@ -21,6 +21,8 @@ class User:
     username: str
     display_name: str | None
     is_owner: bool
+    roles: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

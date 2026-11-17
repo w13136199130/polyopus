@@ -1,6 +1,7 @@
 import { NavLink } from "react-router";
 import { NAV_BOTTOM, NAV_PRIMARY, type NavItem } from "@/app/nav";
 import { useSession } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { toggleTheme } from "@/lib/theme";
 import icons, { type IconName } from "./icons";
 import styles from "./Sidebar.module.css";
@@ -27,12 +28,12 @@ export function Sidebar() {
         <span className={styles.brandName}>PolyOpus</span>
       </div>
       <div className={styles.group}>
-        {NAV_PRIMARY.map((item) => (
+        {NAV_PRIMARY.filter((item) => !item.permission || hasPermission(user, item.permission)).map((item) => (
           <NavButton key={item.path} item={item} />
         ))}
       </div>
       <div className={styles.bottom}>
-        {NAV_BOTTOM.map((item) => (
+        {NAV_BOTTOM.filter((item) => !item.permission || hasPermission(user, item.permission)).map((item) => (
           <NavButton key={item.path} item={item} />
         ))}
         <div className={styles.userRow}>

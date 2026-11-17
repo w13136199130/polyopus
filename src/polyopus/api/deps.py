@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from sqlite3 import Connection
 
 from fastapi import Depends, Request
 
+from polyopus.domains.identity import rbac
 from polyopus.domains.identity.service import Session, User, load_session
 from polyopus.platform.db.migrator import connect
 from polyopus.platform.errors import AppError
@@ -56,8 +57,25 @@ def current_session(
     return load_session(conn, str(claims.get("sid", "")))
 
 
-def current_user(session: Session = Depends(current_session)) -> User:
-    return session.user
+def current_user(
+    session: Session = Depends(current_session),
+    conn: Connection = Depends(get_db),
+) -> User:
+    # Roles are lazily materialized on first use so v0.5 users get a role
+    # without a data migration.
+    return rbac.with_permissions(conn, session.user)
+
+
+def require_permission(permission: str) -> Callable[..., User]:
+    def dependency(user: User = Depends(current_user)) -> User:
+        if not rbac.has_permission(user, permission):
+            raise AppError(
+                "FORBIDDEN",
+                details={"permission": permission, "userId": user.user_id},
+            )
+        return user
+
+    return dependency
 
 
 def current_tenant(user: User = Depends(current_user)) -> TenantContext:

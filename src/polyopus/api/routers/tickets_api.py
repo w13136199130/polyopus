@@ -9,7 +9,7 @@ from sqlite3 import Connection
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from polyopus.api.deps import current_user, get_db, get_store
+from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.identity.service import User
 from polyopus.domains.tickets import service
 from polyopus.platform.errors import AppError
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 @router.get("")
 def list_tickets(
-    user: User = Depends(current_user), conn: Connection = Depends(get_db)
+    user: User = Depends(require_permission("ticket:read")), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
     rows = conn.execute(
         "SELECT ticket_id, title, state, bucket, strength, source_id, "
@@ -47,7 +47,7 @@ def list_tickets(
 
 @router.get("/counts")
 def ticket_counts(
-    user: User = Depends(current_user), conn: Connection = Depends(get_db)
+    user: User = Depends(require_permission("ticket:read")), conn: Connection = Depends(get_db)
 ) -> dict[str, int]:
     rows = conn.execute(
         "SELECT bucket, count(*) AS n FROM tickets WHERE tenant_id = ? "
@@ -109,7 +109,7 @@ def ticket_timeline(
     ticket_id: str,
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = Query(default=None),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("ticket:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     """Whitelisted, ascending ticket history (docs/48 V05-22)."""
@@ -190,7 +190,7 @@ def ticket_timeline(
 @router.get("/{ticket_id}")
 def get_ticket(
     ticket_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("ticket:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     row = conn.execute(
@@ -227,7 +227,7 @@ def get_ticket(
 @router.post("/{ticket_id}/stop")
 def stop_ticket(
     ticket_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("ticket:write")),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:
@@ -244,7 +244,7 @@ class HumanMessageBody(BaseModel):
 def post_human_message(
     ticket_id: str,
     body: HumanMessageBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("ticket:write")),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:
@@ -260,7 +260,7 @@ def post_human_message(
 
 @router.post("/watchdog/run")
 def run_watchdog(
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("ticket:write")),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:

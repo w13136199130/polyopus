@@ -11,7 +11,7 @@ from typing import cast
 from fastapi import APIRouter, Depends, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from polyopus.api.deps import current_user, get_db, get_store
+from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.attention import service as attention
 from polyopus.domains.identity.service import User
 from polyopus.platform.errors import AppError
@@ -143,7 +143,7 @@ def _payload(row: sqlite3.Row) -> dict[str, object]:
 
 @router.get("")
 def list_attentions(
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("attention:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     rows = conn.execute(
@@ -159,7 +159,7 @@ def answer(
     attention_id: str,
     body: AnswerBody,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("attention:write")),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:
@@ -173,7 +173,7 @@ def answer(
 def answer_batch(
     body: BatchAnswerBody,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("attention:write")),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:

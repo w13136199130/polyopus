@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, Body, Depends, Header, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from polyopus.api.deps import current_user, get_db, get_store
+from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.identity.service import User
 from polyopus.domains.intake import service
 from polyopus.platform.errors import AppError
@@ -106,7 +106,7 @@ def _view(source_id: str, name: str, status: str) -> dict[str, str]:
 def create_source(
     body: CreateSourceBody,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("source:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     source_id = "src_" + secrets.token_hex(8)
@@ -155,7 +155,7 @@ def create_source(
 
 @router.get("/sources")
 def list_sources(
-    user: User = Depends(current_user), conn: Connection = Depends(get_db)
+    user: User = Depends(require_permission("source:read")), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
     from polyopus.domains.intake import schedule as schedule_svc
     from polyopus.domains.intake import service as intake
@@ -191,7 +191,7 @@ def list_sources(
 @router.post("/sources/{source_id}/pause")
 def pause_source(
     source_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("source:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return _set_source_status(conn, user.tenant_id, source_id, "paused")
@@ -200,7 +200,7 @@ def pause_source(
 @router.post("/sources/{source_id}/resume")
 def resume_source(
     source_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("source:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return _set_source_status(conn, user.tenant_id, source_id, "active")
@@ -209,7 +209,7 @@ def resume_source(
 @router.delete("/sources/{source_id}")
 def delete_source(
     source_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("source:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     row = conn.execute(

@@ -7,7 +7,7 @@ from sqlite3 import Connection
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 
-from polyopus.api.deps import current_user, get_db
+from polyopus.api.deps import get_db, require_permission
 from polyopus.domains.identity.service import User
 from polyopus.domains.usage import service
 
@@ -19,7 +19,7 @@ def usage_summary(
     window: str = Query(default="day"),
     as_user: str | None = Query(default=None, alias="asUser"),
     agent_id: str | None = Query(default=None, alias="agentId"),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("usage:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return service.summary(
@@ -33,7 +33,7 @@ def usage_export(
     window: str = Query(default="day"),
     as_user: str | None = Query(default=None, alias="asUser"),
     agent_id: str | None = Query(default=None, alias="agentId"),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("usage:read")),
     conn: Connection = Depends(get_db),
 ) -> PlainTextResponse:
     data = service.summary(

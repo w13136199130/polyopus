@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from polyopus.api.deps import COOKIE_NAME, current_session, current_user, get_db
+from polyopus.domains.identity import rbac
 from polyopus.domains.identity.service import (
     Session,
     User,
@@ -33,6 +34,8 @@ def _user_payload(user: User) -> dict[str, object]:
         "username": user.username,
         "displayName": user.display_name,
         "isOwner": user.is_owner,
+        "roles": list(user.roles),
+        "permissions": list(user.permissions),
     }
 
 
@@ -44,9 +47,12 @@ def login(
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     settings = request.app.state.settings
-    user = authenticate(
-        conn, body.username, body.password,
-        tenant_id=body.tenant or "default",
+    user = rbac.with_permissions(
+        conn,
+        authenticate(
+            conn, body.username, body.password,
+            tenant_id=body.tenant or "default",
+        ),
     )
     session_id = create_session(
         conn,

@@ -18,6 +18,8 @@ export interface SessionUser {
   username: string;
   displayName: string;
   isOwner: boolean;
+  roles?: string[];
+  permissions?: string[];
 }
 
 export interface LoginResponse {

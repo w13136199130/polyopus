@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from polyopus.api.deps import current_user, get_db, get_store
+from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.conversations import service
 from polyopus.domains.identity.service import User
 from polyopus.platform.db.migrator import connect
@@ -47,7 +47,7 @@ def _thread_payload(thread: service.Thread) -> dict[str, object]:
 
 @router.get("")
 def list_threads(
-    user: User = Depends(current_user), conn: Connection = Depends(get_db)
+    user: User = Depends(require_permission("chat:read")), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
     items = service.list_threads(conn, tenant_id=user.tenant_id, owner_id=user.user_id)
     return {"items": [_thread_payload(t) for t in items]}
@@ -56,7 +56,7 @@ def list_threads(
 @router.post("", status_code=201)
 def create_thread(
     body: CreateThreadBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("chat:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     thread = service.create_thread(
@@ -68,7 +68,7 @@ def create_thread(
 @router.get("/{thread_id}/messages")
 def list_messages(
     thread_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("chat:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     service.get_thread(
@@ -83,7 +83,7 @@ def post_turn(
     body: PostTurnBody,
     request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("chat:write")),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:
@@ -105,7 +105,7 @@ def replay_events(
     request: Request,
     after_seq: int = Query(default=0, alias="after_seq", ge=0),
     follow: bool = Query(default=False),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("chat:read")),
     conn: Connection = Depends(get_db),
 ) -> StreamingResponse:
     service.get_thread(

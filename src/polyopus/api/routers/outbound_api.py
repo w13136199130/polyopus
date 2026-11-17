@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from polyopus.api.deps import current_user, get_db
+from polyopus.api.deps import get_db, require_permission
 from polyopus.domains.identity.service import User
 from polyopus.domains.outbound import service
 
@@ -29,7 +29,7 @@ def list_outbox(
     status: Literal["pending", "sent", "failed"] | None = None,
     topic: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("source:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return {"items": service.list_outbox(
@@ -41,7 +41,7 @@ def list_outbox(
 def test_reply(
     source_id: str,
     body: TestReplyBody | None = None,
-    user: User = Depends(current_user),
+    user: User = Depends(require_permission("source:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     """Synchronous single-shot probe of the callback: same HMAC headers as

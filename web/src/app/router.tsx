@@ -9,6 +9,7 @@ import { KitPage } from "@/routes/kit/KitPage";
 import { TasksPage } from "@/routes/tasks/TasksPage";
 import { UsagePage } from "@/routes/usage/UsagePage";
 import { RouteError } from "./route-error";
+import { RequirePermission } from "@/routes/RequirePermission";
 
 /**
  * v0.5 ships three real pages (chat/tasks/usage, filled in by V05-03..05);
@@ -28,12 +29,12 @@ export const appRoutes: RouteObject[] = [
     errorElement: <RouteError />,
     children: [
       { index: true, element: <Navigate to="/chat" replace /> },
-      { path: "chat", element: <ChatPage /> },
-      { path: "tasks", element: <TasksPage /> },
-      { path: "usage", element: <UsagePage /> },
+      { path: "chat", element: <RequirePermission permission="chat:read"><ChatPage /></RequirePermission> },
+      { path: "tasks", element: <RequirePermission permission="ticket:read"><TasksPage /></RequirePermission> },
+      { path: "usage", element: <RequirePermission permission="usage:read"><UsagePage /></RequirePermission> },
       { path: "agents", element: <ComingSoonPage title="专家" milestone="v1.0" /> },
       { path: "knowledge", element: <ComingSoonPage title="知识" milestone="v1.0" /> },
-      { path: "connections", element: <ConnectionsPage /> },
+      { path: "connections", element: <RequirePermission permission="source:read"><ConnectionsPage /></RequirePermission> },
       { path: "extensions", element: <ComingSoonPage title="扩展" milestone="v1.0" /> },
       { path: "workbench", element: <ComingSoonPage title="工作台" milestone="v1.0" /> },
       { path: "settings", element: <ComingSoonPage title="设置" milestone="v1.0" /> },
