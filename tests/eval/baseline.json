@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "description": "Deterministic v1.0 eval baseline; -3% regression blocks CI.",
+  "maxRegression": 0.03,
+  "suites": {
+    "tool_selection": 1.0,
+    "rag": 1.0,
+    "memory": 1.0,
+    "injection": 1.0
+  }
+}

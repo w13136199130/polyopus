@@ -380,8 +380,16 @@ def cmd_policy(args: argparse.Namespace) -> int:
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
-    """`poly eval --dry-run --source <id>` (V05-13): judge recent triggers,
-    write dispositions + evals, never open tickets."""
+    """`poly eval --gate` (V1-17) or the V05-13 dry-run."""
+    if args.gate:
+        from polyopus.eval import harness
+
+        baseline = Path(args.baseline) if args.baseline else None
+        return harness.run_gate(baseline)
+
+    if not args.dry_run or not args.source:
+        print("eval: pass --gate, or --dry-run with --source <id>")
+        return 2
     from polyopus.domains.intake import assessment
     from polyopus.platform.events.store import EventStore
 
@@ -455,10 +463,13 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check local environment (5 checks)")
     doctor.set_defaults(func=cmd_doctor)
 
-    ev = sub.add_parser("eval", help="assessment dry-run over recent triggers")
-    ev.add_argument("--dry-run", action="store_true", required=True,
+    ev = sub.add_parser("eval", help="deterministic eval gate / assessment dry-run")
+    ev.add_argument("--gate", action="store_true",
+                    help="run the four v1.0 eval suites and enforce the baseline")
+    ev.add_argument("--baseline", default=None, help="baseline JSON path")
+    ev.add_argument("--dry-run", action="store_true",
                     help="judge and write dispositions without opening tickets")
-    ev.add_argument("--source", required=True, help="source id (src_...)")
+    ev.add_argument("--source", default=None, help="source id (src_...)")
     ev.add_argument("--hours", type=int, default=24, help="lookback window")
     ev.set_defaults(func=cmd_eval)
 
