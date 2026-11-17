@@ -10,7 +10,7 @@ from sqlite3 import Connection
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.conversations import service
@@ -27,6 +27,9 @@ SSE_PING_SECONDS = 15.0
 
 class CreateThreadBody(BaseModel):
     title: str = Field(default="新对话", max_length=200)
+    agent_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("agentId", "agent_id")
+    )
 
 
 class PostTurnBody(BaseModel):
@@ -42,6 +45,8 @@ def _thread_payload(thread: service.Thread) -> dict[str, object]:
         "lastMessageAt": thread.last_message_at,
         "unreadCount": thread.unread_count,
         "createdAt": thread.created_at,
+        "agentId": thread.agent_id,
+        "agentVersionId": thread.agent_version_id,
     }
 
 
@@ -60,7 +65,8 @@ def create_thread(
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     thread = service.create_thread(
-        conn, tenant_id=user.tenant_id, owner_id=user.user_id, title=body.title
+        conn, tenant_id=user.tenant_id, owner_id=user.user_id, title=body.title,
+        agent_id=body.agent_id,
     )
     return _thread_payload(thread)
 

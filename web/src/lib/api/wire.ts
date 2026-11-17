@@ -261,3 +261,32 @@ export interface NotificationListResponse {
   unreadCount: number;
   nextCursor: string | null;
 }
+
+export interface AgentRow {
+  id: string;
+  agentId: string;
+  name: string;
+  description: string | null;
+  status: "draft" | "published" | "disabled";
+  version: number;
+  model: string | null;
+  tools: string[];
+  systemPrompt: string;
+  draftSystemPrompt?: string;
+  draftModel?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  model: string;
+}
+
+export interface AgentListResponse {
+  items: AgentRow[];
+  templates: AgentTemplate[];
+}

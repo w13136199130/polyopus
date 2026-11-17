@@ -1,5 +1,6 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router";
 import { AppShell } from "@/layouts/AppShell";
+import { AgentsPage } from "@/routes/agents/AgentsPage";
 import { LoginPage } from "@/routes/auth/LoginPage";
 import { ComingSoonPage } from "@/routes/ComingSoonPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
@@ -33,7 +34,7 @@ export const appRoutes: RouteObject[] = [
       { path: "chat", element: <RequirePermission permission="chat:read"><ChatPage /></RequirePermission> },
       { path: "tasks", element: <RequirePermission permission="ticket:read"><TasksPage /></RequirePermission> },
       { path: "usage", element: <RequirePermission permission="usage:read"><UsagePage /></RequirePermission> },
-      { path: "agents", element: <ComingSoonPage title="专家" milestone="v1.0" /> },
+      { path: "agents", element: <RequirePermission permission="agent:read"><AgentsPage /></RequirePermission> },
       { path: "knowledge", element: <ComingSoonPage title="知识" milestone="v1.0" /> },
       { path: "connections", element: <RequirePermission permission="source:read"><ConnectionsPage /></RequirePermission> },
       { path: "extensions", element: <ComingSoonPage title="扩展" milestone="v1.0" /> },

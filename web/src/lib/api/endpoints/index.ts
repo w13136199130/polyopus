@@ -7,6 +7,8 @@
 
 import { apiFetch } from "../client";
 import type {
+  AgentListResponse,
+  AgentRow,
   AnswerResponse,
   AttentionListResponse,
   CronJobListResponse,
@@ -296,6 +298,43 @@ export const invites = {
   })),
 };
 
+export const agents = {
+  list: op("GET", "/agents", (params?: { status?: string; q?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.q) query.set("q", params.q);
+    const suffix = query.toString();
+    return apiFetch<AgentListResponse>(`/agents${suffix ? `?${suffix}` : ""}`);
+  }),
+  create: op("POST", "/agents", (body: {
+    name: string; description?: string; model?: string; systemPrompt?: string;
+  }) => apiFetch<AgentRow>("/agents", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  update: op("PATCH", "/agents/{agent_id}", (
+    agentId: string,
+    body: {
+      name?: string; description?: string; model?: string;
+      systemPrompt?: string; status?: string;
+    },
+  ) => apiFetch<AgentRow>(`/agents/${encodeURIComponent(agentId)}`, {
+    method: "PATCH", body: JSON.stringify(body),
+  })),
+  remove: op("DELETE", "/agents/{agent_id}", (agentId: string) =>
+    apiFetch<{ ok: boolean; agentId: string }>(
+      `/agents/${encodeURIComponent(agentId)}`, { method: "DELETE" },
+    )),
+  publish: op("POST", "/agents/{agent_id}/publish", (agentId: string) =>
+    apiFetch<AgentRow>(`/agents/${encodeURIComponent(agentId)}/publish`, {
+      method: "POST",
+    })),
+  test: op("POST", "/agents/{agent_id}/test", (agentId: string, message: string) =>
+    apiFetch<{ turnId: string; threadId: string; status: string }>(
+      `/agents/${encodeURIComponent(agentId)}/test`,
+      { method: "POST", body: JSON.stringify({ message }) },
+    )),
+};
+
 export const notifications = {
   list: op("GET", "/notifications", (params?: {
     unreadOnly?: boolean; limit?: number; cursor?: string;
@@ -321,5 +360,5 @@ export const notifications = {
 
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
-  users, roles, invites, notifications,
+  users, roles, invites, notifications, agents,
 ];

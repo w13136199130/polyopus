@@ -28,7 +28,7 @@ MEMBER_PERMISSIONS = (
     "source:read", "source:write",
     "cron:read", "cron:write",
     "usage:read",
-    "agent:read",
+    "agent:read", "agent:write",
     "knowledge:read", "knowledge:write",
     "extension:read",
     "settings:read",
@@ -56,6 +56,16 @@ def ensure_builtin_roles(conn: sqlite3.Connection, tenant_id: str) -> None:
             (tenant_id, name),
         ).fetchone()
         if row is not None:
+            current = conn.execute(
+                "SELECT permissions_json FROM roles WHERE role_id = ?",
+                (str(row[0]),),
+            ).fetchone()
+            wanted = json.dumps(list(permissions))
+            if current is None or current[0] != wanted:
+                conn.execute(
+                    "UPDATE roles SET permissions_json = ?, updated_at = ?"
+                    " WHERE role_id = ?", (wanted, now, str(row[0])),
+                )
             continue
         conn.execute(
             """

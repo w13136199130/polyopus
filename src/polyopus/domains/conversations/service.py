@@ -22,6 +22,8 @@ class Thread:
     last_message_at: int | None
     unread_count: int
     created_at: int
+    agent_id: str | None = None
+    agent_version_id: str | None = None
 
 
 def _thread(row: sqlite3.Row) -> Thread:
@@ -34,6 +36,8 @@ def _thread(row: sqlite3.Row) -> Thread:
         last_message_at=row["last_message_at"],
         unread_count=int(row["unread_count"]),
         created_at=int(row["created_at"]),
+        agent_id=row["agent_id"],
+        agent_version_id=row["agent_version_id"],
     )
 
 
@@ -43,16 +47,26 @@ def create_thread(
     tenant_id: str,
     owner_id: str,
     title: str = "新对话",
+    agent_id: str | None = None,
 ) -> Thread:
     thread_id = "th_" + secrets.token_hex(12)
     now = int(time.time())
+    version_id = None
+    if agent_id:
+        from polyopus.domains.agents import service as agent_svc
+
+        agent_svc.get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
+        version_id = agent_svc.pin_version(
+            conn, tenant_id=tenant_id, agent_id=agent_id
+        )
     conn.execute(
         """
         INSERT INTO threads
-          (tenant_id, thread_id, owner_id, title, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'active', ?, ?)
+          (tenant_id, thread_id, owner_id, agent_id, agent_version_id, title,
+           status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
         """,
-        (tenant_id, thread_id, owner_id, title, now, now),
+        (tenant_id, thread_id, owner_id, agent_id, version_id, title, now, now),
     )
     conn.commit()
     return get_thread(conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id)

@@ -1,5 +1,5 @@
 {
-  "count": 73,
+  "count": 80,
   "ops": [
     {
       "method": "DELETE",
@@ -8,6 +8,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/admin/tenants/{tenant_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/agents/{agent_id}"
     },
     {
       "method": "DELETE",
@@ -60,6 +64,14 @@
     {
       "method": "GET",
       "path": "/api/v1/admin/quotas"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}"
     },
     {
       "method": "GET",
@@ -163,6 +175,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/v1/agents/{agent_id}"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/v1/cron-jobs/{job_id}"
     },
     {
@@ -184,6 +200,18 @@
     {
       "method": "POST",
       "path": "/api/v1/admin/backup/{backup_id}/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/{agent_id}/publish"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/{agent_id}/test"
     },
     {
       "method": "POST",

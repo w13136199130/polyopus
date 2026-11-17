@@ -16,6 +16,7 @@ from polyopus.api.routers import (
     admin_backup,
     admin_data_jobs,
     admin_users,
+    agents_api,
     attentions,
     auth,
     cron_api,
@@ -80,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = effective
 
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(agents_api.router, prefix="/api/v1")
     app.include_router(threads.router, prefix="/api/v1")
     app.include_router(attentions.router, prefix="/api/v1")
     app.include_router(webhooks.router, prefix="/api/v1")
