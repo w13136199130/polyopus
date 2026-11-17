@@ -204,6 +204,10 @@ def run_ticket_loop(
                 # boot + periodic sweep: heals tickets left `running` by a
                 # transient error mid-run (the final bucket update is the
                 # only non-transactional tail of run_assignment)
+                try:
+                    tickets.watchdog_scan(conn, EventStore(conn))
+                except Exception as exc:  # noqa: BLE001 - sweep must survive
+                    tlog.log(logger, 40, "watchdog_scan_failed", error=str(exc))
                 recover_stale_running(conn)
                 expire_pending_approvals(conn)
                 last_sweep = now

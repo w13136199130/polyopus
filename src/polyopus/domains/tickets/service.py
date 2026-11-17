@@ -713,9 +713,18 @@ def watchdog_scan(
     store: EventStore,
     *,
     stale_seconds: int = HEARTBEAT_STALE_SECONDS,
+    drift_seconds: int = 1800,
     tenant_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Card 6: stalled assignments get an alert; requeue capped, then dead."""
+    """V1-09: stalled assignments are requeued/stopped; long-running but
+    alive assignments are flagged as drifting (notify only).
+
+    Dedupe is per assignment+kind while an alert is open. A stalled action
+    resolves its own alert immediately, so a later stall is a new incident
+    and the requeue cap still works across cycles.
+    """
+    from polyopus.domains.audit import service as audit
+
     now = _now()
     stale_before = now - stale_seconds
     scope = ""
@@ -731,26 +740,24 @@ def watchdog_scan(
     alerts: list[dict[str, Any]] = []
     for row in rows:
         assignment_id = str(row["assignment_id"])
+        if _open_watchdog_alert(conn, assignment_id, "stalled"):
+            continue
         ticket_id = str(row["ticket_id"])
         tenant = _tenant_of_ticket(conn, ticket_id)
         thread_id = thread_of_ticket(conn, ticket_id)
         prior = conn.execute(
-            "SELECT count(*) FROM watchdog_alerts WHERE assignment_id = ?",
-            (assignment_id,),
+            "SELECT count(*) FROM watchdog_alerts WHERE assignment_id = ? "
+            "AND kind = 'stalled'", (assignment_id,),
         ).fetchone()[0]
         action = "requeue" if int(prior) < MAX_REQUEUES else "stop"
         detail = f"heartbeat stale > {stale_seconds}s (alert #{int(prior) + 1})"
 
-        conn.execute(
-            """
-            INSERT INTO watchdog_alerts
-              (alert_id, tenant_id, assignment_id, kind, detail, action,
-               status, created_at)
-            VALUES (?, ?, ?, 'stalled', ?, ?, 'open', ?)
-            """,
-            ("wa_" + secrets.token_hex(8), tenant, assignment_id, detail,
-             action, now),
+        alert_id = _insert_watchdog_alert(
+            conn, tenant=tenant, assignment_id=assignment_id, kind="stalled",
+            detail=detail, action=action, now=now,
         )
+        if alert_id is None:
+            continue
         if action == "requeue":
             conn.execute(
                 "UPDATE assignments SET state = 'pending' WHERE assignment_id = ?",
@@ -767,6 +774,12 @@ def watchdog_scan(
                 "WHERE assignment_id = ?",
                 (now, assignment_id),
             )
+        # The requeue/stop itself resolves this alert; the next stall on the
+        # assignment is a fresh incident and must re-trigger the cap logic.
+        conn.execute(
+            "UPDATE watchdog_alerts SET status = 'resolved' WHERE alert_id = ?",
+            (alert_id,),
+        )
         conn.commit()
         store.append(
             thread_id,
@@ -775,5 +788,89 @@ def watchdog_scan(
              "detail": detail, "action": action},
             tenant_id=tenant,
         )
-        alerts.append({"assignmentId": assignment_id, "action": action})
+        audit.record(
+            conn, tenant_id=tenant, action=f"watchdog.{action}", result="ok",
+            actor_id="watchdog", resource_type="assignment",
+            resource_id=assignment_id, ticket_id=ticket_id,
+            detail={"kind": "stalled", "detail": detail},
+        )
+        alerts.append({"assignmentId": assignment_id, "kind": "stalled",
+                       "action": action})
+
+    drift_scope = ""
+    drift_params: list[object] = [now - drift_seconds, stale_before]
+    if tenant_id is not None:
+        drift_scope = " AND ticket_id IN (SELECT ticket_id FROM tickets WHERE tenant_id = ?)"
+        drift_params.append(tenant_id)
+    drift_rows = conn.execute(
+        "SELECT * FROM assignments WHERE state = 'running' "
+        "AND started_at < ? AND COALESCE(heartbeat_at, started_at) >= ?"
+        + drift_scope,
+        drift_params,
+    ).fetchall()
+    for row in drift_rows:
+        assignment_id = str(row["assignment_id"])
+        if _open_watchdog_alert(conn, assignment_id, "drifting"):
+            continue
+        ticket_id = str(row["ticket_id"])
+        tenant = _tenant_of_ticket(conn, ticket_id)
+        thread_id = thread_of_ticket(conn, ticket_id)
+        detail = f"running > {drift_seconds}s with a live heartbeat"
+        alert_id = _insert_watchdog_alert(
+            conn, tenant=tenant, assignment_id=assignment_id, kind="drifting",
+            detail=detail, action="notify", now=now,
+        )
+        if alert_id is None:
+            continue
+        conn.commit()
+        store.append(
+            thread_id,
+            "watchdog.alert",
+            {"assignment_id": assignment_id, "kind": "drifting",
+             "detail": detail, "action": "notify"},
+            tenant_id=tenant,
+        )
+        audit.record(
+            conn, tenant_id=tenant, action="watchdog.notify", result="ok",
+            actor_id="watchdog", resource_type="assignment",
+            resource_id=assignment_id, ticket_id=ticket_id,
+            detail={"kind": "drifting", "detail": detail},
+        )
+        alerts.append({"assignmentId": assignment_id, "kind": "drifting",
+                       "action": "notify"})
     return alerts
+
+
+def _open_watchdog_alert(
+    conn: sqlite3.Connection, assignment_id: str, kind: str,
+) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM watchdog_alerts WHERE assignment_id = ? AND kind = ? "
+        "AND status = 'open' LIMIT 1", (assignment_id, kind),
+    ).fetchone()
+    return row is not None
+
+
+def _insert_watchdog_alert(
+    conn: sqlite3.Connection, *,
+    tenant: str,
+    assignment_id: str,
+    kind: str,
+    detail: str,
+    action: str,
+    now: int,
+) -> str | None:
+    alert_id = "wa_" + secrets.token_hex(8)
+    try:
+        conn.execute(
+            """
+            INSERT INTO watchdog_alerts
+              (alert_id, tenant_id, assignment_id, kind, detail, action,
+               status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'open', ?)
+            """,
+            (alert_id, tenant, assignment_id, kind, detail, action, now),
+        )
+    except sqlite3.IntegrityError:
+        return None  # concurrent scan won the same assignment+kind alert
+    return alert_id
