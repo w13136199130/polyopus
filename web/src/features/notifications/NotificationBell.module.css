@@ -1,0 +1,83 @@
+.wrap {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 20px 0;
+}
+
+.trigger {
+  position: relative;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trigger:hover { background: var(--surface-2, var(--surface)); }
+
+.badge {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--danger, #c0392b);
+  color: #fff;
+  font-size: 10px;
+  padding: 0 5px;
+}
+
+.panel {
+  position: absolute;
+  right: 20px;
+  top: 42px;
+  width: 340px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  z-index: 20;
+  padding: 8px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.head button {
+  border: 0;
+  background: transparent;
+  color: var(--accent, #4a7dff);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  padding: 8px;
+  cursor: pointer;
+}
+
+.item:hover { background: var(--bg); }
+.item strong { display: block; font-size: 13px; font-weight: 600; }
+.item span { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); }
+.unread { background: rgba(74, 125, 255, .08); }
+.empty { padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; }

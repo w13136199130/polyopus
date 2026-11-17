@@ -186,6 +186,15 @@ def run_job(conn: sqlite3.Connection, job_id: str, data_dir: Path) -> None:
         (status, storage_ref, _now(), job_id),
     )
     conn.commit()
+    if str(row["kind"]) == "export" and row["user_id"]:
+        from polyopus.domains.notifications import service as notifications
+
+        notifications.notify(
+            conn, tenant_id=str(row["tenant_id"]), user_id=str(row["user_id"]),
+            kind="export", title="数据导出完成",
+            body=f"导出文件已生成：{storage_ref}", link="/settings",
+            dedupe_key=f"export:{job_id}",
+        )
 
 
 def _fail(conn: sqlite3.Connection, job_id: str, error: str) -> None:

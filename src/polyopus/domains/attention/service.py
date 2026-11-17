@@ -129,6 +129,14 @@ def request(
         turn_id=turn_id,
         run_id=run_id,
     )
+    from polyopus.domains.notifications import service as notifications
+
+    notifications.notify_thread(
+        conn, tenant_id=tenant_id, thread_id=thread_id, kind="task",
+        title=f"需要审批：{req.summary or req.tool}",
+        body=f"{req.tool} · 风险 {req.risk}",
+        link="/chat", dedupe_key=f"approval:{approval_id}",
+    )
     return approval_id, attention_id
 
 

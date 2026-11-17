@@ -443,6 +443,16 @@ def run_assignment(
                                state, summary,
                                facts={"total_tokens": total_tokens,
                                       "cost_micros": ticket_cost})
+    from polyopus.domains.notifications import service as notifications
+
+    notify_title = {
+        "ready": "任务完成", "blocked": "任务阻塞", "failed": "任务失败",
+    }.get(state)
+    if notify_title:
+        notifications.notify_ticket(
+            conn, ticket_id=ticket_id, kind="task", title=notify_title,
+            body=summary[:500], dedupe_key=f"ticket:{ticket_id}:{state}",
+        )
 
     now = _now()
     conn.execute(

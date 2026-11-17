@@ -14,6 +14,8 @@ import type {
   LoginRequest,
   LoginResponse,
   MessageListResponse,
+  NotificationListResponse,
+  NotificationRow,
   PostTurnResponse,
   SessionUser,
   AdminUserListResponse,
@@ -294,7 +296,30 @@ export const invites = {
   })),
 };
 
+export const notifications = {
+  list: op("GET", "/notifications", (params?: {
+    unreadOnly?: boolean; limit?: number; cursor?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.unreadOnly) query.set("unreadOnly", "1");
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.cursor) query.set("cursor", params.cursor);
+    const suffix = query.toString();
+    return apiFetch<NotificationListResponse>(
+      `/notifications${suffix ? `?${suffix}` : ""}`,
+    );
+  }),
+  markRead: op("POST", "/notifications/{notification_id}/read", (id: string) =>
+    apiFetch<NotificationRow>(
+      `/notifications/${encodeURIComponent(id)}/read`, { method: "POST" },
+    )),
+  markAllRead: op("POST", "/notifications/read-all", () =>
+    apiFetch<{ ok: boolean; updated: number }>("/notifications/read-all", {
+      method: "POST",
+    })),
+};
+
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
-  users, roles, invites,
+  users, roles, invites, notifications,
 ];

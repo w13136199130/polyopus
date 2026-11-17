@@ -244,3 +244,20 @@ export interface RoleRow {
   builtin: boolean;
   permissions: string[];
 }
+
+export interface NotificationRow {
+  id: string;
+  notificationId: string;
+  kind: "task" | "cloud" | "export" | "system";
+  title: string;
+  body: string | null;
+  link: string | null;
+  readAt: number | null;
+  createdAt: number;
+}
+
+export interface NotificationListResponse {
+  items: NotificationRow[];
+  unreadCount: number;
+  nextCursor: string | null;
+}

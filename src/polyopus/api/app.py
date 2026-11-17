@@ -22,6 +22,7 @@ from polyopus.api.routers import (
     invites_api,
     me_api,
     metrics_api,
+    notifications,
     outbound_api,
     quota_api,
     roles_api,
@@ -94,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(roles_api.router, prefix="/api/v1")
     app.include_router(invites_api.router, prefix="/api/v1")
     app.include_router(quota_api.router, prefix="/api/v1")
+    app.include_router(notifications.router, prefix="/api/v1")
     app.include_router(metrics_api.router)
 
     @app.middleware("http")

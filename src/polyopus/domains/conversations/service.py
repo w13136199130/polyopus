@@ -155,6 +155,17 @@ def post_turn(
         )
         if violation is not None:
             conn.execute("ROLLBACK")
+            from polyopus.domains.notifications import service as notifications
+
+            notifications.notify(
+                conn, tenant_id=tenant_id, user_id=quota_user_id or owner_id,
+                kind="system", title="配额已超限",
+                body=(f"{violation.scope}/{violation.metric} 已用 "
+                      f"{violation.used} >= 上限 {violation.limit}"),
+                link="/usage",
+                dedupe_key=(f"quota:{violation.scope}:{violation.metric}:"
+                            f"{violation.window}:{violation.limit}"),
+            )
             raise AppError("QUOTA_EXCEEDED", details=violation.details())
         conn.execute(
             """

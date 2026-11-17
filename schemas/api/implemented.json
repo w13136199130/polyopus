@@ -1,5 +1,5 @@
 {
-  "count": 70,
+  "count": 73,
   "ops": [
     {
       "method": "DELETE",
@@ -96,6 +96,10 @@
     {
       "method": "GET",
       "path": "/api/v1/me/export/{job_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/notifications"
     },
     {
       "method": "GET",
@@ -232,6 +236,14 @@
     {
       "method": "POST",
       "path": "/api/v1/me/export"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/read-all"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/{notification_id}/read"
     },
     {
       "method": "POST",

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,17 +9,22 @@ const LOGIN_MARK = "本地多智能体工作台";
 const SHELL_MARK = "PolyOpus";
 
 function renderAt(path: string) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<div>{LOGIN_MARK}</div>} />
-          <Route path="/" element={<AppShell />}>
-            <Route path="chat" element={<div>chat-body</div>} />
-          </Route>
-        </Routes>
-      </AuthProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<div>{LOGIN_MARK}</div>} />
+            <Route path="/" element={<AppShell />}>
+              <Route path="chat" element={<div>chat-body</div>} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

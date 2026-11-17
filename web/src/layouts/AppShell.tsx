@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router";
+import { NotificationBell } from "@/features/notifications/NotificationBell";
 import { useSession } from "@/lib/auth/session";
 import { Sidebar } from "./Sidebar";
 import styles from "./AppShell.module.css";
@@ -21,6 +22,7 @@ export function AppShell() {
     <div className={styles.shell}>
       <Sidebar />
       <main className={styles.main}>
+        <NotificationBell />
         <Outlet />
       </main>
     </div>
