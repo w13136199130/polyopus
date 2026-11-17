@@ -89,6 +89,8 @@ def test_business_tables_carry_tenant_id(env: tuple[Path, TestClient]) -> None:
         "user_roles", "user_mfa",
         # global tool registry: tool_settings carries the tenant scope
         "tools",
+        # global connector catalog: instances carry the tenant scope
+        "connector_catalog",
     }
     missing = []
     for table in tables:

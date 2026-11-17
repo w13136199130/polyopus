@@ -12,6 +12,8 @@ import type {
   AgentToolBinding,
   AnswerResponse,
   AttentionListResponse,
+  ConnectorCatalogRow,
+  ConnectorInstanceRow,
   CronJobListResponse,
   CronJobView,
   LoginRequest,
@@ -325,6 +327,54 @@ export const tools = {
   ),
 };
 
+export const connectors = {
+  catalog: op("GET", "/connectors/catalog", () =>
+    apiFetch<{ items: ConnectorCatalogRow[] }>("/connectors/catalog")),
+  instances: op("GET", "/connectors/instances", () =>
+    apiFetch<{ items: ConnectorInstanceRow[] }>("/connectors/instances")),
+  create: op("POST", "/connectors/instances", (body: {
+    kind: string;
+    displayName: string;
+    config: Record<string, unknown>;
+  }) => apiFetch<ConnectorInstanceRow>("/connectors/instances", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  update: op("PATCH", "/connectors/instances/{instance_id}", (
+    instanceId: string,
+    body: { displayName?: string; config?: Record<string, unknown>; status?: string },
+  ) => apiFetch<ConnectorInstanceRow>(
+    `/connectors/instances/${encodeURIComponent(instanceId)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )),
+  remove: op("DELETE", "/connectors/instances/{instance_id}", (instanceId: string) =>
+    apiFetch<{ ok: boolean; instanceId: string }>(
+      `/connectors/instances/${encodeURIComponent(instanceId)}`,
+      { method: "DELETE" },
+    )),
+  probe: op("POST", "/connectors/instances/{instance_id}/probe", (instanceId: string) =>
+    apiFetch<ConnectorInstanceRow & { ok: boolean; error?: string }>(
+      `/connectors/instances/${encodeURIComponent(instanceId)}/probe`,
+      { method: "POST" },
+    )),
+  oauthStart: op("POST", "/connectors/oauth/start", (kind: string) =>
+    apiFetch<{ stateId: string; authorizeUrl: string; status: string }>(
+      "/connectors/oauth/start",
+      { method: "POST", body: JSON.stringify({ kind }) },
+    )),
+  oauthPending: op("GET", "/connectors/oauth/pending/{state_id}", (stateId: string) =>
+    apiFetch<{ stateId: string; kind: string; status: string }>(
+      `/connectors/oauth/pending/${encodeURIComponent(stateId)}`,
+    )),
+  oauthCallback: op("GET", "/connectors/oauth/callback", (
+    state: string, code: string,
+  ) => {
+    const params = new URLSearchParams({ state, code });
+    return apiFetch<{ ok: boolean; stateId: string; status: string }>(
+      `/connectors/oauth/callback?${params.toString()}`,
+    );
+  }),
+};
+
 export const knowledge = {
   listKbs: op("GET", "/knowledge-bases", () =>
     apiFetch<{ items: KnowledgeBaseRow[] }>("/knowledge-bases")),
@@ -425,5 +475,5 @@ export const notifications = {
 
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
-  users, roles, invites, notifications, agents, tools, knowledge,
+  users, roles, invites, notifications, agents, tools, knowledge, connectors,
 ];

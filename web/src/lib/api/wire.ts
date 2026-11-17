@@ -348,3 +348,27 @@ export interface KnowledgeSearchResult {
   hits: KnowledgeHit[];
   reason?: string;
 }
+
+export interface ConnectorCatalogRow {
+  catalogId: string;
+  kind: string;
+  name: string;
+  authKind: string;
+  category: string | null;
+}
+
+export interface ConnectorInstanceRow {
+  instanceId: string;
+  kind: string;
+  displayName: string;
+  authKind: string;
+  status: string;
+  ownerId: string;
+  shared: boolean;
+  defaultOpen: boolean;
+  toolsCount: number;
+  lastProbeAt: number | null;
+  configured: boolean;
+  createdAt: number;
+  updatedAt: number;
+}

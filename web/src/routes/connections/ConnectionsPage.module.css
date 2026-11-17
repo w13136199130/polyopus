@@ -1,0 +1,24 @@
+.tabs {
+  display: flex;
+  gap: var(--space-2);
+  padding: 12px 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  border: 1px solid transparent;
+  border-bottom: 0;
+  background: transparent;
+  color: var(--text-3);
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: var(--radius-s) var(--radius-s) 0 0;
+}
+
+.active {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
+  margin-bottom: -1px;
+}

@@ -1,5 +1,5 @@
 {
-  "count": 96,
+  "count": 105,
   "ops": [
     {
       "method": "DELETE",
@@ -16,6 +16,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/auth/mfa/{method}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/connectors/instances/{instance_id}"
     },
     {
       "method": "DELETE",
@@ -92,6 +96,22 @@
     {
       "method": "GET",
       "path": "/api/v1/auth/me"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/catalog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/instances"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/oauth/callback"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/oauth/pending/{state_id}"
     },
     {
       "method": "GET",
@@ -215,6 +235,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/v1/connectors/instances/{instance_id}"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/v1/cron-jobs/{job_id}"
     },
     {
@@ -288,6 +312,18 @@
     {
       "method": "POST",
       "path": "/api/v1/auth/refresh"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/connectors/instances"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/connectors/instances/{instance_id}/probe"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/connectors/oauth/start"
     },
     {
       "method": "POST",
