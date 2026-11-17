@@ -87,6 +87,8 @@ def test_business_tables_carry_tenant_id(env: tuple[Path, TestClient]) -> None:
         "schema_migrations", "model_prices", "models", "knowledge_acl",
         # roles.user_roles: tenancy flows through the role/user join (docs/31)
         "user_roles", "user_mfa",
+        # global tool registry: tool_settings carries the tenant scope
+        "tools",
     }
     missing = []
     for table in tables:

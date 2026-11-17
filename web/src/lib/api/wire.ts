@@ -290,3 +290,22 @@ export interface AgentListResponse {
   items: AgentRow[];
   templates: AgentTemplate[];
 }
+
+export interface ToolRow {
+  toolKey: string;
+  source: string;
+  version: string;
+  description: string;
+  risk: "low" | "medium" | "high" | "critical";
+  sideEffects: boolean;
+  idempotent: boolean;
+  scopes: string[];
+  enabledGlobal: boolean;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface AgentToolBinding {
+  toolKey: string;
+  enabled: boolean;
+  config?: Record<string, unknown>;
+}

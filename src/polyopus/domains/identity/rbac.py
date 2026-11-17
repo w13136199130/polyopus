@@ -30,7 +30,7 @@ MEMBER_PERMISSIONS = (
     "usage:read",
     "agent:read", "agent:write",
     "knowledge:read", "knowledge:write",
-    "extension:read",
+    "extension:read", "extension:write",
     "settings:read",
 )
 AUDITOR_PERMISSIONS = (

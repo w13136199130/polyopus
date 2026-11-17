@@ -1,5 +1,5 @@
 {
-  "count": 80,
+  "count": 84,
   "ops": [
     {
       "method": "DELETE",
@@ -72,6 +72,10 @@
     {
       "method": "GET",
       "path": "/api/v1/agents/{agent_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/tools"
     },
     {
       "method": "GET",
@@ -155,6 +159,10 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tools"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/usage/export"
     },
     {
@@ -179,7 +187,15 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/v1/agents/{agent_id}/tools"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/v1/cron-jobs/{job_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tools/{tool_key}"
     },
     {
       "method": "PATCH",

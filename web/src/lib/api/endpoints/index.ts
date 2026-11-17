@@ -9,6 +9,7 @@ import { apiFetch } from "../client";
 import type {
   AgentListResponse,
   AgentRow,
+  AgentToolBinding,
   AnswerResponse,
   AttentionListResponse,
   CronJobListResponse,
@@ -32,6 +33,7 @@ import type {
   TicketDetail,
   TicketListResponse,
   TicketTimelineResponse,
+  ToolRow,
   UsageSummaryResponse,
   WebhookAccepted,
 } from "../wire";
@@ -298,6 +300,28 @@ export const invites = {
   })),
 };
 
+export const tools = {
+  list: op("GET", "/tools", () =>
+    apiFetch<{ items: ToolRow[] }>("/tools")),
+  update: op("PATCH", "/tools/{tool_key}", (toolKey: string, enabledGlobal: boolean) =>
+    apiFetch<ToolRow>(`/tools/${encodeURIComponent(toolKey)}`, {
+      method: "PATCH", body: JSON.stringify({ enabledGlobal }),
+    })),
+  agentBindings: op("GET", "/agents/{agent_id}/tools", (agentId: string) =>
+    apiFetch<{ agentId: string; items: AgentToolBinding[] }>(
+      `/agents/${encodeURIComponent(agentId)}/tools`,
+    )),
+  updateAgentBindings: op(
+    "PATCH",
+    "/agents/{agent_id}/tools",
+    (agentId: string, items: AgentToolBinding[]) =>
+      apiFetch<{ agentId: string; items: AgentToolBinding[] }>(
+        `/agents/${encodeURIComponent(agentId)}/tools`,
+        { method: "PATCH", body: JSON.stringify({ items }) },
+      ),
+  ),
+};
+
 export const agents = {
   list: op("GET", "/agents", (params?: { status?: string; q?: string }) => {
     const query = new URLSearchParams();
@@ -360,5 +384,5 @@ export const notifications = {
 
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
-  users, roles, invites, notifications, agents,
+  users, roles, invites, notifications, agents, tools,
 ];

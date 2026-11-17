@@ -377,7 +377,19 @@ async def run_turn(
     else:
         source = resolved.gateway
 
-    toolspecs = tuple(GATEWAY_SPECS.values()) if cfg.workspace is not None else ()
+    from polyopus.domains.tools import service as tools_svc
+
+    agent_row = conn.execute(
+        "SELECT agent_id FROM threads WHERE thread_id = ?", (thread_id,)
+    ).fetchone()
+    quota_agent = str(agent_row[0]) if agent_row is not None and agent_row[0] else None
+    toolspecs = tuple(
+        spec for name, spec in GATEWAY_SPECS.items()
+        if cfg.workspace is not None
+        and tools_svc.effective_enabled(
+            conn, tenant_id=tenant_id, agent_id=quota_agent, tool_key=name
+        )
+    )
     ticket_id = turn["ticket_id"]
     auto_tools, auto_max_risk = _auto_approve_of(conn, tenant_id, ticket_id)
     runtime = ToolRuntime(
@@ -433,6 +445,11 @@ async def run_turn(
                         "deny", decision.matched,
                         f"scope_violation: {spec.required_scope} not in mandate scope",
                     )
+                if decision.effect != "deny" and not tools_svc.effective_enabled(
+                    conn, tenant_id=tenant_id, agent_id=quota_agent,
+                    tool_key=internal,
+                ):
+                    decision = Decision("deny", decision.matched, "tool_disabled")
 
             if spec is not None and decision.effect == "allow":
                 gateway_spec = GATEWAY_SPECS.get(internal)
@@ -485,7 +502,12 @@ async def run_turn(
                 paused = True
                 break
             else:
-                code = "tool_not_found" if spec is None else "policy_denied"
+                if spec is None:
+                    code = "tool_not_found"
+                elif decision.reason == "tool_disabled":
+                    code = "tool_disabled"
+                else:
+                    code = "policy_denied"
                 output_json = _refuse_call(
                     conn, store,
                     call_id=call_id, internal=internal, code=code,
