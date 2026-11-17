@@ -231,8 +231,11 @@ def mfa_disable(
 
 
 @router.get("/me")
-def me(user: User = Depends(current_user)) -> dict[str, object]:
-    return {"user": _user_payload(user)}
+def me(
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return {"user": {**_user_payload(user), "mfaEnabled": mfa.is_enabled(conn, user)}}
 
 
 @router.post("/logout")

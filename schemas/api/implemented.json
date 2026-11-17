@@ -1,5 +1,5 @@
 {
-  "count": 110,
+  "count": 111,
   "ops": [
     {
       "method": "DELETE",
@@ -80,6 +80,10 @@
     {
       "method": "GET",
       "path": "/api/v1/admin/quotas"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/settings"
     },
     {
       "method": "GET",

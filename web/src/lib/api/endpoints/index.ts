@@ -7,10 +7,12 @@
 
 import { apiFetch } from "../client";
 import type {
+  AdminSettings,
   AgentListResponse,
   AgentRow,
   AgentToolBinding,
   AnswerResponse,
+  ApiKeyRow,
   AttentionListResponse,
   ConnectorCatalogRow,
   ConnectorInstanceRow,
@@ -376,6 +378,38 @@ export const connectors = {
   }),
 };
 
+export const settings = {
+  get: op("GET", "/admin/settings", () =>
+    apiFetch<AdminSettings>("/admin/settings")),
+  reauth: op("POST", "/auth/reauth", (password: string, mfaCode?: string) =>
+    apiFetch<{ grantToken: string; expiresAt: number }>("/auth/reauth", {
+      method: "POST", body: JSON.stringify({ password, mfaCode }),
+    })),
+  mfaEnroll: op("POST", "/auth/mfa/totp/enroll", () =>
+    apiFetch<{ secret: string; otpauthUrl: string }>("/auth/mfa/totp/enroll", {
+      method: "POST",
+    })),
+  mfaVerify: op("POST", "/auth/mfa/totp/verify", (code: string) =>
+    apiFetch<{ enabled: boolean; recoveryCodes: string[] }>(
+      "/auth/mfa/totp/verify", { method: "POST", body: JSON.stringify({ code }) },
+    )),
+  mfaDisable: op("DELETE", "/auth/mfa/{method}", (method: string) =>
+    apiFetch<{ enabled: boolean }>(`/auth/mfa/${encodeURIComponent(method)}`, {
+      method: "DELETE",
+    })),
+  apiKeys: op("GET", "/me/api-keys", () =>
+    apiFetch<{ items: ApiKeyRow[] }>("/me/api-keys")),
+  createApiKey: op("POST", "/me/api-keys", (body: {
+    name: string; scopes: string[]; expiresInSeconds?: number;
+  }) => apiFetch<{ key: ApiKeyRow; secret: string }>("/me/api-keys", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  revokeApiKey: op("DELETE", "/me/api-keys/{api_key_id}", (apiKeyId: string) =>
+    apiFetch<{ apiKeyId: string; revoked: boolean }>(
+      `/me/api-keys/${encodeURIComponent(apiKeyId)}`, { method: "DELETE" },
+    )),
+};
+
 export const plugins = {
   list: op("GET", "/plugins", () =>
     apiFetch<{ items: PluginRow[] }>("/plugins")),
@@ -495,5 +529,5 @@ export const notifications = {
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, tools, knowledge, connectors,
-  plugins,
+  plugins, settings,
 ];

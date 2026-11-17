@@ -9,6 +9,7 @@ import { AdminUsersPage } from "@/routes/admin/AdminUsersPage";
 import { ConnectionsPage } from "@/routes/connections/ConnectionsPage";
 import { ExtensionsPage } from "@/routes/extensions/ExtensionsPage";
 import { KnowledgePage } from "@/routes/knowledge/KnowledgePage";
+import { SettingsPage } from "@/routes/settings/SettingsPage";
 import { KitPage } from "@/routes/kit/KitPage";
 import { TasksPage } from "@/routes/tasks/TasksPage";
 import { UsagePage } from "@/routes/usage/UsagePage";
@@ -41,7 +42,7 @@ export const appRoutes: RouteObject[] = [
       { path: "connections", element: <RequirePermission permission="source:read"><ConnectionsPage /></RequirePermission> },
       { path: "extensions", element: <RequirePermission permission="extension:read"><ExtensionsPage /></RequirePermission> },
       { path: "workbench", element: <ComingSoonPage title="工作台" milestone="v1.0" /> },
-      { path: "settings", element: <ComingSoonPage title="设置" milestone="v1.0" /> },
+      { path: "settings", element: <RequirePermission permission="settings:read"><SettingsPage /></RequirePermission> },
       { path: "admin", element: <RequirePermission permission="user:read"><AdminUsersPage /></RequirePermission> },
       { path: "*", element: <NotFoundPage /> },
     ],

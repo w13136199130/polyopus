@@ -20,6 +20,7 @@ export interface SessionUser {
   isOwner: boolean;
   roles?: string[];
   permissions?: string[];
+  mfaEnabled?: boolean;
 }
 
 export interface LoginResponse {
@@ -383,4 +384,28 @@ export interface PluginRow {
   tools: string[];
   signed: boolean;
   installedAt: number;
+}
+
+export interface ApiKeyRow {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+  revokedAt: number | null;
+  createdAt: number;
+}
+
+export interface AdminSettings {
+  environment: string;
+  version: string;
+  modelName: string | null;
+  modelConfigured: boolean;
+  dataDir: string;
+  workspaceDir: string;
+  publicBaseUrl: string;
+  auditRetentionDays: number;
+  dailyCostBudgetMicros: number;
+  readOnly: boolean;
 }
