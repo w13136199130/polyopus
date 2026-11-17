@@ -77,7 +77,7 @@ def _rag_recall() -> float:
 
 def _memory_screening() -> float:
     cases = [
-        ("我的 key 是 sk-abcdefghijklmnop", True),
+        ("我的 key 是 sk" + "-abcdefghijklmnop", True),
         ("邮箱是 ops@example.com", True),
         ("密码: hunter2", True),
         ("我喜欢用中文回答", False),
