@@ -289,6 +289,16 @@ async def run_turn(
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
 
+    # V1-05 defense in depth: post_turn already rejects over-quota requests,
+    # but a turn may have been queued before the limit was lowered.
+    from polyopus.domains.usage import quota as quota_svc
+
+    violation = quota_svc.check(
+        conn, tenant_id=tenant_id, model=resolved.model
+    )
+    if violation is not None:
+        raise AppError("QUOTA_EXCEEDED", details=violation.details())
+
     existing = conn.execute(
         "SELECT status, attempt FROM runs WHERE turn_id = ? ORDER BY attempt DESC LIMIT 1",
         (turn_id,),

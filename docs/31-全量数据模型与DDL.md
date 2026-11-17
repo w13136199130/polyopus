@@ -1456,9 +1456,9 @@ CREATE TABLE quota_limits (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   quota_id      TEXT NOT NULL UNIQUE,
   tenant_id     TEXT NOT NULL,
-  scope         TEXT NOT NULL,              -- tenant|user|agent
+  scope         TEXT NOT NULL,              -- tenant|user|model (V1-05)
   scope_id      TEXT NOT NULL,
-  metric        TEXT NOT NULL,              -- tokens|cost|requests|storage|concurrency
+  metric        TEXT NOT NULL,              -- tokens|cost|requests (V1-05)
   limit_value   INTEGER NOT NULL,
   window        TEXT NOT NULL,              -- day|month|absolute
   updated_at    INTEGER NOT NULL,

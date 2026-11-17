@@ -1,5 +1,5 @@
 {
-  "count": 55,
+  "count": 57,
   "ops": [
     {
       "method": "DELETE",
@@ -32,6 +32,10 @@
     {
       "method": "GET",
       "path": "/api/v1/admin/audit/export"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/quotas"
     },
     {
       "method": "GET",
@@ -120,6 +124,10 @@
     {
       "method": "GET",
       "path": "/healthz"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/quotas/{quota_id}"
     },
     {
       "method": "PATCH",

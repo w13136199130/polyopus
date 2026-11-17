@@ -376,10 +376,20 @@ def run_assignment(
     )
     conn.commit()
 
-    # V05-18: source/day and instance/day can already be over budget before
-    # this assignment starts; then no turn is launched at all.
+    # V05-18 source/day + V1-05 tenant/user/model quotas are pre-checked
+    # before this assignment starts; then no turn is launched at all.
     status = "blocked"
-    pre_exceeded, pre_reason = _budget_exceeded(conn, ticket, budget)
+    from polyopus.domains.usage import quota as quota_svc
+
+    actor = json.loads(ticket["actor_json"] or "{}").get("id")
+    quota_violation = quota_svc.check(
+        conn, tenant_id=tenant, user_id=str(actor) if actor else None,
+        model=quota_svc.default_model(conn),
+    )
+    if quota_violation is not None:
+        pre_exceeded, pre_reason = True, "quota_exceeded"
+    else:
+        pre_exceeded, pre_reason = _budget_exceeded(conn, ticket, budget)
     if not pre_exceeded:
         # S8 人消息优先：a resumed ticket is driven by the latest human
         # instruction, not the original webhook title (which may just loop back
@@ -389,6 +399,7 @@ def run_assignment(
             conn, store,
             tenant_id=tenant, owner_id="system", thread_id=thread_id,
             content=text, status="running",
+            quota_user_id=str(actor) if actor else None,
         )
         try:
             config = engine_config or _default_engine_config()
@@ -418,11 +429,16 @@ def run_assignment(
     from polyopus.domains.usage import service as usage_svc
 
     ticket_cost = usage_svc.ticket_cost_micros(conn, ticket_id, tenant_id=tenant)
-    summary = (
-        _budget_summary(conn, ticket, budget, budget_reason, total_tokens)
-        if exceeded
-        else f"执行 {status}（{total_tokens} tokens / {ticket_cost} micros）"
-    )
+    if quota_violation is not None:
+        summary = (
+            f"配额超限：{quota_violation.metric} 已用 {quota_violation.used} "
+            f">= 上限 {quota_violation.limit}"
+            f"（{quota_violation.scope}/{quota_violation.window}）"
+        )
+    elif exceeded:
+        summary = _budget_summary(conn, ticket, budget, budget_reason, total_tokens)
+    else:
+        summary = f"执行 {status}（{total_tokens} tokens / {ticket_cost} micros）"
     report_id = _record_report(conn, store, ticket_id, assignment_id, thread_id,
                                state, summary,
                                facts={"total_tokens": total_tokens,
@@ -448,7 +464,9 @@ def run_assignment(
     if exceeded:
         effects = _open_attention(
             conn, store, ticket_id=ticket_id, thread_id=thread_id, kind="blocked",
-            reason="budget_exceeded", next_action="追加预算后重派，或停止工单",
+            reason=("quota_exceeded" if quota_violation is not None
+                    else "budget_exceeded"),
+            next_action="调整配额/预算后重派，或停止工单",
             summary=summary, report_id=report_id,
         )
     elif state == "ready":

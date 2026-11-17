@@ -676,9 +676,9 @@
       "sha256": "f4f77b719b6a9b22b723eea8b666d93f86a097a197021f40ed7a097b8fd6f948"
     },
     "quota_limits": {
-      "ddl": "CREATE TABLE quota_limits (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  quota_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  scope         TEXT NOT NULL,              -- tenant|user|agent\n  scope_id      TEXT NOT NULL,\n  metric        TEXT NOT NULL,              -- tokens|cost|requests|storage|concurrency\n  limit_value   INTEGER NOT NULL,\n  window        TEXT NOT NULL,              -- day|month|absolute\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, scope, scope_id, metric, window)\n);",
+      "ddl": "CREATE TABLE quota_limits (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  quota_id      TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  scope         TEXT NOT NULL,              -- tenant|user|model (V1-05)\n  scope_id      TEXT NOT NULL,\n  metric        TEXT NOT NULL,              -- tokens|cost|requests (V1-05)\n  limit_value   INTEGER NOT NULL,\n  window        TEXT NOT NULL,              -- day|month|absolute\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, scope, scope_id, metric, window)\n);",
       "indexes": [],
-      "sha256": "0875b5c2dd1e9199818be495e3e6499d7c9ec1a919219afc9af859f4d05a89b7"
+      "sha256": "1ee00306250d06d7f61fccaf0b918d3170a5f8a8fcb211344e75b87de02d933e"
     },
     "reports": {
       "ddl": "CREATE TABLE reports (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  report_id     TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  ticket_id     TEXT NOT NULL,\n  assignment_id TEXT NOT NULL,\n  state         TEXT NOT NULL,\n  summary       TEXT NOT NULL,\n  progress      REAL,\n  facts_json    TEXT,\n  artifacts_json TEXT,\n  created_at    INTEGER NOT NULL\n);",

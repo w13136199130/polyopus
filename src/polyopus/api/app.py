@@ -20,6 +20,7 @@ from polyopus.api.routers import (
     invites_api,
     me_api,
     outbound_api,
+    quota_api,
     roles_api,
     threads,
     tickets_api,
@@ -85,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_users.router, prefix="/api/v1")
     app.include_router(roles_api.router, prefix="/api/v1")
     app.include_router(invites_api.router, prefix="/api/v1")
+    app.include_router(quota_api.router, prefix="/api/v1")
 
     @app.middleware("http")
     async def trace_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]

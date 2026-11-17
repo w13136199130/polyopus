@@ -92,6 +92,7 @@ def post_turn(
     idempotency_key: str | None = None,
     system_thread_ok: bool = False,
     status: str = "queued",
+    quota_user_id: str | None = None,
 ) -> tuple[str, str]:
     """Append a user message + queued turn. Returns (turn_id, message_id).
 
@@ -146,6 +147,15 @@ def post_turn(
 
     conn.execute("BEGIN IMMEDIATE")
     try:
+        from polyopus.domains.usage import quota as quota_svc
+
+        violation = quota_svc.check(
+            conn, tenant_id=tenant_id, user_id=quota_user_id or owner_id,
+            model=quota_svc.default_model(conn),
+        )
+        if violation is not None:
+            conn.execute("ROLLBACK")
+            raise AppError("QUOTA_EXCEEDED", details=violation.details())
         conn.execute(
             """
             INSERT INTO messages
