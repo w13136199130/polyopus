@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "window": "30d",
+  "slos": [
+    {
+      "id": "turn_success",
+      "title": "Turn completion success",
+      "metric": "poly_turn_finished_total",
+      "good": "result=\"completed\"",
+      "total": "all results",
+      "objective": 0.995,
+      "burnRate": 14.4
+    },
+    {
+      "id": "turn_latency_p95",
+      "title": "Turn latency p95 under 30s",
+      "metric": "poly_turn_duration_seconds",
+      "good": "le=\"30\"",
+      "total": "all turns",
+      "objective": 0.95,
+      "burnRate": 6.0
+    },
+    {
+      "id": "tool_success",
+      "title": "Tool call success",
+      "metric": "poly_tool_calls_total",
+      "good": "result=\"ok\"",
+      "total": "all tool results",
+      "objective": 0.99,
+      "burnRate": 14.4
+    },
+    {
+      "id": "queue_freshness",
+      "title": "Queued work picked up within 60s",
+      "metric": "poly_queue_depth",
+      "good": "queue=\"turns\" <= 0",
+      "total": "samples",
+      "objective": 0.99,
+      "burnRate": 6.0
+    },
+    {
+      "id": "budget_compliance",
+      "title": "Requests allowed by quota/budget",
+      "metric": "poly_usage_cost_micros_total",
+      "good": "quota not exceeded",
+      "total": "all requests",
+      "objective": 0.99,
+      "burnRate": 6.0
+    }
+  ]
+}

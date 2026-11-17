@@ -1,0 +1,42 @@
+groups:
+  - name: polyopus-slo
+    rules:
+      - alert: PolyTurnErrorBudgetBurn
+        expr: |
+          sum(rate(poly_turn_finished_total{result="failed"}[1h]))
+          /
+          sum(rate(poly_turn_finished_total[1h])) > (14.4 * 0.005)
+        for: 5m
+        labels: {severity: page, slo: turn_success}
+        annotations:
+          summary: "Turn error budget is burning too fast"
+      - alert: PolyTurnLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(poly_turn_duration_seconds_bucket[5m])) by (le)
+          ) > 30
+        for: 10m
+        labels: {severity: page, slo: turn_latency_p95}
+        annotations:
+          summary: "Turn p95 latency is above 30s"
+      - alert: PolyToolFailureHigh
+        expr: |
+          sum(rate(poly_tool_calls_total{result="failed"}[5m]))
+          /
+          sum(rate(poly_tool_calls_total[5m])) > 0.01
+        for: 5m
+        labels: {severity: page, slo: tool_success}
+        annotations:
+          summary: "Tool failure rate is above 1%"
+      - alert: PolyQueueBacklog
+        expr: poly_queue_depth{queue="turns"} > 100
+        for: 5m
+        labels: {severity: warn, slo: queue_freshness}
+        annotations:
+          summary: "Turn queue has more than 100 pending items"
+      - alert: PolyQuotaBudgetBurn
+        expr: increase(poly_usage_cost_micros_total[1h]) > 0
+        for: 30m
+        labels: {severity: warn, slo: budget_compliance}
+        annotations:
+          summary: "Usage cost is accumulating; check quotas and daily budget"

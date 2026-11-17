@@ -1,0 +1,61 @@
+{
+  "title": "PolyOpus v1.0",
+  "uid": "polyopus-v1",
+  "refresh": "30s",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Turn success / failure",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "sum(rate(poly_turn_finished_total{result=\"completed\"}[5m]))", "legendFormat": "completed"},
+        {"expr": "sum(rate(poly_turn_finished_total{result=\"failed\"}[5m]))", "legendFormat": "failed"},
+        {"expr": "sum(rate(poly_turn_finished_total{result=\"waiting_approval\"}[5m]))", "legendFormat": "waiting_approval"}
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Turn latency p50 / p95",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(poly_turn_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum(rate(poly_turn_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"}
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tool results",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "sum(rate(poly_tool_calls_total{result=\"ok\"}[5m]))", "legendFormat": "ok"},
+        {"expr": "sum(rate(poly_tool_calls_total{result=\"failed\"}[5m]))", "legendFormat": "failed"},
+        {"expr": "sum(rate(poly_tool_calls_total{result=\"denied\"}[5m]))", "legendFormat": "denied"}
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Queue depth",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "poly_queue_depth", "legendFormat": "{{queue}}"}
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Usage tokens",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "poly_usage_tokens_total", "legendFormat": "{{direction}}"}
+      ]
+    },
+    {
+      "id": 6,
+      "title": "SLO targets",
+      "type": "stat",
+      "targets": [
+        {"expr": "poly_slo_target_ratio", "legendFormat": "{{slo}}"}
+      ]
+    }
+  ]
+}

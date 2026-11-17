@@ -7,6 +7,7 @@ Logs pick up the active span's trace id automatically.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -50,6 +51,29 @@ def current_trace_id() -> str | None:
     if not ctx.is_valid:
         return None
     return format(ctx.trace_id, "032x")
+
+
+SLOW_SPAN_MS = 1000.0
+
+
+def should_sample(
+    *,
+    error: bool = False,
+    approval: bool = False,
+    deny: bool = False,
+    duration_ms: float = 0.0,
+    ratio: float = 0.1,
+    random_value: float | None = None,
+) -> bool:
+    """Trace sampling policy: errors/approvals/denies/slow spans always.
+
+    Normal traffic is sampled at `ratio` (default 10%). `random_value` lets
+    tests pin the roll without replacing the global RNG.
+    """
+    if error or approval or deny or duration_ms >= SLOW_SPAN_MS:
+        return True
+    roll = random.random() if random_value is None else random_value
+    return roll < max(0.0, min(1.0, ratio))
 
 
 @contextmanager

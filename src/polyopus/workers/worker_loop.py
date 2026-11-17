@@ -91,7 +91,17 @@ def run_worker_loop(
             if turn_id is None:
                 stop.wait(poll_seconds)
                 continue
-            result = process_one(conn, turn_id)
+            started = time.perf_counter()
+            try:
+                result = process_one(conn, turn_id)
+            except Exception:
+                from polyopus.platform.observability import metrics
+
+                metrics.turn_finished("failed", time.perf_counter() - started)
+                raise
+            from polyopus.platform.observability import metrics
+
+            metrics.turn_finished(result, time.perf_counter() - started)
             processed += 1
             tlog.log(logger, 20, "turn.processed", turn_id=turn_id, result=result)
         except AppError as exc:

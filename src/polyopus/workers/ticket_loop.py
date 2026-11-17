@@ -207,10 +207,14 @@ def run_ticket_loop(
                 recover_stale_running(conn)
                 expire_pending_approvals(conn)
                 last_sweep = now
+            started = time.perf_counter()
             state = process_next(conn, EventStore(conn))
             if state is None:
                 stop.wait(poll_seconds)
                 continue
+            from polyopus.platform.observability import metrics
+
+            metrics.turn_finished(state, time.perf_counter() - started)
             processed += 1
         except Exception as exc:  # noqa: BLE001 - the loop must survive
             tlog.log(logger, 40, "ticket_worker_error", error=str(exc))

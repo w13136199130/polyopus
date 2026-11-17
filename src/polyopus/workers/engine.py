@@ -211,6 +211,9 @@ def _execute_call(
          tool_round, arguments_json[:500], output_json[:4000], now_tool, _now()),
     )
     conn.commit()
+    from polyopus.platform.observability import metrics
+
+    metrics.tool_call(internal, "ok" if ok else "failed")
     return output_json, ok
 
 
@@ -259,6 +262,9 @@ def _refuse_call(
          tool_round, arguments_json[:500], output_json[:4000], _now(), _now()),
     )
     conn.commit()
+    from polyopus.platform.observability import metrics
+
+    metrics.tool_call(internal, "denied")
     return output_json
 
 
