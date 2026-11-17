@@ -16,6 +16,11 @@ import type {
   MessageListResponse,
   PostTurnResponse,
   SessionUser,
+  AdminUserListResponse,
+  AdminUserRow,
+  InviteListResponse,
+  InviteRow,
+  RoleRow,
   SourceListResponse,
   SourceView,
   ThreadListResponse,
@@ -246,6 +251,50 @@ export const usage = {
 };
 
 /** All wrapper groups — tests walk this for whitelist enforcement. */
+export const users = {
+  list: op("GET", "/users", () => apiFetch<AdminUserListResponse>("/users")),
+  create: op("POST", "/users", (body: {
+    username: string; displayName?: string; password: string; roles: string[];
+  }) => apiFetch<AdminUserRow>("/users", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  update: op("PATCH", "/users/{user_id}", (
+    userId: string,
+    body: { displayName?: string; status?: string; roles?: string[] },
+  ) => apiFetch<AdminUserRow>(`/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH", body: JSON.stringify(body),
+  })),
+  remove: op("DELETE", "/users/{user_id}", (userId: string) =>
+    apiFetch<{ userId: string; deleted: boolean }>(
+      `/users/${encodeURIComponent(userId)}`, { method: "DELETE" },
+    )),
+};
+
+export const roles = {
+  list: op("GET", "/roles", () =>
+    apiFetch<{ items: RoleRow[] }>("/roles")),
+};
+
+export const invites = {
+  list: op("GET", "/invites", () =>
+    apiFetch<InviteListResponse>("/invites")),
+  create: op("POST", "/invites", (body: {
+    email: string; role: string; expiresInHours?: number;
+  }) => apiFetch<InviteRow>("/invites", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  remove: op("DELETE", "/invites/{invite_id}", (inviteId: string) =>
+    apiFetch<{ inviteId: string; revoked: boolean }>(
+      `/invites/${encodeURIComponent(inviteId)}`, { method: "DELETE" },
+    )),
+  accept: op("POST", "/invites/accept", (body: {
+    token: string; password: string; displayName?: string;
+  }) => apiFetch<unknown>("/invites/accept", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+};
+
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
+  users, roles, invites,
 ];

@@ -1,5 +1,5 @@
 {
-  "count": 45,
+  "count": 55,
   "ops": [
     {
       "method": "DELETE",
@@ -11,11 +11,19 @@
     },
     {
       "method": "DELETE",
+      "path": "/api/v1/invites/{invite_id}"
+    },
+    {
+      "method": "DELETE",
       "path": "/api/v1/me/api-keys/{api_key_id}"
     },
     {
       "method": "DELETE",
       "path": "/api/v1/sources/{source_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/users/{user_id}"
     },
     {
       "method": "GET",
@@ -47,11 +55,23 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/invites"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/invites/{token}"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/me/api-keys"
     },
     {
       "method": "GET",
       "path": "/api/v1/outbox"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/roles"
     },
     {
       "method": "GET",
@@ -95,11 +115,19 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/users"
+    },
+    {
+      "method": "GET",
       "path": "/healthz"
     },
     {
       "method": "PATCH",
       "path": "/api/v1/cron-jobs/{job_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/users/{user_id}"
     },
     {
       "method": "POST",
@@ -136,6 +164,14 @@
     {
       "method": "POST",
       "path": "/api/v1/cron-jobs"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/invites"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/invites/accept"
     },
     {
       "method": "POST",
@@ -176,6 +212,10 @@
     {
       "method": "POST",
       "path": "/api/v1/tickets/{ticket_id}/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/users"
     },
     {
       "method": "POST",

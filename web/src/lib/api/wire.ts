@@ -203,3 +203,44 @@ export interface UsageSummaryResponse {
   items: UsageSummaryItem[];
   totalCostMicros: number;
 }
+
+export interface AdminUserRow {
+  id: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  tenantId: string;
+  status: string;
+  isOwner: boolean;
+  roles: string[];
+  role: string;
+  createdAt: number;
+  lastLoginAt: number | null;
+}
+
+export interface AdminUserListResponse {
+  items: AdminUserRow[];
+}
+
+export interface InviteRow {
+  id: string;
+  inviteId: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: number;
+  createdAt: number;
+  token?: string;
+}
+
+export interface InviteListResponse {
+  items: InviteRow[];
+}
+
+export interface RoleRow {
+  id: string;
+  name: string;
+  description: string | null;
+  builtin: boolean;
+  permissions: string[];
+}

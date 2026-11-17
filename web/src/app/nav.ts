@@ -22,5 +22,5 @@ export const NAV_PRIMARY: readonly NavItem[] = [
 
 export const NAV_BOTTOM: readonly NavItem[] = [
   { path: "/settings", label: "设置", icon: "sliders", milestone: "v1.0", permission: "settings:read" },
-  { path: "/admin", label: "管理", icon: "shield", milestone: "v1.0", permission: "audit:read" },
+  { path: "/admin", label: "管理", icon: "shield", milestone: "v1.0", permission: "user:read" },
 ];
