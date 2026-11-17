@@ -1,6 +1,6 @@
 [project]
 name = "polyopus"
-version = "0.5.0"
+version = "1.0.0"
 description = "Self-hosted multi-agent platform (design-first, M0 skeleton)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
