@@ -16,6 +16,7 @@ from polyopus.api.routers import (
     attentions,
     auth,
     cron_api,
+    me_api,
     outbound_api,
     threads,
     tickets_api,
@@ -77,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(outbound_api.router, prefix="/api/v1")
     app.include_router(admin_audit.router, prefix="/api/v1")
     app.include_router(cron_api.router, prefix="/api/v1")
+    app.include_router(me_api.router, prefix="/api/v1")
 
     @app.middleware("http")
     async def trace_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]

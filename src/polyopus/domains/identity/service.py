@@ -30,6 +30,8 @@ class Session:
     session_id: str
     user: User
     expires_at: int
+    step_up_until: int = 0
+    api_key: bool = False
 
 
 def _row_to_user(row: sqlite3.Row) -> User:
@@ -71,15 +73,17 @@ def create_session(
     ttl_seconds: int,
     user_agent: str | None = None,
     ip: str | None = None,
-) -> str:
+    family_id: str | None = None,
+) -> tuple[str, str]:
     session_id = "se_" + secrets.token_hex(12)
     refresh = tokens.new_refresh_token()
     now = int(time.time())
     conn.execute(
         """
         INSERT INTO sessions
-          (session_id, tenant_id, user_id, refresh_hash, user_agent, ip, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (session_id, tenant_id, user_id, refresh_hash, user_agent, ip,
+           expires_at, created_at, family_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
@@ -90,10 +94,70 @@ def create_session(
             ip,
             now + ttl_seconds,
             now,
+            family_id or session_id,
         ),
     )
     conn.commit()
-    return session_id
+    return session_id, refresh
+
+
+def rotate_session(
+    conn: sqlite3.Connection,
+    refresh_token: str,
+    *,
+    ttl_seconds: int,
+    user_agent: str | None = None,
+    ip: str | None = None,
+) -> tuple[str, str, User]:
+    """Rotate a refresh token; reuse of a rotated token revokes the family."""
+    now = int(time.time())
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE refresh_hash = ?",
+        (tokens.hash_token(refresh_token),),
+    ).fetchone()
+    if row is None:
+        raise AppError("AUTH_FAILED")
+    family = str(row["family_id"] or row["session_id"])
+    if row["revoked_at"] is not None:
+        # Replay of a used refresh token: burn every descendant session.
+        conn.execute(
+            "UPDATE sessions SET revoked_at = ? WHERE family_id = ? "
+            "AND revoked_at IS NULL",
+            (now, family),
+        )
+        conn.commit()
+        raise AppError("UNAUTHORIZED", details={"reason": "refresh_reuse"})
+    if int(row["expires_at"]) < now:
+        raise AppError("TOKEN_EXPIRED")
+    user_row = conn.execute(
+        "SELECT * FROM users WHERE user_id = ? AND deleted_at IS NULL",
+        (row["user_id"],),
+    ).fetchone()
+    if user_row is None:
+        raise AppError("UNAUTHORIZED")
+    conn.execute(
+        "UPDATE sessions SET revoked_at = ?, used_at = ? WHERE session_id = ?",
+        (now, now, row["session_id"]),
+    )
+    conn.commit()
+    user = _row_to_user(user_row)
+    session_id, refresh = create_session(
+        conn, user, ttl_seconds=ttl_seconds,
+        user_agent=user_agent, ip=ip, family_id=family,
+    )
+    return session_id, refresh, user
+
+
+def mark_step_up(
+    conn: sqlite3.Connection, session_id: str, *, seconds: int = 300
+) -> int:
+    until = int(time.time()) + seconds
+    conn.execute(
+        "UPDATE sessions SET step_up_until = ? WHERE session_id = ?",
+        (until, session_id),
+    )
+    conn.commit()
+    return until
 
 
 def load_session(conn: sqlite3.Connection, session_id: str) -> Session:
@@ -113,6 +177,7 @@ def load_session(conn: sqlite3.Connection, session_id: str) -> Session:
         session_id=session_id,
         user=_row_to_user(user_row),
         expires_at=int(row["expires_at"]),
+        step_up_until=int(row["step_up_until"] or 0),
     )
 
 

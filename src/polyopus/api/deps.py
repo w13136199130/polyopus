@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterator
 from sqlite3 import Connection
 
@@ -16,6 +17,7 @@ from polyopus.platform.security import tokens
 from polyopus.platform.tenant import TenantContext
 
 COOKIE_NAME = "poly_session"
+REFRESH_COOKIE = "poly_refresh"
 
 
 def get_db(request: Request) -> Iterator[Connection]:
@@ -49,6 +51,16 @@ def current_session(
     request: Request, conn: Connection = Depends(get_db)
 ) -> Session:
     token = _token_from(request)
+    if token.startswith("poly_"):
+        from polyopus.domains.identity import apikey
+
+        user = apikey.resolve_key(conn, token)
+        if user is None:
+            raise AppError("UNAUTHORIZED")
+        return Session(
+            session_id=f"api:{user.user_id}", user=user,
+            expires_at=int(time.time()) + 3600, api_key=True,
+        )
     try:
         claims = tokens.verify(request.app.state.settings.secret_key, token)
     except tokens.TokenError as exc:
@@ -61,8 +73,10 @@ def current_user(
     session: Session = Depends(current_session),
     conn: Connection = Depends(get_db),
 ) -> User:
-    # Roles are lazily materialized on first use so v0.5 users get a role
-    # without a data migration.
+    # API keys carry their own scopes; session users get lazily materialized
+    # roles (v0.5 users have no role rows yet).
+    if session.api_key:
+        return session.user
     return rbac.with_permissions(conn, session.user)
 
 
@@ -76,6 +90,14 @@ def require_permission(permission: str) -> Callable[..., User]:
         return user
 
     return dependency
+
+
+def require_step_up(
+    session: Session = Depends(current_session),
+) -> Session:
+    if session.api_key or session.step_up_until < int(time.time()):
+        raise AppError("REAUTH_REQUIRED")
+    return session
 
 
 def current_tenant(user: User = Depends(current_user)) -> TenantContext:
