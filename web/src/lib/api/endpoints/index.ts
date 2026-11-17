@@ -21,6 +21,7 @@ import type {
   MessageListResponse,
   NotificationListResponse,
   NotificationRow,
+  PluginRow,
   PostTurnResponse,
   SessionUser,
   AdminUserListResponse,
@@ -375,6 +376,24 @@ export const connectors = {
   }),
 };
 
+export const plugins = {
+  list: op("GET", "/plugins", () =>
+    apiFetch<{ items: PluginRow[] }>("/plugins")),
+  installExamples: op("POST", "/plugins/examples/install", () =>
+    apiFetch<{ items: PluginRow[] }>("/plugins/examples/install", {
+      method: "POST",
+    })),
+  setEnabled: op("PATCH", "/plugins/{plugin_id}", (
+    pluginId: string, enabled: boolean,
+  ) => apiFetch<PluginRow>(`/plugins/${encodeURIComponent(pluginId)}`, {
+    method: "PATCH", body: JSON.stringify({ enabled }),
+  })),
+  remove: op("DELETE", "/plugins/{plugin_id}", (pluginId: string) =>
+    apiFetch<{ ok: boolean; pluginId: string }>(
+      `/plugins/${encodeURIComponent(pluginId)}`, { method: "DELETE" },
+    )),
+};
+
 export const knowledge = {
   listKbs: op("GET", "/knowledge-bases", () =>
     apiFetch<{ items: KnowledgeBaseRow[] }>("/knowledge-bases")),
@@ -476,4 +495,5 @@ export const notifications = {
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, tools, knowledge, connectors,
+  plugins,
 ];

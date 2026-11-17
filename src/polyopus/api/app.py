@@ -27,6 +27,7 @@ from polyopus.api.routers import (
     metrics_api,
     notifications,
     outbound_api,
+    plugins_api,
     quota_api,
     roles_api,
     threads,
@@ -88,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tools_api.router, prefix="/api/v1")
     app.include_router(knowledge_api.router, prefix="/api/v1")
     app.include_router(connectors_api.router, prefix="/api/v1")
+    app.include_router(plugins_api.router, prefix="/api/v1")
     app.include_router(threads.router, prefix="/api/v1")
     app.include_router(attentions.router, prefix="/api/v1")
     app.include_router(webhooks.router, prefix="/api/v1")

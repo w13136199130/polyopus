@@ -30,3 +30,12 @@ test("extensions: registry and global tool switch", async ({ page }) => {
   await reloaded.click();
   await expect(reloaded).toBeChecked();
 });
+
+/** V1-15: signed example plugins appear in the plugin registry. */
+test("extensions: install example plugins", async ({ page }) => {
+  await login(page);
+  await page.goto("/extensions");
+  await page.getByTestId("plugin-install-examples").click();
+  await expect(page.getByTestId("plugin-row")).toHaveCount(3, { timeout: 15_000 });
+  await expect(page.getByTestId("plugin-row").first()).toContainText("plugin.");
+});

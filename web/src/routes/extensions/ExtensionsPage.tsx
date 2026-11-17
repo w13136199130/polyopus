@@ -7,6 +7,12 @@ import { useCan } from "@/lib/auth/permissions";
 import type { AgentToolBinding } from "@/lib/api/wire";
 import { useAgents } from "@/features/agents/api";
 import {
+  useInstallExamples,
+  usePlugins,
+  useTogglePlugin,
+  useUninstallPlugin,
+} from "@/features/plugins/api";
+import {
   useAgentTools,
   useSetAgentTools,
   useSetToolGlobal,
@@ -72,7 +78,11 @@ function AgentToolEditor({ agentId }: { agentId: string }) {
 export function ExtensionsPage() {
   const toolsQuery = useTools();
   const agentsQuery = useAgents();
+  const pluginsQuery = usePlugins();
   const setGlobal = useSetToolGlobal();
+  const installExamples = useInstallExamples();
+  const togglePlugin = useTogglePlugin();
+  const uninstallPlugin = useUninstallPlugin();
   const canWrite = useCan("extension:write");
   const agents = agentsQuery.data?.items ?? [];
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -80,6 +90,7 @@ export function ExtensionsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const tools = toolsQuery.data?.items ?? [];
+  const plugins = pluginsQuery.data?.items ?? [];
   const selected = agentId ?? agents[0]?.agentId ?? null;
 
   async function toggleGlobal(toolKey: string, enabled: boolean) {
@@ -145,6 +156,57 @@ export function ExtensionsPage() {
               {selected ? <AgentToolEditor agentId={selected} /> : null}
             </>
           )}
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.head}>
+            <h2>插件</h2><span>{plugins.length} 个（仅本地签名白名单）</span>
+          </div>
+          {pluginsQuery.isLoading ? <Loading label="载入插件…" /> : plugins.length === 0 ? (
+            <Empty title="暂无插件，可安装 3 个示例" />
+          ) : (
+            <ul className={styles.rows}>
+              {plugins.map((plugin) => (
+                <li key={plugin.pluginId} className={styles.row}
+                  data-testid="plugin-row">
+                  <div className={styles.who}>
+                    <strong>{plugin.name}</strong>
+                    <span>
+                      {plugin.pluginId} v{plugin.version} · {plugin.status} ·{" "}
+                      {plugin.tools.join(", ") || "无工具"}
+                    </span>
+                  </div>
+                  <div className={styles.actions}>
+                    <label className={styles.check}>
+                      <input
+                        type="checkbox"
+                        data-testid="plugin-enabled"
+                        checked={plugin.status === "enabled"}
+                        disabled={!canWrite}
+                        onChange={(event) => togglePlugin.mutate({
+                          pluginId: plugin.pluginId,
+                          enabled: event.target.checked,
+                        })}
+                      />
+                      启用
+                    </label>
+                    <Button size="sm" variant="danger" disabled={!canWrite}
+                      onClick={() => uninstallPlugin.mutate(plugin.pluginId)}>
+                      卸载
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Button size="sm" disabled={!canWrite} loading={installExamples.isPending}
+            data-testid="plugin-install-examples"
+            onClick={() => installExamples.mutate(undefined, {
+              onSuccess: (data) => setNotice(`已安装 ${data.items.length} 个示例插件`),
+              onError: (err) => setError(messageOf(err)),
+            })}>
+            安装示例插件
+          </Button>
         </section>
       </div>
     </PageShell>

@@ -1,5 +1,5 @@
 {
-  "count": 105,
+  "count": 110,
   "ops": [
     {
       "method": "DELETE",
@@ -40,6 +40,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/me/api-keys/{api_key_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/plugins/{plugin_id}"
     },
     {
       "method": "DELETE",
@@ -167,6 +171,10 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/plugins"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/roles"
     },
     {
@@ -244,6 +252,10 @@
     {
       "method": "PATCH",
       "path": "/api/v1/knowledge-bases/{kb_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/plugins/{plugin_id}"
     },
     {
       "method": "PATCH",
@@ -372,6 +384,14 @@
     {
       "method": "POST",
       "path": "/api/v1/notifications/{notification_id}/read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/plugins/examples/install"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/plugins/{plugin_id}/install"
     },
     {
       "method": "POST",

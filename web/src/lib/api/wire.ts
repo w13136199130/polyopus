@@ -372,3 +372,15 @@ export interface ConnectorInstanceRow {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface PluginRow {
+  pluginId: string;
+  name: string;
+  version: string;
+  apiVersion: string;
+  status: "installed" | "enabled" | "disabled" | "failed";
+  permissions: string[];
+  tools: string[];
+  signed: boolean;
+  installedAt: number;
+}

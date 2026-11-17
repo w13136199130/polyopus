@@ -91,6 +91,8 @@ def test_business_tables_carry_tenant_id(env: tuple[Path, TestClient]) -> None:
         "tools",
         # global connector catalog: instances carry the tenant scope
         "connector_catalog",
+        # plugin signature ledger: plugins carry the tenant scope
+        "plugin_signatures",
     }
     missing = []
     for table in tables:
