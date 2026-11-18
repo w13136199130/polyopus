@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { useSearchParams } from "react-router";
 import { ErrorState, PageLoading, StreamConnectingIndicator } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
+import { useAgents } from "@/features/agents/api";
 import {
   useCreateThread,
   useMessages,
@@ -29,6 +30,7 @@ export function ChatPage() {
   const threadId = params.get("threadId");
 
   const threadsQuery = useThreads();
+  const agentsQuery = useAgents();
   const createThread = useCreateThread();
   const messagesQuery = useMessages(threadId);
   const attentionsQuery = useAttentions();
@@ -48,10 +50,11 @@ export function ChatPage() {
     if (nearBottom) node.scrollTop = node.scrollHeight;
   }, [messagesQuery.data, snapshot.text, snapshot.status]);
 
-  function handleCreate() {
-    createThread.mutate("新对话", {
-      onSuccess: (thread) => setParams({ threadId: thread.threadId }),
-    });
+  function handleCreate(agentId: string | null) {
+    createThread.mutate(
+      { title: "新对话", agentId },
+      { onSuccess: (thread) => setParams({ threadId: thread.threadId }) },
+    );
   }
 
   async function handleSend(content: string) {
@@ -63,6 +66,13 @@ export function ChatPage() {
   const composerBusy =
     snapshot.status === "optimistic" || snapshot.status === "streaming";
 
+  const activeThread = (threadsQuery.data?.items ?? []).find(
+    (thread) => thread.threadId === threadId,
+  );
+  const activeAgent = (agentsQuery.data?.items ?? []).find(
+    (agent) => agent.agentId === activeThread?.agentId,
+  );
+
   return (
     <div style={{ display: "flex", height: "100%", minHeight: 0 }}>
       <ThreadRail
@@ -70,15 +80,40 @@ export function ChatPage() {
         loading={threadsQuery.isLoading}
         activeId={threadId}
         error={threadsQuery.isError}
+        agents={agentsQuery.data?.items ?? []}
         onSelect={(id) => setParams({ threadId: id })}
         onCreate={handleCreate}
         onRetry={() => void threadsQuery.refetch()}
       />
       <PageShell
         title="对话"
-        subtitle={threadId ? `会话 ${threadId.slice(0, 14)}…` : "选择或创建一个会话"}
+        subtitle={
+          threadId
+            ? activeThread
+              ? `${activeThread.title || "未命名会话"}${activeAgent ? ` · ${activeAgent.name}` : ""}`
+              : `会话 ${threadId.slice(0, 14)}…`
+            : "选择或创建一个会话"
+        }
         actions={
-          snapshot.connection === "reconnecting" ? <StreamConnectingIndicator /> : null
+          <>
+            {activeAgent ? (
+              <span
+                data-testid="chat-agent-chip"
+                style={{
+                  padding: "3px 10px",
+                  borderRadius: 999,
+                  background: "var(--primary-soft)",
+                  color: "var(--primary)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {activeAgent.name}
+              </span>
+            ) : null}
+            {snapshot.connection === "reconnecting" ? <StreamConnectingIndicator /> : null}
+          </>
         }
       >
         {!threadId ? (

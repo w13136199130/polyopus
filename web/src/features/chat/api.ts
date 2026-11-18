@@ -30,7 +30,8 @@ export function useThreads() {
 export function useCreateThread() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (title: string) => threads.create(title),
+    mutationFn: (input: { title: string; agentId?: string | null }) =>
+      threads.create(input.title, input.agentId ?? undefined),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: chatKeys.threads });
     },

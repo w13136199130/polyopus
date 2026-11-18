@@ -1,6 +1,6 @@
 .rail {
-  width: 240px;
-  flex: none;
+  width: var(--side);
+  flex: 0 0 var(--side);
   border-right: 1px solid var(--line);
   background: var(--surface);
   display: flex;
@@ -9,8 +9,35 @@
 }
 
 .top {
+  flex: none;
   padding: var(--space-3);
   border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.newRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.newRow > button {
+  flex: none;
+}
+
+.agentSelect {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.search {
+  font-size: 12.5px;
+  padding: 7px 10px;
+  background: var(--surface-2);
 }
 
 .list {
@@ -22,7 +49,23 @@
   gap: 2px;
 }
 
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
+.groupLabel {
+  padding: 10px 10px 4px;
+  color: var(--text-4);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
 .item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   text-align: left;
   background: none;
   border: none;
@@ -34,14 +77,17 @@
 }
 
 .item:hover {
-  background: var(--surface-3);
+  background: var(--surface-2);
   color: var(--text);
 }
 
 .active {
-  background: var(--surface-3);
+  background: var(--primary-soft);
   color: var(--text);
-  font-weight: 600;
+}
+
+.active:hover {
+  background: var(--primary-soft);
 }
 
 .title {
@@ -49,6 +95,36 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chip {
+  flex: none;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 10.5px;
+}
+
+.time {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-4);
+  font-size: 10.5px;
 }
 
 .error {
@@ -57,6 +133,6 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4);
-  color: var(--danger);
+  color: var(--red);
   font-size: 13px;
 }

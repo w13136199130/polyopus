@@ -37,6 +37,8 @@ export interface Thread {
   lastMessageAt: number;
   unreadCount: number;
   createdAt: number;
+  agentId?: string | null;
+  agentVersionId?: string | null;
 }
 
 export interface ThreadListResponse {

@@ -77,10 +77,10 @@ export const auth = {
 
 export const threads = {
   list: op("GET", "/threads", () => apiFetch<ThreadListResponse>("/threads")),
-  create: op("POST", "/threads", (title: string) =>
+  create: op("POST", "/threads", (title: string, agentId?: string | null) =>
     apiFetch<ThreadListResponse["items"][number]>("/threads", {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(agentId ? { title, agentId } : { title }),
     })),
   messages: op("GET", "/threads/{thread_id}/messages", (threadId: string) =>
     apiFetch<MessageListResponse>(
