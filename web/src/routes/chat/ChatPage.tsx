@@ -126,7 +126,15 @@ export function ChatPage() {
             onRetry={() => void messagesQuery.refetch()}
           />
         ) : (
-          <>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--surface)",
+            }}
+          >
             <MessageList
               messages={messagesQuery.data?.items}
               snapshot={snapshot}
@@ -151,7 +159,7 @@ export function ChatPage() {
               onConsumedRestore={() => setRestored(null)}
               onSend={(content) => void handleSend(content)}
             />
-          </>
+          </div>
         )}
       </PageShell>
     </div>

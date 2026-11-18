@@ -1,46 +1,54 @@
+/* Chat geometry mirrors prototype/styles.css (.msgs/.msg/.msg.user):
+   assistant rows anchor left (max 880px), user rows anchor right (max 720px,
+   soft-blue bubble max 620px), both inside 24/28 padding — wide, not a
+   centered narrow column. The composer's centered 920px card then lines up
+   with the assistant column. */
 .scroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding: 24px 28px 8px;
+  display: flex;
+  flex-direction: column;
 }
 
 .inner {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  margin-top: auto;
 }
 
 .bubble {
-  max-width: 78%;
-  padding: 10px 14px;
-  border-radius: 12px;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.user {
-  align-self: flex-end;
-  background: var(--accent);
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
 .assistant {
   align-self: flex-start;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-bottom-left-radius: 4px;
+  max-width: 880px;
+  width: fit-content;
+  padding: 0;
+  color: var(--text);
+}
+
+.user {
+  align-self: flex-end;
+  max-width: 720px;
+  width: fit-content;
+  padding: 10px 14px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: 12px 12px 3px 12px;
 }
 
 .streaming::after {
   content: "▋";
   animation: blink 1s steps(2) infinite;
-  color: var(--text-3);
+  color: var(--text-4);
+  margin-left: 2px;
 }
 
 @keyframes blink {
@@ -54,4 +62,14 @@
   color: var(--text-3);
   text-align: center;
   padding: var(--space-5);
+}
+
+@media (max-width: 1440px) {
+  .assistant {
+    max-width: 760px;
+  }
+
+  .user {
+    max-width: 640px;
+  }
 }
