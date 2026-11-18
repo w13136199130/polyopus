@@ -23,7 +23,10 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
 }
 
-export function AdminUsersPage() {
+export function AdminUsersPage({ embedded = false, onNotice }: {
+  embedded?: boolean;
+  onNotice?: (message: string) => void;
+}) {
   const usersQuery = useAdminUsers();
   const rolesQuery = useRoles();
   const invitesQuery = useInvites();
@@ -36,7 +39,9 @@ export function AdminUsersPage() {
   const revokeInvite = useRevokeInvite();
 
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [localNotice, setLocalNotice] = useState<string | null>(null);
+  const notice = onNotice ? null : localNotice;
+  const setNotice = onNotice ?? setLocalNotice;
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
   const [newUser, setNewUser] = useState({
     username: "", displayName: "", password: "", role: "member",
@@ -102,8 +107,8 @@ export function AdminUsersPage() {
     setPendingDelete(null);
   }
 
-  return (
-    <PageShell title="管理" subtitle="用户、角色与邀请；最后一名管理员不可降级或删除。">
+  const body = (
+    <>
       <div className={styles.page}>
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
@@ -224,6 +229,12 @@ export function AdminUsersPage() {
         }>
         <p>最后一名管理员不可删除。</p>
       </Dialog>
+    </>
+  );
+  if (embedded) return body;
+  return (
+    <PageShell title="管理" subtitle="用户、角色与邀请；最后一名管理员不可降级或删除。">
+      {body}
     </PageShell>
   );
 }

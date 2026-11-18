@@ -13,6 +13,10 @@ import type {
   AgentToolBinding,
   AnswerResponse,
   ApiKeyRow,
+  AuditRow,
+  QuotaRow,
+  BackupRow,
+  DataJobRow,
   AttentionListResponse,
   ConnectorCatalogRow,
   ConnectorInstanceRow,
@@ -383,6 +387,51 @@ export const connectors = {
   }),
 };
 
+/** P2-7 admin console: quotas, audit, backup, data jobs. */
+export const adminOps = {
+  quotas: op("GET", "/admin/quotas", () =>
+    apiFetch<{ items: QuotaRow[] }>("/admin/quotas")),
+  createQuota: op("POST", "/admin/quotas", (body: {
+    scope: string; scopeId: string; metric: string; limit: number; window: string;
+  }) => apiFetch<QuotaRow>("/admin/quotas", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  updateQuota: op("PATCH", "/admin/quotas/{quota_id}", (
+    quotaId: string, limit: number,
+  ) => apiFetch<QuotaRow>(`/admin/quotas/${encodeURIComponent(quotaId)}`, {
+    method: "PATCH", body: JSON.stringify({ limit }),
+  })),
+  audit: op("GET", "/admin/audit", (params?: {
+    action?: string; actorId?: string; result?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.action) query.set("action", params.action);
+    if (params?.actorId) query.set("actorId", params.actorId);
+    if (params?.result) query.set("result", params.result);
+    const suffix = query.toString();
+    return apiFetch<{ items: AuditRow[] }>(
+      `/admin/audit${suffix ? `?${suffix}` : ""}`,
+    );
+  }),
+  backups: op("GET", "/admin/backup", () =>
+    apiFetch<{ items: BackupRow[] }>("/admin/backup")),
+  createBackup: op("POST", "/admin/backup", () =>
+    apiFetch<BackupRow>("/admin/backup", {
+      method: "POST", body: JSON.stringify({}),
+    })),
+  restoreBackup: op("POST", "/admin/backup/{backup_id}/restore", (backupId: string) =>
+    apiFetch<BackupRow>(
+      `/admin/backup/${encodeURIComponent(backupId)}/restore`, { method: "POST" },
+    )),
+  removeBackup: op("DELETE", "/admin/backup/{backup_id}", (backupId: string) =>
+    apiFetch<{ ok: boolean; backupId: string }>(
+      `/admin/backup/${encodeURIComponent(backupId)}`, { method: "DELETE" },
+    )),
+  dataJobs: op("GET", "/admin/data-jobs", () =>
+    apiFetch<{ items: DataJobRow[] }>("/admin/data-jobs")),
+};
+
+
 export const settings = {
   get: op("GET", "/admin/settings", () =>
     apiFetch<AdminSettings>("/admin/settings")),
@@ -545,5 +594,5 @@ export const notifications = {
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, tools, knowledge, connectors,
-  plugins, settings,
+  plugins, settings, adminOps,
 ];

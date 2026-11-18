@@ -21,6 +21,15 @@ class TenantPurgeBody(BaseModel):
     reason: str = Field(min_length=1)
 
 
+@router.get("/data-jobs")
+def list_data_jobs(
+    user: User = Depends(require_permission("admin:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    """P2-7: recent export/purge jobs for the console table."""
+    return {"items": service.list_jobs(conn, tenant_id=user.tenant_id)}
+
+
 @router.get("/data-jobs/{job_id}")
 def get_data_job(
     job_id: str,

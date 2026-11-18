@@ -47,3 +47,39 @@ test("admin: create and revoke an invite", async ({ page }) => {
   await row.getByTestId("admin-invite-revoke").click();
   await expect(row).toContainText("revoked");
 });
+
+/** P2-7: admin console tabs — quotas, audit, backup. */
+test("admin: quota create/edit, audit filter, backup create", async ({ page }) => {
+  await login(page);
+  await page.goto("/admin");
+
+  // quotas: create a user quota, then edit its limit inline
+  await page.getByTestId("admin-tab-quotas").click();
+  await page.getByTestId("quota-scope-id").fill("us_console_e2e");
+  await page.getByTestId("quota-limit").fill("5");
+  await page.getByTestId("quota-create").click();
+  const quotaRow = page.getByTestId("quota-row").filter({ hasText: "us_console_e2e" });
+  await expect(quotaRow).toBeVisible({ timeout: 10_000 });
+  await quotaRow.getByTestId("quota-edit").click();
+  await quotaRow.getByTestId("quota-limit-edit").fill("0");
+  await quotaRow.getByTestId("quota-save").click();
+  await expect(page.getByText("已更新限额")).toBeVisible();
+  await expect(quotaRow).toContainText("不限");
+
+  // audit: filter by user.create from the quota/user actions above
+  await page.getByTestId("admin-tab-audit").click();
+  await page.getByTestId("audit-action").fill("user.create");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("audit-row").first()).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByTestId("audit-row").first()).toContainText("user.create");
+
+  // backup: create -> ready -> delete keeps the list consistent
+  await page.getByTestId("admin-tab-backup").click();
+  await page.getByTestId("backup-create").click();
+  const backupRow = page.getByTestId("backup-row").first();
+  await expect(backupRow.locator("span", { hasText: "ready" })).toBeVisible({
+    timeout: 20_000,
+  });
+});

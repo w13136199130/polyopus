@@ -126,6 +126,17 @@ def get_job(
     return _view(row)
 
 
+def list_jobs(
+    conn: sqlite3.Connection, *, tenant_id: str, limit: int = 50,
+) -> list[dict[str, Any]]:
+    """P2-7 admin console: most recent export/purge jobs."""
+    rows = conn.execute(
+        "SELECT * FROM data_jobs WHERE tenant_id = ? ORDER BY id DESC LIMIT ?",
+        (tenant_id, max(1, min(limit, 200))),
+    ).fetchall()
+    return [_view(row) for row in rows]
+
+
 def run_pending(
     conn: sqlite3.Connection, data_dir: Path, *, limit: int = 5,
 ) -> int:

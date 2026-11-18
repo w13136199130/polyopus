@@ -274,3 +274,27 @@ def test_tenant_purge_exports_then_deletes_and_anonymizes(
     assert row is not None
     assert row[0] is None
     assert json.loads(row[1]) == {}
+
+
+def test_admin_data_jobs_listing(tmp_path: Path) -> None:
+    """P2-7: the console table lists recent export/purge jobs."""
+    db = tmp_path / "jobs.db"
+    conn = m.connect(db)
+    m.apply(conn, m.discover(MIGRATIONS))
+    ensure_admin(conn, password=PASSWORD)
+    conn.close()
+    settings = Settings(
+        db_path=db, secret_key="s", access_ttl_seconds=3600,
+        session_ttl_seconds=86400, embedded_worker=False,
+        data_dir=tmp_path / "data",
+    )
+    with TestClient(create_app(settings)) as client:
+        client.post("/api/v1/auth/login", json={
+            "username": "admin", "password": PASSWORD,
+        })
+        assert client.post("/api/v1/me/export", json={"format": "jsonl"}).status_code == 202
+        listed = client.get("/api/v1/admin/data-jobs")
+        assert listed.status_code == 200, listed.text
+        items = listed.json()["items"]
+        assert len(items) == 1
+        assert items[0]["kind"] == "export"

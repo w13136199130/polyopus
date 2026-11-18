@@ -276,3 +276,29 @@ def test_concurrent_post_turn_does_not_oversell(db: Path) -> None:
         conn.close()
     assert accepted == 2
     assert sum(1 for ok in results if ok) == 2
+
+
+def test_admin_quota_api_creates_and_updates(db: Path, client: TestClient) -> None:
+    """P2-7: the console needs POST (upsert) next to PATCH."""
+    created = client.post("/api/v1/admin/quotas", json={
+        "scope": "user", "scopeId": "us_console", "metric": "requests",
+        "limit": 5, "window": "day",
+    })
+    assert created.status_code == 201, created.text
+    quota_id = created.json()["quotaId"]
+    assert created.json()["limit"] == 5
+
+    # same unique key upserts instead of duplicating
+    again = client.post("/api/v1/admin/quotas", json={
+        "scope": "user", "scopeId": "us_console", "metric": "requests",
+        "limit": 9, "window": "day",
+    })
+    assert again.status_code == 201
+    assert again.json()["quotaId"] == quota_id
+    assert again.json()["limit"] == 9
+
+    listed = client.get("/api/v1/admin/quotas").json()["items"]
+    assert [row for row in listed if row["quotaId"] == quota_id][0]["limit"] == 9
+
+    patched = client.patch(f"/api/v1/admin/quotas/{quota_id}", json={"limit": 0})
+    assert patched.status_code == 200 and patched.json()["limit"] == 0

@@ -411,3 +411,48 @@ export interface AdminSettings {
   dailyCostBudgetMicros: number;
   readOnly: boolean;
 }
+
+export interface QuotaRow {
+  quotaId: string;
+  scope: "tenant" | "user" | "model";
+  scopeId: string;
+  metric: "tokens" | "cost" | "requests";
+  limit: number;
+  window: "day" | "month" | "absolute";
+}
+
+export interface AuditRow {
+  auditId: string;
+  createdAt: number;
+  actorId: string | null;
+  action: string;
+  resourceType: string | null;
+  resourceId: string | null;
+  result: string;
+  ticketId: string | null;
+  detail: Record<string, unknown>;
+  ip: string | null;
+  traceId: string | null;
+}
+
+export interface BackupRow {
+  backupId: string;
+  kind: string;
+  checksum: string;
+  sizeBytes: number;
+  auto: boolean;
+  status: string;
+  createdAt: number;
+  restoredAt: number | null;
+}
+
+export interface DataJobRow {
+  jobId: string;
+  kind: "export" | "delete";
+  status: string;
+  progress: number;
+  storageRef: string | null;
+  error: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+}

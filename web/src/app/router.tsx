@@ -5,7 +5,7 @@ import { LoginPage } from "@/routes/auth/LoginPage";
 import { ComingSoonPage } from "@/routes/ComingSoonPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
 import { ChatPage } from "@/routes/chat/ChatPage";
-import { AdminUsersPage } from "@/routes/admin/AdminUsersPage";
+import { AdminPage } from "@/routes/admin/AdminPage";
 import { ConnectionsPage } from "@/routes/connections/ConnectionsPage";
 import { ExtensionsPage } from "@/routes/extensions/ExtensionsPage";
 import { KnowledgePage } from "@/routes/knowledge/KnowledgePage";
@@ -43,7 +43,7 @@ export const appRoutes: RouteObject[] = [
       { path: "extensions", element: <RequirePermission permission="extension:read"><ExtensionsPage /></RequirePermission> },
       { path: "workbench", element: <ComingSoonPage title="工作台" milestone="v1.0" /> },
       { path: "settings", element: <RequirePermission permission="settings:read"><SettingsPage /></RequirePermission> },
-      { path: "admin", element: <RequirePermission permission="user:read"><AdminUsersPage /></RequirePermission> },
+      { path: "admin", element: <RequirePermission permission="user:read"><AdminPage /></RequirePermission> },
       { path: "*", element: <NotFoundPage /> },
     ],
   },
