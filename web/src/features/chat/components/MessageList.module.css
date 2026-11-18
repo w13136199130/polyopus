@@ -1,8 +1,6 @@
-/* Chat geometry mirrors prototype/styles.css (.msgs/.msg/.msg.user):
-   assistant rows anchor left (max 880px), user rows anchor right (max 720px,
-   soft-blue bubble max 620px), both inside 24/28 padding — wide, not a
-   centered narrow column. The composer's centered 920px card then lines up
-   with the assistant column. */
+/* Chat geometry: one centered 920px column shared with the composer card
+   (prototype .composer max-width 920). Assistant rows anchor left inside the
+   column (max 880), user rows anchor right (max 720, soft-blue bubble). */
 .scroll {
   flex: 1;
   overflow-y: auto;
@@ -13,6 +11,9 @@
 }
 
 .inner {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
