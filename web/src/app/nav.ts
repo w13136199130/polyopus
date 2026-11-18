@@ -26,7 +26,7 @@ export const NAV_PRIMARY: readonly NavItem[] = [
   { path: "/knowledge", label: "知识", icon: "book", milestone: "v1.0", group: "work", permission: "knowledge:read" },
   { path: "/connections", label: "连接", icon: "plug", milestone: "v0.5", group: "capability", permission: "source:read" },
   { path: "/extensions", label: "扩展", icon: "puzzle", milestone: "v1.0", group: "capability", permission: "extension:read" },
-  { path: "/workbench", label: "工作台", icon: "monitor", milestone: "v1.0", group: "capability" },
+  { path: "/workbench", label: "工作台", icon: "monitor", milestone: "v1.1", group: "capability" },
   { path: "/usage", label: "用量", icon: "chart", milestone: "v0.5", group: "capability", permission: "usage:read" },
 ];
 
