@@ -418,6 +418,12 @@ export const settings = {
 export const plugins = {
   list: op("GET", "/plugins", () =>
     apiFetch<{ items: PluginRow[] }>("/plugins")),
+  install: op("POST", "/plugins/{plugin_id}/install", (
+    pluginId: string,
+    body: { manifest: Record<string, unknown>; signature: string; signer?: string },
+  ) => apiFetch<PluginRow>(`/plugins/${encodeURIComponent(pluginId)}/install`, {
+    method: "POST", body: JSON.stringify(body),
+  })),
   installExamples: op("POST", "/plugins/examples/install", () =>
     apiFetch<{ items: PluginRow[] }>("/plugins/examples/install", {
       method: "POST",

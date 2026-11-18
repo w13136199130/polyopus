@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { tools } from "@/lib/api/endpoints";
+import type { ToolRow } from "@/lib/api/wire";
 
 export const toolKeys = {
   list: ["tools"] as const,
@@ -25,7 +26,30 @@ export function useSetToolGlobal() {
   return useMutation({
     mutationFn: (input: { toolKey: string; enabled: boolean }) =>
       tools.update(input.toolKey, input.enabled),
-    onSuccess: () => void client.invalidateQueries({ queryKey: toolKeys.list }),
+    // optimistic flip: a controlled checkbox must not snap back to the stale
+    // cache while the PATCH round-trips
+    onMutate: async (input) => {
+      await client.cancelQueries({ queryKey: toolKeys.list });
+      const previous = client.getQueryData<{ items: ToolRow[] }>(toolKeys.list);
+      client.setQueryData<{ items: ToolRow[] }>(toolKeys.list, (current) =>
+        current
+          ? {
+              items: current.items.map((tool) =>
+                tool.toolKey === input.toolKey
+                  ? { ...tool, enabledGlobal: input.enabled }
+                  : tool,
+              ),
+            }
+          : current,
+      );
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous) {
+        client.setQueryData(toolKeys.list, context.previous);
+      }
+    },
+    onSettled: () => void client.invalidateQueries({ queryKey: toolKeys.list }),
   });
 }
 
