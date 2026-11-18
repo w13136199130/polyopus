@@ -218,6 +218,11 @@ def _spawn_serve(db: Path, tmp: Path, port: int, workers: bool) -> subprocess.Po
         "POLY_WORKSPACE_DIR": str(tmp / "ws"),
         "POLY_ADMIN_PASSWORD": "restart-pass",
         "POLY_EMBEDDED_WORKER": "true" if workers else "false",
+        # empty env vars override a developer .env (pydantic precedence), so
+        # the spawned server stays on FakeModel even with real keys on disk
+        "POLY_MODEL_BASE_URL": "",
+        "POLY_MODEL_API_KEY": "",
+        "POLY_MODEL_NAME": "",
         "PYTHONPATH": str(ROOT / "src"),
     }
     return subprocess.Popen(

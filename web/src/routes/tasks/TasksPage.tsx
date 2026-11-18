@@ -1,17 +1,19 @@
 /**
- * Tasks page (V05-04): inbox strip + four-bucket board + detail drawer.
- * V05-20 adds source/schedule filters; counts still aggregate client-side
- * until V05-22 ships GET /tickets/counts.
+ * Tasks page: inbox strip + four-bucket board + detail drawer.
+ * P0-3 adds manual ticket creation (POST /tickets) so a fresh install has a
+ * real entry point instead of a demo-webhook seed.
  */
 
 import { useState } from "react";
 import { useSearchParams } from "react-router";
+import { Button, Dialog } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
+import { useCan } from "@/lib/auth/permissions";
 import { pendingInbox, useAttentions } from "@/lib/api/hooks";
 import {
   bucketCounts,
   inBucket,
-  seedDemoTicket,
+  useCreateTicket,
   useTicketCounts,
   useTickets,
   type BucketFilter,
@@ -37,7 +39,13 @@ export function TasksPage() {
   const countsQuery = useTicketCounts();
   const attentionsQuery = useAttentions();
   const sourcesQuery = useSources();
-  const [seeding, setSeeding] = useState(false);
+  const createTicket = useCreateTicket();
+  const canWrite = useCan("ticket:write");
+
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [brief, setBrief] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const sources = sourcesQuery.data?.items ?? [];
   const scheduleIds = new Set(
@@ -63,14 +71,21 @@ export function TasksPage() {
     setParams(next, { replace: true });
   }
 
-  async function handleSeed() {
-    setSeeding(true);
+  async function submitCreate(event: React.FormEvent) {
+    event.preventDefault();
+    setCreateError(null);
     try {
-      const id = await seedDemoTicket();
-      if (id) setParam("ticketId", id);
+      const created = await createTicket.mutateAsync({
+        title: title.trim(),
+        content: brief.trim() || undefined,
+      });
+      setCreating(false);
+      setTitle("");
+      setBrief("");
+      setParam("ticketId", created.ticketId);
       await ticketsQuery.refetch();
-    } finally {
-      setSeeding(false);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "创建失败");
     }
   }
 
@@ -78,6 +93,16 @@ export function TasksPage() {
     <PageShell
       title="任务"
       subtitle="Agent 替你干活的主界面：收件箱待决、四桶看进度。"
+      actions={
+        <Button
+          size="sm"
+          data-testid="new-ticket"
+          disabled={!canWrite}
+          onClick={() => setCreating(true)}
+        >
+          ＋ 新建任务
+        </Button>
+      }
     >
       <div style={{ padding: "0 24px", display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
         <InboxStrip
@@ -119,7 +144,7 @@ export function TasksPage() {
               fontSize: 12,
               borderRadius: 999,
               border: "1px solid var(--line)",
-              background: scheduleOnly ? "var(--accent)" : "var(--surface)",
+              background: scheduleOnly ? "var(--primary)" : "var(--surface)",
               color: scheduleOnly ? "#fff" : "var(--text)",
               cursor: "pointer",
             }}
@@ -135,8 +160,8 @@ export function TasksPage() {
           filter={filter}
           onFilter={(next) => setParam("bucket", next === "all" ? null : next)}
           onOpen={(id) => setParam("ticketId", id)}
-          onSeed={() => void handleSeed()}
-          seeding={seeding}
+          onCreate={() => setCreating(true)}
+          creating={createTicket.isPending}
           onRetry={() => void ticketsQuery.refetch()}
         />
       </div>
@@ -144,6 +169,59 @@ export function TasksPage() {
         ticketId={ticketId}
         onClose={() => setParam("ticketId", null)}
       />
+
+      <Dialog
+        open={creating}
+        onOpenChange={(open) => { if (!open) setCreating(false); }}
+        title="新建任务"
+        description="手动任务与来源任务同权：都会拿到 mandate 和执行线程。"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCreating(false)}>取消</Button>
+            <Button
+              data-testid="new-ticket-submit"
+              type="submit"
+              form="new-ticket-form"
+              loading={createTicket.isPending}
+              disabled={!title.trim()}
+            >
+              创建
+            </Button>
+          </>
+        }
+      >
+        <form id="new-ticket-form" onSubmit={(event) => void submitCreate(event)}>
+          {createError ? (
+            <div role="alert" style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>
+              {createError}
+            </div>
+          ) : null}
+          <label style={{ display: "block", fontSize: 12, color: "var(--text-2)", marginBottom: 4 }}>
+            标题
+            <input
+              data-testid="new-ticket-title"
+              required
+              maxLength={200}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              style={{ width: "100%", marginTop: 4 }}
+              placeholder="例如：整理本周工作日志"
+            />
+          </label>
+          <label style={{ display: "block", fontSize: 12, color: "var(--text-2)", marginTop: 12 }}>
+            任务说明（可选，作为首条人工消息）
+            <textarea
+              data-testid="new-ticket-brief"
+              maxLength={4000}
+              rows={4}
+              value={brief}
+              onChange={(event) => setBrief(event.target.value)}
+              style={{ width: "100%", marginTop: 4, resize: "vertical" }}
+              placeholder="要做什么、产出是什么、有什么约束"
+            />
+          </label>
+        </form>
+      </Dialog>
     </PageShell>
   );
 }

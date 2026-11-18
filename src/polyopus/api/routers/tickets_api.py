@@ -18,6 +18,27 @@ from polyopus.platform.events.store import EventStore
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
+class CreateTicketBody(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    content: str | None = Field(default=None, max_length=4000)
+    priority: int = Field(default=0, ge=0, le=10)
+
+
+@router.post("", status_code=201)
+def create_ticket(
+    body: CreateTicketBody,
+    user: User = Depends(require_permission("ticket:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    """Manual ticket (P0-3): same mandate/thread basis as intake tickets."""
+    ticket_id = service.create_manual(
+        conn, store, tenant_id=user.tenant_id, created_by=user.user_id,
+        title=body.title, content=body.content, priority=body.priority,
+    )
+    return {"ticketId": ticket_id, "bucket": "queued", "state": "open"}
+
+
 @router.get("")
 def list_tickets(
     user: User = Depends(require_permission("ticket:read")), conn: Connection = Depends(get_db)

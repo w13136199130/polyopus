@@ -11,8 +11,8 @@ interface Props {
   filter: BucketFilter;
   onFilter: (filter: BucketFilter) => void;
   onOpen: (ticketId: string) => void;
-  onSeed: () => void;
-  seeding: boolean;
+  onCreate: () => void;
+  creating: boolean;
   onRetry: () => void;
 }
 
@@ -24,7 +24,7 @@ function timeAgo(ts: number): string {
 }
 
 export function TicketBoard({
-  rows, loading, error, counts, filter, onFilter, onOpen, onSeed, seeding, onRetry,
+  rows, loading, error, counts, filter, onFilter, onOpen, onCreate, creating, onRetry,
 }: Props) {
   return (
     <div className={styles.board}>
@@ -68,8 +68,8 @@ export function TicketBoard({
         ) : !rows || rows.length === 0 ? (
           <Empty
             title="还没有任务"
-            hint="发一条演示 webhook，看看工单如何进入队列。"
-            action={{ label: seeding ? "创建中…" : "创建演示任务", onClick: onSeed }}
+            hint="新建一个任务，或从来源 webhook 自动进入。"
+            action={{ label: creating ? "创建中…" : "新建任务", onClick: onCreate }}
           />
         ) : (
           <ul className={styles.list}>

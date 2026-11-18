@@ -216,6 +216,11 @@ export const cronJobs = {
 
 export const tickets = {
   list: op("GET", "/tickets", () => apiFetch<TicketListResponse>("/tickets")),
+  create: op("POST", "/tickets", (body: {
+    title: string; content?: string; priority?: number;
+  }) => apiFetch<{ ticketId: string; bucket: string; state: string }>(
+    "/tickets", { method: "POST", body: JSON.stringify(body) },
+  )),
   counts: op("GET", "/tickets/counts", () =>
     apiFetch<TicketCounts>("/tickets/counts")),
   detail: op("GET", "/tickets/{ticket_id}", (ticketId: string) =>

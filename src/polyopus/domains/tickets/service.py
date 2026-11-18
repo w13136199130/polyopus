@@ -709,6 +709,92 @@ def stop(
     )
 
 
+def create_manual(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    created_by: str,
+    title: str,
+    content: str | None = None,
+    priority: int = 0,
+    scope: list[str] | None = None,
+) -> str:
+    """Manual ticket (P0-3): same execution basis as intake tickets — mandate
+    + system execution thread + ticket.opened — just no source/trigger."""
+    from polyopus.domains.policy import service as policy
+
+    tenant = tenant_id or TENANT
+    title = title.strip() or "手动任务"
+    now = _now()
+    ticket_id = "tk_" + secrets.token_hex(8)
+    mandate_id = "md_" + secrets.token_hex(8)
+    thread_id = "th_" + secrets.token_hex(12)
+    policy_version = policy.active_version_or_bootstrap(conn, tenant)
+    scope = list(scope) if scope else ["workspace:default"]
+
+    conn.execute(
+        """
+        INSERT INTO tickets
+          (tenant_id, ticket_id, title, state, bucket, priority,
+           actor_json, strength, policy_version, scope_json,
+           created_at, updated_at)
+        VALUES (?, ?, ?, 'open', 'queued', ?, ?, 'explicit', ?, ?, ?, ?)
+        """,
+        (tenant, ticket_id, title, priority,
+         json.dumps({"id": created_by, "kind": "user"}),
+         policy_version, json.dumps(scope), now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO mandates
+          (tenant_id, mandate_id, ticket_id, policy_version, scope_json,
+           strength, matched_rules_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (tenant, mandate_id, ticket_id, policy_version, json.dumps(scope),
+         "explicit", json.dumps(["manual"]), now),
+    )
+    conn.execute(
+        """
+        INSERT INTO threads
+          (tenant_id, thread_id, owner_id, title, status, created_at, updated_at)
+        VALUES (?, ?, 'system', ?, 'active', ?, ?)
+        """,
+        (tenant, thread_id, title, now, now),
+    )
+    conn.commit()
+    link_thread(conn, ticket_id, thread_id)
+    if content and content.strip():
+        conn.execute(
+            """
+            INSERT INTO timeline_events
+              (event_id, tenant_id, ticket_id, kind, title, actor, payload_json,
+               created_at)
+            VALUES (?, ?, ?, 'human_message', '人工消息', ?, ?, ?)
+            """,
+            ("tl_" + secrets.token_hex(8), tenant, ticket_id, created_by,
+             json.dumps({"content": content[:4000]}, ensure_ascii=False), now),
+        )
+        conn.commit()
+    store.append(
+        thread_id,
+        "ticket.opened",
+        {
+            "ticket_id": ticket_id, "title": title, "source_id": None,
+            "mandate": {
+                "policy_version": policy_version, "scope": scope,
+                "strength": "explicit", "matched_rules": ["manual"],
+                "actor": {"kind": "user", "id": created_by},
+                "granted_at": now,
+            },
+            "event_thread_id": thread_id,
+        },
+        tenant_id=tenant,
+    )
+    return ticket_id
+
+
 def _release_subscriptions(conn: sqlite3.Connection, ticket_id: str) -> None:
     """V05-10: an ended ticket releases its event-thread subscription so the
     thread can open new tickets. Best-effort — the fan-out lookup re-checks

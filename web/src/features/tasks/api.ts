@@ -64,6 +64,19 @@ export function useStopTicket() {
   });
 }
 
+/** Manual ticket (P0-3): POST /tickets with title + optional brief. */
+export function useCreateTicket() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { title: string; content?: string; priority?: number }) =>
+      tickets.create(body),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: taskKeys.tickets });
+      void client.invalidateQueries({ queryKey: taskKeys.counts });
+    },
+  });
+}
+
 export function bucketCounts(rows: TicketRow[] | undefined): Record<Bucket, number> {
   const counts: Record<Bucket, number> = { attention: 0, running: 0, queued: 0, done: 0 };
   for (const row of rows ?? []) {
