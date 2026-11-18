@@ -160,3 +160,32 @@ test("tasks: policy-gated ticket parks in 待决, stop moves it to done", async 
   expect(after.find((row) => row.ticketId === ticket)?.bucket).toBe("done");
   expect(after.filter((row) => row.bucket === "done").length).toBe(beforeDone + 1);
 });
+
+/** P0-3: manual ticket — 新建任务 dialog creates a queued ticket that the
+ * worker then drives to done, and the drawer opens on it. */
+test("tasks: manual create from the 新建任务 dialog", async ({ page }) => {
+  await login(page);
+  await page.goto("/tasks");
+
+  const idle = await waitIdle(page);
+  const beforeDone = idle.filter((row) => row.bucket === "done").length;
+
+  const title = `手动任务 ${Date.now()}`;
+  await page.getByTestId("new-ticket").click();
+  const dialog = page.getByRole("dialog", { name: "新建任务" });
+  await dialog.getByTestId("new-ticket-title").fill(title);
+  await dialog
+    .getByTestId("new-ticket-brief")
+    .fill("请把工作日志整理成三行总结，不要写文件。");
+  await dialog.getByTestId("new-ticket-submit").click();
+
+  // creation opens the drawer on the new ticket
+  const drawer = page.getByRole("dialog", { name: "任务详情" });
+  await expect(drawer).toContainText(title, { timeout: 15_000 });
+
+  // and the worker drains it to done like any source ticket
+  await expect(page.getByTestId("bucket-done")).toContainText(
+    String(beforeDone + 1),
+    { timeout: 30_000 },
+  );
+});

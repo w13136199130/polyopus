@@ -469,6 +469,11 @@ export const knowledge = {
     `/knowledge-bases/${encodeURIComponent(kbId)}/search`,
     { method: "POST", body: JSON.stringify({ query }) },
   )),
+  reindex: op("POST", "/knowledge-bases/{kb_id}/reindex-all", (kbId: string) =>
+    apiFetch<KnowledgeBaseRow>(
+      `/knowledge-bases/${encodeURIComponent(kbId)}/reindex-all`,
+      { method: "POST" },
+    )),
 };
 
 export const agents = {

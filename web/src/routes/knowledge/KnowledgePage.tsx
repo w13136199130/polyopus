@@ -1,9 +1,16 @@
-/** Knowledge page: KB CRUD, markdown upload, preview and retrieval (V1-13). */
+/**
+ * Knowledge page (P1-5): KB chips + 文档/检索测试/设置 tabs.
+ * Upload accepts real files (.md/.markdown/.txt, click or drag) and keeps a
+ * paste path for quick text; preview opens the chunk drawer; the doc table
+ * supports batch delete.
+ */
 
-import { useState } from "react";
-import { Button, Empty, ErrorState, Loading } from "@/components/ui";
+import { useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Button, Dialog, Drawer, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
+import { knowledge } from "@/lib/api/endpoints";
 import type { KnowledgeSearchResult } from "@/lib/api/wire";
 import {
   useCreateKb,
@@ -11,10 +18,14 @@ import {
   useDeleteKb,
   useKnowledgeBases,
   useKnowledgeDocs,
+  useReindexKb,
   useSearchKb,
   useUploadDoc,
 } from "@/features/knowledge/api";
 import styles from "./KnowledgePage.module.css";
+
+const TEXT_EXT = /\.(md|markdown|txt)$/i;
+type Tab = "docs" | "retrieval" | "settings";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
@@ -23,57 +34,132 @@ function messageOf(error: unknown): string {
 export function KnowledgePage() {
   const canWrite = useCan("knowledge:write");
   const kbsQuery = useKnowledgeBases();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [kbName, setKbName] = useState("");
+  const [activeKb, setActiveKb] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("docs");
+
+  const kbs = kbsQuery.data?.items ?? [];
+  const kbId = activeKb ?? kbs[0]?.kbId ?? null;
+  const active = kbs.find((row) => row.kbId === kbId) ?? null;
+
+  const docsQuery = useKnowledgeDocs(kbId);
+  const docs = docsQuery.data?.items ?? [];
+
+  const createKb = useCreateKb();
+  const deleteKb = useDeleteKb();
+  const upload = useUploadDoc(kbId ?? "");
+  const deleteDoc = useDeleteDoc(kbId ?? "");
+  const reindex = useReindexKb();
+  const search = useSearchKb(kbId ?? "");
+
+  const [newKbName, setNewKbName] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [dragOver, setDragOver] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const [filename, setFilename] = useState("notes.md");
   const [content, setContent] = useState("# 标题\n## 小节\n内容。\n");
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<KnowledgeSearchResult | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [pendingKbDelete, setPendingKbDelete] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const kbs = kbsQuery.data?.items ?? [];
-  const activeKb = selected ?? kbs[0]?.kbId ?? null;
-  const docsQuery = useKnowledgeDocs(activeKb);
-  const createKb = useCreateKb();
-  const deleteKb = useDeleteKb();
-  const upload = useUploadDoc(activeKb ?? "");
-  const deleteDoc = useDeleteDoc(activeKb ?? "");
-  const search = useSearchKb(activeKb ?? "");
+  const previewQuery = useQuery({
+    queryKey: ["knowledge-preview", previewId],
+    queryFn: () => knowledge.preview(previewId as string),
+    enabled: previewId !== null,
+  });
+
+  const allSelected = docs.length > 0 && selected.size === docs.length;
+  const uploading = useMemo(() => upload.isPending, [upload.isPending]);
 
   async function submitKb(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
     try {
-      const kb = await createKb.mutateAsync({ name: kbName.trim() });
-      setSelected(kb.kbId);
-      setKbName("");
+      const kb = await createKb.mutateAsync({ name: newKbName.trim() });
+      setActiveKb(kb.kbId);
+      setNewKbName("");
       setNotice(`已创建知识库 ${kb.name}`);
     } catch (err) {
       setError(messageOf(err));
     }
   }
 
-  async function submitDoc(event: React.FormEvent) {
+  async function uploadFiles(files: FileList | File[]) {
+    if (!kbId) return;
+    setError(null);
+    let done = 0;
+    for (const file of Array.from(files)) {
+      if (!TEXT_EXT.test(file.name)) {
+        setError(`暂不支持 ${file.name}（仅 .md/.markdown/.txt）`);
+        continue;
+      }
+      try {
+        await upload.mutateAsync({
+          filename: file.name, content: await file.text(),
+        });
+        done += 1;
+      } catch (err) {
+        setError(messageOf(err));
+      }
+    }
+    if (done) setNotice(`已上传 ${done} 个文档`);
+  }
+
+  async function submitPaste(event: React.FormEvent) {
     event.preventDefault();
-    if (!activeKb) return;
+    if (!kbId || !filename.trim() || !content.trim()) return;
     setError(null);
     try {
-      const doc = await upload.mutateAsync({ filename, content });
+      const doc = await upload.mutateAsync({
+        filename: filename.trim(), content,
+      });
       setNotice(`已上传 ${doc.filename}（${doc.chunkCount} 个切片）`);
     } catch (err) {
       setError(messageOf(err));
     }
   }
 
+  async function batchDelete() {
+    setError(null);
+    let done = 0;
+    for (const docId of selected) {
+      try {
+        await deleteDoc.mutateAsync(docId);
+        done += 1;
+      } catch (err) {
+        setError(messageOf(err));
+      }
+    }
+    setSelected(new Set());
+    if (done) setNotice(`已删除 ${done} 个文档`);
+  }
+
   async function runSearch(event: React.FormEvent) {
     event.preventDefault();
-    if (!activeKb || !query.trim()) return;
+    if (!kbId || !query.trim()) return;
     setError(null);
     try {
       setResult(await search.mutateAsync(query.trim()));
     } catch (err) {
       setError(messageOf(err));
+    }
+  }
+
+  async function confirmKbDelete() {
+    if (!active) return;
+    setError(null);
+    try {
+      await deleteKb.mutateAsync(active.kbId);
+      setActiveKb(null);
+      setTab("docs");
+      setNotice(`已删除 ${active.name}`);
+    } catch (err) {
+      setError(messageOf(err));
+    } finally {
+      setPendingKbDelete(false);
     }
   }
 
@@ -83,110 +169,338 @@ export function KnowledgePage() {
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
 
-        <section className={styles.panel}>
-          <div className={styles.head}><h2>知识库</h2><span>{kbs.length} 个</span></div>
-          {kbsQuery.isLoading ? <Loading label="载入知识库…" /> : kbsQuery.isError ? (
-            <ErrorState message="知识库加载失败" onRetry={() => void kbsQuery.refetch()} />
-          ) : kbs.length === 0 ? <Empty title="暂无知识库" /> : (
-            <ul className={styles.rows}>
-              {kbs.map((kb) => (
-                <li key={kb.kbId} className={styles.row} data-testid="kb-row">
-                  <div className={styles.who}>
-                    <strong>{kb.name}</strong>
-                    <span>{kb.docCount} 文档 · {kb.chunkCount} 切片</span>
-                  </div>
-                  <div className={styles.actions}>
-                    <Button size="sm" variant="ghost" onClick={() => setSelected(kb.kbId)}>
-                      打开
-                    </Button>
-                    <Button size="sm" variant="danger" disabled={!canWrite}
-                      onClick={() => deleteKb.mutate(kb.kbId, {
-                        onSuccess: () => setNotice(`已删除 ${kb.name}`),
-                        onError: (err) => setError(messageOf(err)),
-                      })}>
-                      删除
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          <form className={styles.form} onSubmit={(event) => void submitKb(event)}>
-            <label>名称<input data-testid="kb-name" required value={kbName}
-              onChange={(event) => setKbName(event.target.value)} /></label>
-            <Button type="submit" disabled={!canWrite} loading={createKb.isPending}
-              data-testid="kb-create">创建知识库</Button>
+        <div className={styles.kbRow}>
+          {kbsQuery.isLoading ? <Loading label="载入知识库…" /> : kbs.length === 0 ? (
+            <span className={styles.muted}>暂无知识库</span>
+          ) : kbs.map((kb) => (
+            <button
+              key={kb.kbId}
+              type="button"
+              data-testid="kb-select"
+              className={`${styles.chip} ${kb.kbId === kbId ? styles.chipActive : ""}`}
+              onClick={() => { setActiveKb(kb.kbId); setSelected(new Set()); setResult(null); }}
+            >
+              {kb.name}
+              <span>{kb.docCount} 文档 / {kb.chunkCount} 切片</span>
+            </button>
+          ))}
+          <form className={styles.newKb} onSubmit={(event) => void submitKb(event)}>
+            <input
+              data-testid="kb-name"
+              required
+              maxLength={120}
+              placeholder="新知识库名称"
+              value={newKbName}
+              onChange={(event) => setNewKbName(event.target.value)}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              data-testid="kb-create"
+              disabled={!canWrite || !newKbName.trim()}
+              loading={createKb.isPending}
+            >
+              创建知识库
+            </Button>
           </form>
-        </section>
+        </div>
 
-        <section className={styles.panel}>
-          <div className={styles.head}><h2>文档</h2></div>
-          {kbs.length === 0 ? <div className={styles.empty}>先创建知识库</div> : (
-            <>
-              <select className={styles.select} data-testid="kb-select"
-                value={activeKb ?? ""}
-                onChange={(event) => { setSelected(event.target.value); setResult(null); }}>
-                {kbs.map((kb) => (
-                  <option key={kb.kbId} value={kb.kbId}>{kb.name}</option>
+        {kbId ? (
+          <>
+            <div className={styles.tabs} role="tablist" aria-label="知识库视图">
+              {([["docs", "文档"], ["retrieval", "检索测试"], ["settings", "设置"]] as const)
+                .map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === key}
+                    data-testid={`kb-tab-${key}`}
+                    className={`${styles.tab} ${tab === key ? styles.tabActive : ""}`}
+                    onClick={() => setTab(key)}
+                  >
+                    {label}
+                  </button>
                 ))}
-              </select>
-              {docsQuery.isLoading ? <Loading label="载入文档…" /> : (
-                <ul className={styles.rows}>
-                  {(docsQuery.data?.items ?? []).map((doc) => (
-                    <li key={doc.docId} className={styles.row} data-testid="doc-row">
-                      <div className={styles.who}>
-                        <strong>{doc.filename}</strong>
-                        <span>{doc.chunkCount} 切片 · {doc.status}</span>
-                      </div>
-                      <Button size="sm" variant="danger" disabled={!canWrite}
-                        onClick={() => deleteDoc.mutate(doc.docId, {
-                          onError: (err) => setError(messageOf(err)),
-                        })}>
-                        删除
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <form className={styles.form} onSubmit={(event) => void submitDoc(event)}>
-                <label>文件名<input data-testid="doc-filename" required value={filename}
-                  onChange={(event) => setFilename(event.target.value)} /></label>
-                <label>Markdown
-                  <textarea data-testid="doc-content" required value={content}
-                    onChange={(event) => setContent(event.target.value)} />
-                </label>
-                <Button type="submit" disabled={!canWrite || !activeKb}
-                  loading={upload.isPending} data-testid="doc-upload">上传文档</Button>
-              </form>
-            </>
-          )}
-        </section>
-
-        <section className={styles.panel}>
-          <div className={styles.head}><h2>检索</h2></div>
-          <form className={styles.form} onSubmit={(event) => void runSearch(event)}>
-            <label>问题<input data-testid="kb-query" value={query}
-              onChange={(event) => setQuery(event.target.value)} /></label>
-            <Button type="submit" disabled={!activeKb || !query.trim()}
-              loading={search.isPending} data-testid="kb-search">检索</Button>
-          </form>
-          {result ? result.status === "abstain" ? (
-            <div className={styles.empty} data-testid="kb-abstain">
-              {result.reason ?? "没有找到依据"}
             </div>
-          ) : (
-            <ul className={styles.rows}>
-              {result.hits.map((hit) => (
-                <li key={hit.chunkId} className={styles.hit} data-testid="kb-hit">
-                  <strong>{hit.doc} · {hit.heading || "正文"}</strong>
-                  <span>score {hit.score} · span {hit.span[0]}-{hit.span[1]}</span>
-                  <p>{hit.content}</p>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
+
+            {tab === "docs" ? (
+              <>
+                <div
+                  className={`${styles.upload} ${dragOver ? styles.uploadDrag : ""}`}
+                  onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDragOver(false);
+                    void uploadFiles(event.dataTransfer.files);
+                  }}
+                >
+                  <span className={styles.uploadTitle}>上传文档</span>
+                  <span className={styles.uploadHint}>
+                    拖拽 .md / .markdown / .txt 到这里，或
+                  </span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button
+                      size="sm"
+                      data-testid="kb-pick-files"
+                      disabled={!canWrite || uploading}
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      选择文件
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="kb-paste-toggle"
+                      disabled={!canWrite}
+                      onClick={() => setPasteOpen((open) => !open)}
+                    >
+                      {pasteOpen ? "收起粘贴" : "粘贴文本"}
+                    </Button>
+                  </div>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".md,.markdown,.txt"
+                    multiple
+                    data-testid="kb-file-input"
+                    style={{ display: "none" }}
+                    onChange={(event) => {
+                      if (event.target.files?.length) {
+                        void uploadFiles(event.target.files);
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                  {pasteOpen ? (
+                    <form className={styles.paste} onSubmit={(event) => void submitPaste(event)}>
+                      <label>文件名
+                        <input
+                          data-testid="doc-filename"
+                          required
+                          value={filename}
+                          onChange={(event) => setFilename(event.target.value)}
+                        />
+                      </label>
+                      <label style={{ flex: 1 }}>Markdown
+                        <textarea
+                          data-testid="doc-content"
+                          required
+                          value={content}
+                          onChange={(event) => setContent(event.target.value)}
+                        />
+                      </label>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        data-testid="doc-upload"
+                        disabled={!canWrite || uploading}
+                        loading={uploading}
+                      >
+                        上传文档
+                      </Button>
+                    </form>
+                  ) : null}
+                </div>
+
+                {selected.size > 0 ? (
+                  <div className={styles.batchBar}>
+                    已选 {selected.size} 项
+                    <Button size="sm" variant="danger" data-testid="doc-batch-delete"
+                      disabled={!canWrite}
+                      onClick={() => void batchDelete()}>
+                      批量删除
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                      取消选择
+                    </Button>
+                  </div>
+                ) : null}
+
+                {docsQuery.isLoading ? <Loading label="载入文档…" /> : docsQuery.isError ? (
+                  <ErrorState message="文档加载失败" onRetry={() => void docsQuery.refetch()} />
+                ) : docs.length === 0 ? (
+                  <Empty title="暂无文档" hint="上传一个 Markdown 文件开始。" />
+                ) : (
+                  <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 32 }}>
+                            <input
+                              type="checkbox"
+                              aria-label="全选文档"
+                              checked={allSelected}
+                              disabled={!canWrite}
+                              onChange={(event) =>
+                                setSelected(event.target.checked
+                                  ? new Set(docs.map((doc) => doc.docId))
+                                  : new Set())}
+                            />
+                          </th>
+                          <th>文件名</th>
+                          <th>切片</th>
+                          <th>状态</th>
+                          <th>上传时间</th>
+                          <th style={{ width: 120 }}>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {docs.map((doc) => (
+                          <tr key={doc.docId} className={styles.rowSel}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                data-testid="doc-checkbox"
+                                aria-label={`选择 ${doc.filename}`}
+                                checked={selected.has(doc.docId)}
+                                disabled={!canWrite}
+                                onChange={(event) =>
+                                  setSelected((current) => {
+                                    const next = new Set(current);
+                                    if (event.target.checked) next.add(doc.docId);
+                                    else next.delete(doc.docId);
+                                    return next;
+                                  })}
+                              />
+                            </td>
+                            <td className={styles.mono}>{doc.filename}</td>
+                            <td>{doc.chunkCount}</td>
+                            <td>
+                              <span className={styles.muted}>{doc.status}</span>
+                            </td>
+                            <td className={styles.muted}>
+                              {new Date(doc.createdAt * 1000).toLocaleString("zh-CN")}
+                            </td>
+                            <td>
+                              <Button size="sm" variant="ghost" data-testid="doc-preview"
+                                onClick={() => setPreviewId(doc.docId)}>
+                                预览
+                              </Button>
+                              <Button size="sm" variant="danger"
+                                disabled={!canWrite}
+                                onClick={() => deleteDoc.mutate(doc.docId, {
+                                  onError: (err) => setError(messageOf(err)),
+                                })}>
+                                删除
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : null}
+
+            {tab === "retrieval" ? (
+              <>
+                <form className={styles.searchRow} onSubmit={(event) => void runSearch(event)}>
+                  <input
+                    data-testid="kb-query"
+                    placeholder="用一句话提问，例如：备份保留几份"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  <Button type="submit" data-testid="kb-search"
+                    disabled={!query.trim()} loading={search.isPending}>
+                    检索
+                  </Button>
+                </form>
+                {result ? result.status === "abstain" ? (
+                  <div className={styles.abstain} data-testid="kb-abstain">
+                    {result.reason ?? "知识库中没有找到依据"}
+                  </div>
+                ) : (
+                  result.hits.map((hit) => (
+                    <div key={hit.chunkId} className={styles.hit} data-testid="kb-hit">
+                      <div className={styles.hitHead}>
+                        <b>{hit.doc}</b>
+                        <span>{hit.heading || "正文"}</span>
+                        <span>score {hit.score} · {hit.span[0]}-{hit.span[1]}</span>
+                      </div>
+                      <p>{hit.content}</p>
+                    </div>
+                  ))
+                ) : null}
+              </>
+            ) : null}
+
+            {tab === "settings" && active ? (
+              <>
+                <dl className={styles.settingsGrid}>
+                  <dt>知识库</dt><dd>{active.name}</dd>
+                  <dt>文档数</dt><dd>{active.docCount}</dd>
+                  <dt>切片数</dt><dd>{active.chunkCount}</dd>
+                  <dt>创建时间</dt>
+                  <dd>{new Date(active.createdAt * 1000).toLocaleString("zh-CN")}</dd>
+                </dl>
+                <Button
+                  size="sm"
+                  data-testid="kb-reindex"
+                  disabled={!canWrite}
+                  loading={reindex.isPending}
+                  onClick={() => reindex.mutate(active.kbId, {
+                    onSuccess: () => setNotice("索引已重建"),
+                    onError: (err) => setError(messageOf(err)),
+                  })}
+                >
+                  重建索引
+                </Button>
+                <div className={styles.dangerZone}>
+                  <b style={{ fontSize: 13 }}>危险区</b>
+                  <p>删除知识库会移除其全部文档与切片，不可撤销。</p>
+                  <Button size="sm" variant="danger" data-testid="kb-delete"
+                    disabled={!canWrite}
+                    onClick={() => setPendingKbDelete(true)}>
+                    删除知识库
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </>
+        ) : null}
       </div>
+
+      <Drawer
+        open={previewId !== null}
+        onOpenChange={(open) => { if (!open) setPreviewId(null); }}
+        title="文档预览"
+        description={previewQuery.data?.doc.filename}
+        width={640}
+      >
+        {previewQuery.isLoading ? <Loading label="载入切片…" /> : (
+          (previewQuery.data?.chunks ?? []).map((chunk) => (
+            <div key={chunk.idx} className={styles.chunk}>
+              <h4>#{chunk.idx} {chunk.heading || "正文"}</h4>
+              <pre>{chunk.content}</pre>
+            </div>
+          ))
+        )}
+      </Drawer>
+
+      <Dialog
+        open={pendingKbDelete}
+        onOpenChange={setPendingKbDelete}
+        title="确认删除知识库"
+        description={active ? `将删除「${active.name}」及其全部文档与切片。` : undefined}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingKbDelete(false)}>取消</Button>
+            <Button variant="danger" data-testid="confirm-kb-delete"
+              loading={deleteKb.isPending}
+              onClick={() => void confirmKbDelete()}>
+              确认删除
+            </Button>
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>
+          此操作不可撤销；检索将立即失效。
+        </p>
+      </Dialog>
     </PageShell>
   );
 }

@@ -64,3 +64,8 @@ export function useSearchKb(kbId: string) {
     mutationFn: (query: string) => knowledge.search(kbId, query),
   });
 }
+
+/** Rebuild the derived FTS index from stored chunks (P1-5 settings tab). */
+export function useReindexKb() {
+  return useMutation({ mutationFn: knowledge.reindex });
+}
