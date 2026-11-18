@@ -1,25 +1,65 @@
-/* Design tokens (docs/49 §9) — extracted from the prototype/legacy UI.
+/* Design tokens aligned with prototype/styles.css.
    [data-theme] is the single source; components must not hardcode colors. */
 :root,
 html[data-theme="light"] {
+  --primary: #1677ff;
+  --primary-hover: #4096ff;
+  --primary-active: #0958d9;
+  --primary-soft: #e6f4ff;
+  --primary-border: #91caff;
+
   --bg: #f5f6f8;
   --surface: #ffffff;
   --surface-2: #fafafa;
   --surface-3: #f0f2f5;
-  --text: #1a1d24;
-  --text-2: #5c6470;
-  --text-3: #9aa3af;
-  --line: #e4e7ec;
-  --accent: #4f6ef7;
-  --accent-2: #3d5be0;
-  --ok: #16a34a;
-  --warn: #d97706;
-  --danger: #dc2626;
-  --radius: 10px;
+  --line: #e8eaee;
+  --line-2: #d9dde3;
+
+  --text: #1f2329;
+  --text-2: #51565d;
+  --text-3: #8a9099;
+  --text-4: #b3b8bf;
+
+  --green: #00a870;
+  --green-soft: #e8f8f2;
+  --green-border: #8fddc1;
+  --amber: #d97706;
+  --amber-soft: #fff7e6;
+  --amber-border: #ffd591;
+  --red: #d54941;
+  --red-soft: #fff1f0;
+  --red-border: #ffa39e;
+  --purple: #722ed1;
+  --purple-soft: #f9f0ff;
+
+  /* Legacy aliases keep existing components working while pages migrate. */
+  --accent: var(--primary);
+  --accent-2: var(--primary-hover);
+  --ok: var(--green);
+  --warn: var(--amber);
+  --danger: var(--red);
+
+  --radius: 8px;
   --radius-s: 8px;
-  --font:
-    -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-  --font-mono: ui-monospace, Consolas, monospace;
+  --radius-m: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-3: 0 12px 32px rgba(16, 24, 40, 0.14);
+
+  --font: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui,
+    -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --mono: var(--font-mono);
+
+  --rail: 220px;
+  --rail-collapsed: 56px;
+  --side: 280px;
+  --dock: 360px;
+  --top: 56px;
+
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -28,12 +68,30 @@ html[data-theme="light"] {
 }
 
 html[data-theme="dark"] {
+  --primary-soft: #12233d;
+  --primary-border: #1d4b82;
+
   --bg: #0f1115;
   --surface: #171a21;
   --surface-2: #1c2029;
   --surface-3: #232833;
-  --text: #e6e9ef;
-  --text-2: #9aa3af;
-  --text-3: #6b7280;
-  --line: #2a2f3a;
+  --line: #252a34;
+  --line-2: #313846;
+
+  --text: #e9ebf0;
+  --text-2: #b3b9c4;
+  --text-3: #7f8794;
+  --text-4: #5c6472;
+
+  --green: #3ddc97;
+  --green-soft: #0f2a22;
+  --green-border: #1f6b52;
+  --amber: #fbbf24;
+  --amber-soft: #2a2110;
+  --amber-border: #6b4e12;
+  --red: #ff7875;
+  --red-soft: #2c1618;
+  --red-border: #7a2a2a;
+  --purple: #b37feb;
+  --purple-soft: #241a33;
 }

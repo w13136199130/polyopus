@@ -16,6 +16,7 @@ body {
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
+  overflow: hidden;
 }
 
 button {
@@ -27,8 +28,13 @@ button {
   font-size: 13px;
 }
 
+button:disabled {
+  cursor: not-allowed;
+}
+
 input,
-textarea {
+textarea,
+select {
   font-family: inherit;
   font-size: 14px;
   color: var(--text);
@@ -40,16 +46,40 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
-  border-color: var(--accent);
+textarea:focus,
+select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
 }
 
 a {
-  color: var(--accent);
+  color: var(--primary);
   text-decoration: none;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
+}
+
+::selection {
+  background: var(--primary-soft);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-4);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }

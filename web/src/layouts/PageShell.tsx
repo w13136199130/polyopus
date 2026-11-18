@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { NotificationBell } from "@/features/notifications/NotificationBell";
 import styles from "./PageShell.module.css";
 
 interface Props {
@@ -13,11 +14,14 @@ export function PageShell({ title, subtitle, actions, children }: Props) {
   return (
     <section className={styles.page}>
       <header className={styles.header}>
-        <div>
+        <div className={styles.heading}>
           <h1 className={styles.title}>{title}</h1>
           {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}
         </div>
-        {actions ? <div className={styles.actions}>{actions}</div> : null}
+        <div className={styles.actions}>
+          {actions}
+          <NotificationBell />
+        </div>
       </header>
       <div className={styles.body}>{children}</div>
     </section>

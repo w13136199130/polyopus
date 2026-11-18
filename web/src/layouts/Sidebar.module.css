@@ -1,39 +1,132 @@
 .rail {
-  width: 220px;
-  flex: none;
+  width: var(--rail);
+  flex: 0 0 var(--rail);
   border-right: 1px solid var(--line);
   background: var(--surface);
   display: flex;
   flex-direction: column;
+  padding: 10px 8px 8px;
+  min-height: 0;
+  transition: width 0.15s ease, flex-basis 0.15s ease;
+}
+
+.collapsed {
+  width: var(--rail-collapsed);
+  flex-basis: var(--rail-collapsed);
 }
 
 .brand {
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 2px 3px 12px;
 }
 
-.brandName {
+.logo {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--primary), var(--purple));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.22);
+}
+
+.brandText {
+  min-width: 0;
+  line-height: 1.25;
+  overflow: hidden;
+}
+
+.brandText b {
+  display: block;
+  font-size: 13.5px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: -0.1px;
 }
 
-.group {
+.brandText span {
+  display: block;
+  font-size: 10px;
+  color: var(--text-4);
+  white-space: nowrap;
+}
+
+.collapse {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.collapse:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.collapseIcon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: rotate(180deg);
+}
+
+.collapsed .collapseIcon {
+  transform: rotate(0deg);
+}
+
+.nav {
   flex: 1;
-  padding: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow-y: auto;
+  padding-bottom: 6px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.groupLabel {
+  padding: 14px 11px 5px;
+  color: var(--text-4);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 
 .item {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 8px 10px;
-  border-radius: var(--radius-s);
+  gap: 10px;
+  height: 40px;
+  padding: 0 11px;
+  border-radius: 7px;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 13.2px;
+  white-space: nowrap;
 }
 
 .item:hover {
@@ -42,14 +135,14 @@
 }
 
 .active {
-  background: var(--surface-3);
-  color: var(--text);
+  background: var(--primary-soft);
+  color: var(--primary);
   font-weight: 600;
 }
 
 .icon {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -58,39 +151,117 @@
   flex: none;
 }
 
-.bottom {
-  border-top: 1px solid var(--line);
-  padding: var(--space-2);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.active .icon {
+  color: var(--primary);
 }
 
-.userRow {
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.foot {
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding: 8px 2px 0;
+}
+
+.user {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 6px 6px 2px;
-  color: var(--text-3);
-  font-size: 12px;
+  gap: 8px;
+  padding: 6px 5px;
+  border-radius: 8px;
+}
+
+.user:hover {
+  background: var(--surface-3);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.userMeta {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .userName {
-  flex: 1;
-  min-width: 0;
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.userRole {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mini {
+  flex: 0 0 auto;
   background: none;
   color: var(--text-3);
-  padding: 4px 8px;
+  padding: 4px 6px;
   font-size: 12px;
+  border-radius: 6px;
 }
 
 .mini:hover {
   color: var(--text);
   background: var(--surface-3);
+}
+
+.collapsed .brand {
+  flex-direction: column;
+  justify-content: center;
+  padding: 2px 0 8px;
+  gap: 4px;
+}
+
+.collapsed .brandText,
+.collapsed .label,
+.collapsed .groupLabel,
+.collapsed .userMeta {
+  display: none;
+}
+
+.collapsed .collapse {
+  width: 34px;
+  height: 22px;
+  border-radius: 6px;
+  margin: 0;
+  background: var(--surface-2);
+}
+
+.collapsed .item {
+  justify-content: center;
+  padding: 0;
+}
+
+.collapsed .user {
+  justify-content: center;
+  padding: 6px 0;
+}
+
+.collapsed .mini {
+  display: none;
 }
