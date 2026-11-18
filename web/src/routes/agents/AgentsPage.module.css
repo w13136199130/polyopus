@@ -1,45 +1,268 @@
 .page {
-  padding: 16px 24px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  padding: 20px 24px 28px;
   overflow-y: auto;
+  flex: 1;
 }
 
-.panel {
+.toolbar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.toolbar select,
+.toolbar input {
+  font-size: 12.5px;
+  padding: 7px 10px;
+  background: var(--surface);
+}
+
+.toolbar input {
+  width: 220px;
+}
+
+.notice,
+.error {
+  border-radius: var(--radius-s);
+  padding: 8px 12px;
+  font-size: 13px;
+  margin-bottom: var(--space-3);
+}
+
+.notice {
+  background: var(--green-soft);
+  border: 1px solid var(--green-border);
+  color: var(--green);
+}
+
+.error {
+  background: var(--red-soft);
+  border: 1px solid var(--red-border);
+  color: var(--red);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-m);
+  border-radius: var(--radius-lg);
   padding: var(--space-4);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.card:hover {
+  border-color: var(--primary-border);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--primary-soft), var(--purple-soft));
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 650;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desc {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.5;
+  min-height: 18px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.badgePublished {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.badgeDraft {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.cardActions {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+/* ---- edit drawer ---- */
+
+.drawerLayout {
+  display: flex;
+  gap: var(--space-4);
+  min-height: 0;
+  flex: 1;
+}
+
+.sectionNav {
+  width: 148px;
+  flex: 0 0 148px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--line);
+  padding-right: var(--space-3);
+}
+
+.sectionItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-align: left;
+  width: 100%;
+}
+
+.sectionItem:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.sectionItemActive {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.sectionItem:disabled {
+  color: var(--text-4);
+  cursor: not-allowed;
+}
+
+.sectionItem:disabled:hover {
+  background: transparent;
+}
+
+.tag {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--text-4);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.sectionBody {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-.head { display: flex; align-items: baseline; gap: var(--space-3); }
-.head h2 { margin: 0; font-size: 15px; }
-.head span { color: var(--text-3); font-size: 12px; }
-
-.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.row {
-  display: flex; justify-content: space-between; align-items: center; gap: var(--space-3);
-  border: 1px solid var(--line); border-radius: var(--radius-s); padding: 10px 12px;
-  flex-wrap: wrap;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-2);
 }
-.who { display: flex; flex-direction: column; gap: 3px; min-width: 220px; }
-.who strong { font-size: 13px; }
-.who span { font-size: 12px; color: var(--text-3); }
-.badge { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; color: var(--text-3); }
-.actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 
-.form { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; }
-.form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
-.form input, .form select, .form textarea {
-  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-s);
-  color: var(--text); padding: 6px 8px; font-size: 12px;
+.field input,
+.field textarea,
+.field select {
+  font-size: 13px;
+  background: var(--surface);
 }
-.form textarea { min-width: 320px; min-height: 64px; resize: vertical; }
 
-.notice, .error { border-radius: var(--radius-s); padding: 8px 12px; font-size: 13px; }
-.notice { background: rgba(60, 160, 100, .12); border: 1px solid rgba(60, 160, 100, .45); }
-.error { background: rgba(200, 60, 60, .12); border: 1px solid rgba(200, 60, 60, .45); }
+.field textarea {
+  min-height: 180px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-family: var(--mono);
+}
+
+.versionNote {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.7;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  padding: 10px 12px;
+}
+
+.testRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.testRow input {
+  flex: 1;
+  font-size: 12.5px;
+}
