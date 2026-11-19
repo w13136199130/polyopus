@@ -70,6 +70,64 @@ def _user_content(conn: sqlite3.Connection, turn_id: str) -> str:
     return str(row[0]) if row else ""
 
 
+def _thread_settings(conn: sqlite3.Connection, thread_id: str) -> dict[str, object]:
+    """Per-session composer state (model / KBs / approval policy).
+
+    Missing rows or malformed JSON degrade to `{}` — an old thread must keep
+    working after the settings feature ships."""
+    row = conn.execute(
+        "SELECT settings_json FROM threads WHERE thread_id = ?", (thread_id,)
+    ).fetchone()
+    if row is None or not row[0]:
+        return {}
+    try:
+        value = json.loads(str(row[0]))
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _kb_context(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    query: str,
+    kb_ids: object,
+) -> str | None:
+    """Prototype 知识库 chip: inject the top KB hits as grounded context.
+
+    Only ready KBs contribute; one that is still ingesting or abstains is
+    skipped rather than failing the turn."""
+    if not isinstance(kb_ids, list) or not kb_ids or not query.strip():
+        return None
+    from polyopus.domains.knowledge import service as kb_service
+
+    lines: list[str] = []
+    for kb_id in [str(x) for x in kb_ids][:8]:
+        try:
+            result = kb_service.search(
+                conn, kb_id, query, tenant_id=tenant_id, top_k=4
+            )
+        except AppError:
+            continue
+        if result.get("status") != "ok":
+            continue
+        kb_name = str((result.get("kb") or {}).get("name") or kb_id)
+        for hit in result.get("hits", []):
+            content = str(hit.get("content", "")).strip()
+            if not content:
+                continue
+            heading = str(hit.get("heading") or "").strip()
+            where = " › ".join(x for x in (str(hit.get("doc", "")), heading) if x)
+            lines.append(f"- [{kb_name} · {where}] {content[:400]}")
+    if not lines:
+        return None
+    return (
+        "会话已启用知识库，以下是与当前问题最相关的检索依据（回答时优先引用；"
+        "依据不足要明确说明）：\n" + "\n".join(lines)
+    )
+
+
 def _set_turn_status(
     conn: sqlite3.Connection, turn_id: str, status: str, now: int | None = None
 ) -> None:
@@ -290,10 +348,14 @@ async def run_turn(
     """Run one queued turn to completion or to an approval pause."""
     cfg = config or EngineConfig()
     registry = registry or agents_registry.Registry(conn)
-    resolved = registry.resolve(cfg.model_hint)
     turn = _turn(conn, turn_id)
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
+    session = _thread_settings(conn, thread_id)
+    model_hint = cfg.model_hint or (
+        str(session["model"]) if session.get("model") else None
+    )
+    resolved = registry.resolve(model_hint)
 
     # V1-05 defense in depth: post_turn already rejects over-quota requests,
     # but a turn may have been queued before the limit was lowered.
@@ -355,6 +417,16 @@ async def run_turn(
                 role="system", content=f"已知记忆（供参考）：\n{lines}"
             )
         )
+    # 会话级知识库（composer 的「知识库 · N」chip）：检索依据作为系统上下文，
+    # 未选库或未命中时什么也不加，保持旧会话行为不变。
+    kb_context = _kb_context(
+        conn, tenant_id=tenant_id, query=user_content,
+        kb_ids=session.get("kbIds"),
+    )
+    if kb_context:
+        messages.append(
+            gateway_types.ChatMessage(role="system", content=kb_context)
+        )
     messages.append(gateway_types.ChatMessage(role="user", content=user_content))
 
     state = _StreamState()
@@ -392,6 +464,11 @@ async def run_turn(
     )
     ticket_id = turn["ticket_id"]
     auto_tools, auto_max_risk = _auto_approve_of(conn, tenant_id, ticket_id)
+    # Composer 审批策略「全允许」= 本会话内的 ask 自动升级为 allow；
+    # 显式 deny（含 critical、未授权插件）仍然优先，策略引擎负责兜底。
+    if str(session.get("approvalPolicy") or "ask") == "auto":
+        auto_tools = tuple(GATEWAY_SPECS.keys())
+        auto_max_risk = "high"
     runtime = ToolRuntime(
         PolicyEngine(
             _gate_rules(conn, cfg, ticket_id, tenant_id),
@@ -571,10 +648,14 @@ def resume_after_approval(
 
     cfg = config or EngineConfig()
     registry = registry or agents_registry.Registry(conn)
-    resolved = registry.resolve(cfg.model_hint)
     turn = _turn(conn, turn_id)
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
+    session = _thread_settings(conn, thread_id)
+    resolved = registry.resolve(
+        cfg.model_hint
+        or (str(session["model"]) if session.get("model") else None)
+    )
     run_row = conn.execute(
         "SELECT * FROM runs WHERE turn_id = ? ORDER BY attempt DESC LIMIT 1", (turn_id,)
     ).fetchone()

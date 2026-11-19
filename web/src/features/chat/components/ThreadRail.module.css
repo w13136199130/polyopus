@@ -1,3 +1,5 @@
+/* Session rail: 280px, "对话" header, search, expert strip, grouped list.
+   Matches the prototype's left column (docs/22 session rail). */
 .rail {
   width: var(--side);
   flex: 0 0 var(--side);
@@ -8,51 +10,146 @@
   min-height: 0;
 }
 
-.top {
+.head {
   flex: none;
-  padding: var(--space-3);
-  border-bottom: 1px solid var(--line);
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.newRow {
-  display: flex;
-  gap: var(--space-2);
   align-items: center;
+  gap: 8px;
+  padding: 12px 14px 8px;
 }
 
-.newRow > button {
+.head b { font-size: 14px; letter-spacing: -0.2px; }
+
+.count {
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 7px;
+  line-height: 17px;
+}
+
+.headSpacer { flex: 1; }
+
+.searchRow {
   flex: none;
-}
-
-.agentSelect {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  padding: 6px 8px;
+  padding: 0 12px 8px;
 }
 
 .search {
+  width: 100%;
   font-size: 12.5px;
   padding: 7px 10px;
   background: var(--surface-2);
 }
 
+.expertsBlock {
+  flex: none;
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.expertLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  color: var(--text-4);
+  padding: 0 2px;
+}
+
+.clearExpert {
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.expertStrip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.expert {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 118px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.expert:hover { border-color: var(--primary-border); }
+
+.expertActive {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.expertAvatar {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+}
+
+.avatarDefault { background: linear-gradient(135deg, #6d28d9, #a78bfa); }
+
+.expertName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create {
+  height: 30px;
+  border-radius: 7px;
+  border: 1px dashed var(--primary-border);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.create:hover { background: var(--surface); border-style: solid; }
+
 .list {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-2);
+  padding: 6px 8px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.group {
-  display: flex;
-  flex-direction: column;
-}
+.group { display: flex; flex-direction: column; }
 
 .groupLabel {
   padding: 10px 10px 4px;
@@ -63,31 +160,41 @@
 }
 
 .item {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
-  background: none;
-  border: none;
+  align-items: center;
+  gap: 6px;
   border-radius: var(--radius-s);
-  padding: 8px 10px;
+  padding: 7px 8px 7px 10px;
   color: var(--text-2);
   cursor: pointer;
   min-width: 0;
 }
 
-.item:hover {
-  background: var(--surface-2);
-  color: var(--text);
+.item:hover { background: var(--surface-2); color: var(--text); }
+.item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.active { background: var(--primary-soft); color: var(--text); }
+.active:hover { background: var(--primary-soft); }
+
+.itemMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  border-radius: 4px;
 }
 
-.active {
-  background: var(--primary-soft);
-  color: var(--text);
-}
-
-.active:hover {
-  background: var(--primary-soft);
+.itemMain:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .title {
@@ -95,7 +202,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 550;
   color: var(--text);
 }
@@ -103,28 +210,46 @@
 .meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
 }
 
 .chip {
   flex: none;
-  max-width: 120px;
+  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 1px 7px;
+  padding: 0 6px;
   border-radius: 999px;
   background: var(--primary-soft);
   color: var(--primary);
-  font-size: 10.5px;
+  font-size: 10px;
+  line-height: 16px;
 }
 
-.time {
-  margin-left: auto;
+.pin {
   flex: none;
+  color: var(--amber);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.itemSide {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.item:hover .itemSide button,
+.item:focus-within .itemSide button { opacity: 1; }
+
+.time {
   color: var(--text-4);
   font-size: 10.5px;
+  white-space: nowrap;
 }
 
 .error {
@@ -135,4 +260,8 @@
   padding: var(--space-4);
   color: var(--red);
   font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .rail { display: none; }
 }

@@ -159,7 +159,7 @@ export function AdminUsersPage({ embedded = false, onNotice }: {
     if (lines[0]?.toLowerCase().startsWith("username,")) lines = lines.slice(1);
     const out: typeof csvRows = [];
     lines.forEach((line, index) => {
-      const [username = "", displayName = "", role = "", _email = ""] =
+      const [username = "", displayName = "", role = ""] =
         line.split(",").map((cell) => cell.trim());
       const lineNo = index + 2; // +1 表头 +1 1 基
       if (!username) {

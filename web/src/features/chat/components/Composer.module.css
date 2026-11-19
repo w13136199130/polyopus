@@ -1,3 +1,4 @@
+/* Composer card (prototype .composer): 920px column, chips row, popovers. */
 .wrap {
   flex: none;
   width: 100%;
@@ -6,6 +7,7 @@
 }
 
 .composer {
+  position: relative;
   border: 1px solid var(--line-2);
   border-radius: 14px;
   background: var(--surface);
@@ -30,6 +32,7 @@
   resize: none;
   line-height: 1.6;
   min-height: 52px;
+  max-height: 180px;
   padding: var(--space-2) var(--space-1) 0;
 }
 
@@ -46,41 +49,73 @@
 .toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 5px;
   padding-top: var(--space-1);
+  flex-wrap: wrap;
 }
 
-.tool {
+.iconBtn {
   width: 28px;
   height: 28px;
-  display: flex;
+  flex: none;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 0;
   border-radius: var(--radius-s);
+  background: transparent;
   color: var(--text-3);
   font-size: 14px;
-  cursor: default;
-  user-select: none;
+  cursor: pointer;
 }
 
-.modelChip {
+.iconBtn:hover { background: var(--surface-2); color: var(--primary); }
+
+.chip {
+  height: 24px;
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
-  padding: 0 10px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--surface);
+  color: var(--text-2);
   font-size: 11.5px;
-  font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.hint {
+.chip:hover { border-color: var(--primary-border); color: var(--primary); }
+
+.chipOn {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.chev { font-size: 9px; color: var(--text-4); }
+
+.right {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ring {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
   color: var(--text-4);
-  font-size: 11px;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .send {
@@ -107,11 +142,211 @@
   stroke-linejoin: round;
 }
 
-.send:hover:not(:disabled) {
-  background: var(--primary-hover);
-}
+.send:hover:not(:disabled) { background: var(--primary-hover); }
 
 .send:disabled {
   background: var(--surface-3);
   color: var(--text-4);
+}
+
+/* attachments queue above the card */
+.attachRow {
+  max-width: 920px;
+  margin: 0 auto 6px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.attachChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.attachChip button {
+  border: 0;
+  background: none;
+  color: var(--text-4);
+  cursor: pointer;
+  padding: 0 1px;
+  font-size: 12px;
+}
+
+.attachChip button:hover { color: var(--red); }
+
+.fileError {
+  max-width: 920px;
+  margin: 0 auto 6px;
+  color: var(--red);
+  font-size: 11.5px;
+}
+
+/* popovers: anchored to the card, opening upward */
+.popover {
+  position: absolute;
+  left: 10px;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  width: 300px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-3);
+  padding: 6px;
+}
+
+.menuList { display: flex; flex-direction: column; }
+
+.menuTitle {
+  padding: 6px 8px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  color: var(--text-4);
+}
+
+.menuSection {
+  padding: 8px 8px 3px;
+  font-size: 10px;
+  color: var(--text-4);
+  border-top: 1px solid var(--line);
+  margin-top: 3px;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.menuItem:hover { background: var(--surface-2); color: var(--text); }
+
+.menuItemOn {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.menuMeta {
+  flex: none;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-4);
+  font-size: 10.5px;
+}
+
+.menuEmpty {
+  margin: 0;
+  padding: 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.menuHint {
+  margin: 4px 0 0;
+  padding: 7px 8px 4px;
+  border-top: 1px dashed var(--line);
+  color: var(--text-4);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.menuClear {
+  margin-top: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 11px;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.checkRow:hover { background: var(--surface-2); }
+
+.checkRow input { margin: 0; accent-color: var(--primary); }
+
+.checkName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plusGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  padding: 2px;
+}
+
+.plusItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 9px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.plusItem:hover {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.plusItem span {
+  width: 20px;
+  text-align: center;
+  color: var(--primary);
+}
+
+@media (max-width: 1120px) {
+  .chip { display: none; }
+  .chipOn { display: inline-flex; }
+}
+
+@media (max-width: 960px) {
+  .wrap { padding: 8px 12px 12px; }
+  .popover { left: 0; right: 0; width: auto; }
 }

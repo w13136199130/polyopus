@@ -1,0 +1,220 @@
+/* Right Dock (prototype .dock): 360px, tabs, file tree, event timeline. */
+.dock {
+  width: var(--dock, 360px);
+  flex: 0 0 var(--dock, 360px);
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  padding: 8px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tab:hover { color: var(--text); }
+
+.tabOn {
+  color: var(--text);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
+.spacer { flex: 1; }
+
+.close {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.close:hover { background: var(--surface-2); color: var(--text); }
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 8px 16px;
+}
+
+.crumb {
+  margin: 0 0 8px;
+  padding: 0 6px;
+  color: var(--text-4);
+  font-size: 11px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  min-width: 0;
+}
+
+.row:hover { background: var(--surface-2); }
+
+.icon { flex: none; color: var(--text-4); font-size: 10px; width: 12px; }
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileLink {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileLink:hover { color: var(--primary); }
+
+.hint {
+  flex: none;
+  color: var(--text-4);
+  font-size: 10px;
+  padding: 6px;
+}
+
+.preview {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.previewHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.previewHead code { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.previewHead button {
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.pre {
+  margin: 0;
+  padding: 10px;
+  max-height: 420px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text-2);
+}
+
+.errorText {
+  padding: 10px;
+  margin: 0;
+  color: var(--red);
+  font-size: 11.5px;
+}
+
+/* timeline (轨迹) */
+.timeline { display: flex; flex-direction: column; }
+
+.tl {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 8px 6px 10px;
+  border-left: 2px solid var(--line);
+  margin-left: 5px;
+  font-size: 11.5px;
+}
+
+.tl.info { border-color: var(--primary); }
+.tl.ok { border-color: var(--green); }
+.tl.warn { border-color: var(--amber); }
+.tl.bad { border-color: var(--red); }
+
+.time { flex: none; color: var(--text-4); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.kind {
+  flex: none;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.txt {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* terminal (终端) */
+.terminal {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.termCmd { color: var(--green); white-space: pre-wrap; word-break: break-all; }
+.termOut { color: var(--text-3); white-space: pre-wrap; word-break: break-word; margin-bottom: 4px; }
+.termErr { color: var(--red); white-space: pre-wrap; }
+
+@media (max-width: 1200px) {
+  .dock { width: 320px; flex-basis: 320px; }
+}
+
+@media (max-width: 960px) {
+  .dock { display: none; }
+}

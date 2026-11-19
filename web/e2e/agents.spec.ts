@@ -34,7 +34,7 @@ test("agents: create from template and publish", async ({ page }) => {
 
   // P0-2 regression: published expert selectable in a new chat + header chip
   await page.goto("/chat");
-  await page.getByTestId("new-chat-agent").selectOption({ label: name });
+  await page.getByTestId("expert-pick").filter({ hasText: name }).click();
   await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
   await expect(page.getByTestId("chat-agent-chip")).toHaveText(name);

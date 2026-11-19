@@ -13,7 +13,7 @@ async function login(page: import("@playwright/test").Page) {
 /** V1-10: approval creates a notification; bell badge and read-all work. */
 test("notifications: unread badge and read-all", async ({ page }) => {
   await login(page);
-  await page.getByRole("button", { name: "＋ 新对话" }).click();
+  await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
 
   const box = page.getByLabel("消息输入框");

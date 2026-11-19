@@ -25,6 +25,7 @@ from polyopus.api.routers import (
     knowledge_api,
     me_api,
     metrics_api,
+    models_api,
     notifications,
     outbound_api,
     plugins_api,
@@ -36,6 +37,7 @@ from polyopus.api.routers import (
     tools_api,
     usage_api,
     webhooks,
+    workspace_api,
 )
 from polyopus.config import Settings, load_settings
 from polyopus.platform.errors import AppError
@@ -93,6 +95,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(plugins_api.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
     app.include_router(threads.router, prefix="/api/v1")
+    app.include_router(models_api.router, prefix="/api/v1")
+    app.include_router(workspace_api.router, prefix="/api/v1")
     app.include_router(attentions.router, prefix="/api/v1")
     app.include_router(webhooks.router, prefix="/api/v1")
     app.include_router(tickets_api.router, prefix="/api/v1")

@@ -25,7 +25,7 @@ const MAX_TOTAL_CHARS = 1_500_000;
 const MAX_AGE_MS = 10 * 60_000;
 const DEBOUNCE_MS = 200;
 
-let pending = new Map<string, InflightEntry>();
+const pending = new Map<string, InflightEntry>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 function storage(): Storage | null {

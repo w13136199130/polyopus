@@ -25,6 +25,7 @@ import type {
   LoginRequest,
   LoginResponse,
   MessageListResponse,
+  ModelListResponse,
   NotificationListResponse,
   NotificationRow,
   PluginRow,
@@ -41,13 +42,17 @@ import type {
   SourceListResponse,
   SourceView,
   ThreadListResponse,
+  ThreadSettings,
   TicketCounts,
   TicketDetail,
   TicketListResponse,
   TicketTimelineResponse,
   ToolRow,
+  TraceEvent,
   UsageSummaryResponse,
   WebhookAccepted,
+  WorkspaceFile,
+  WorkspaceTree,
 } from "../wire";
 
 type Routed = { route: [method: string, path: string] };
@@ -89,6 +94,38 @@ export const threads = {
   messages: op("GET", "/threads/{thread_id}/messages", (threadId: string) =>
     apiFetch<MessageListResponse>(
       `/threads/${encodeURIComponent(threadId)}/messages`,
+    )),
+  update: op(
+    "PATCH",
+    "/threads/{thread_id}",
+    (
+      threadId: string,
+      body: {
+        title?: string;
+        pinned?: boolean;
+        settings?: ThreadSettings;
+      },
+    ) => apiFetch<ThreadListResponse["items"][number]>(
+      `/threads/${encodeURIComponent(threadId)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  ),
+  remove: op("DELETE", "/threads/{thread_id}", (threadId: string) =>
+    apiFetch<{ ok: boolean; threadId: string }>(
+      `/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" },
+    )),
+  branch: op(
+    "POST",
+    "/threads/{thread_id}/branch",
+    (threadId: string, title?: string) =>
+      apiFetch<ThreadListResponse["items"][number]>(
+        `/threads/${encodeURIComponent(threadId)}/branch`,
+        { method: "POST", body: JSON.stringify({ title }) },
+      ),
+  ),
+  trace: op("GET", "/threads/{thread_id}/trace", (threadId: string) =>
+    apiFetch<{ items: TraceEvent[] }>(
+      `/threads/${encodeURIComponent(threadId)}/trace`,
     )),
   postTurn: op(
     "POST",
@@ -595,8 +632,24 @@ export const notifications = {
     })),
 };
 
+export const models = {
+  list: op("GET", "/models", () => apiFetch<ModelListResponse>("/models")),
+};
+
+/** Read-only workspace viewer behind the chat Dock (文件/工作区 tabs). */
+export const workspace = {
+  tree: op("GET", "/workspace/tree", (path?: string) => {
+    const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
+    return apiFetch<WorkspaceTree>(`/workspace/tree${suffix}`);
+  }),
+  file: op("GET", "/workspace/file", (path: string) =>
+    apiFetch<WorkspaceFile>(
+      `/workspace/file?path=${encodeURIComponent(path)}`,
+    )),
+};
+
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, tools, knowledge, connectors,
-  plugins, settings, adminOps,
+  plugins, settings, adminOps, models, workspace,
 ];

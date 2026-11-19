@@ -30,6 +30,19 @@ export interface LoginResponse {
   user: SessionUser;
 }
 
+export interface ThreadSettings {
+  /** Model name hint honored by the engine on the next turn. */
+  model?: string;
+  /** Knowledge bases whose top hits are injected as grounded context. */
+  kbIds?: string[];
+  /** Connector instances attached to this conversation (metadata today). */
+  connectorIds?: string[];
+  /** Published experts offered as sub-agents for this conversation. */
+  subagentIds?: string[];
+  /** "ask" opens an approval card; "auto" upgrades ask -> allow (deny wins). */
+  approvalPolicy?: "ask" | "auto";
+}
+
 export interface Thread {
   threadId: string;
   title: string;
@@ -39,6 +52,54 @@ export interface Thread {
   createdAt: number;
   agentId?: string | null;
   agentVersionId?: string | null;
+  pinned?: boolean;
+  branchOf?: string | null;
+  settings?: ThreadSettings;
+}
+
+export interface ModelRow {
+  modelId: string;
+  name: string;
+  provider: string;
+  configured: boolean;
+}
+
+export interface ModelListResponse {
+  source: "env" | "registry" | "fake";
+  defaultModel: string;
+  items: ModelRow[];
+}
+
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  size: number;
+  modified: number;
+  children?: WorkspaceEntry[];
+}
+
+export interface WorkspaceTree {
+  root: string;
+  path: string;
+  items: WorkspaceEntry[];
+  truncated: boolean;
+}
+
+export interface WorkspaceFile {
+  path: string;
+  content: string;
+  size: number;
+}
+
+/** One row of GET /threads/{id}/trace (raw event tail for the Dock). */
+export interface TraceEvent {
+  seq: number;
+  type: string;
+  ts: number;
+  turnId?: string | null;
+  runId?: string | null;
+  payload: Record<string, unknown>;
 }
 
 export interface ThreadListResponse {

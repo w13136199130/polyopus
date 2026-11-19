@@ -1,5 +1,5 @@
 {
-  "count": 114,
+  "count": 121,
   "ops": [
     {
       "method": "DELETE",
@@ -48,6 +48,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/sources/{source_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/threads/{thread_id}"
     },
     {
       "method": "DELETE",
@@ -171,6 +175,10 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/models"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/notifications"
     },
     {
@@ -200,6 +208,10 @@
     {
       "method": "GET",
       "path": "/api/v1/threads/{thread_id}/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/{thread_id}/trace"
     },
     {
       "method": "GET",
@@ -235,6 +247,14 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/workspace/file"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/workspace/tree"
+    },
+    {
+      "method": "GET",
       "path": "/healthz"
     },
     {
@@ -264,6 +284,10 @@
     {
       "method": "PATCH",
       "path": "/api/v1/plugins/{plugin_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/threads/{thread_id}"
     },
     {
       "method": "PATCH",
@@ -424,6 +448,10 @@
     {
       "method": "POST",
       "path": "/api/v1/threads"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/{thread_id}/branch"
     },
     {
       "method": "POST",

@@ -7,10 +7,11 @@ import json
 import time
 from collections.abc import AsyncIterator
 from sqlite3 import Connection
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.conversations import service
@@ -37,6 +38,46 @@ class PostTurnBody(BaseModel):
     clientMessageId: str | None = None
 
 
+class PatchThreadBody(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    pinned: bool | None = None
+    # Full replacement of the composer state; the UI always sends the whole
+    # object so removing the last KB/connector is expressible.
+    settings: dict[str, Any] | None = None
+
+    @field_validator("settings")
+    @classmethod
+    def _validate_settings(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Bound the blob and the shapes the engine reads.
+
+        The engine trusts `kbIds`/`model`/`approvalPolicy`; rejecting bad
+        shapes here keeps a malformed client from turning into a turn-time
+        surprise. Unknown keys pass through (forward compatibility)."""
+        if value is None:
+            return value
+        if len(json.dumps(value, ensure_ascii=False)) > 8_192:
+            raise ValueError("settings too large")
+        for key in ("kbIds", "connectorIds", "subagentIds"):
+            if key not in value:
+                continue
+            items = value[key]
+            if (
+                not isinstance(items, list)
+                or len(items) > 50
+                or not all(isinstance(item, str) for item in items)
+            ):
+                raise ValueError(f"{key} must be a list of up to 50 ids")
+        if "model" in value and not isinstance(value["model"], str):
+            raise ValueError("model must be a string")
+        if value.get("approvalPolicy") not in (None, "ask", "auto"):
+            raise ValueError("approvalPolicy must be ask or auto")
+        return value
+
+
+class BranchThreadBody(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+
+
 def _thread_payload(thread: service.Thread) -> dict[str, object]:
     return {
         "threadId": thread.thread_id,
@@ -47,6 +88,9 @@ def _thread_payload(thread: service.Thread) -> dict[str, object]:
         "createdAt": thread.created_at,
         "agentId": thread.agent_id,
         "agentVersionId": thread.agent_version_id,
+        "pinned": thread.pinned,
+        "branchOf": thread.branch_of,
+        "settings": thread.settings,
     }
 
 
@@ -69,6 +113,63 @@ def create_thread(
         agent_id=body.agent_id,
     )
     return _thread_payload(thread)
+
+
+@router.patch("/{thread_id}")
+def patch_thread(
+    thread_id: str,
+    body: PatchThreadBody,
+    user: User = Depends(require_permission("chat:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    """Rename, pin, or replace the composer chips for one session."""
+    thread = service.update_thread(
+        conn, tenant_id=user.tenant_id, owner_id=user.user_id,
+        thread_id=thread_id, title=body.title, pinned=body.pinned,
+        settings=body.settings,
+    )
+    return _thread_payload(thread)
+
+
+@router.delete("/{thread_id}")
+def delete_thread(
+    thread_id: str,
+    user: User = Depends(require_permission("chat:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    service.delete_thread(
+        conn, tenant_id=user.tenant_id, owner_id=user.user_id, thread_id=thread_id
+    )
+    return {"ok": True, "threadId": thread_id}
+
+
+@router.post("/{thread_id}/branch", status_code=201)
+def branch_thread(
+    thread_id: str,
+    body: BranchThreadBody,
+    user: User = Depends(require_permission("chat:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    """Fork a session: copies the visible history into a new conversation."""
+    thread = service.branch_thread(
+        conn, tenant_id=user.tenant_id, owner_id=user.user_id,
+        thread_id=thread_id, title=body.title,
+    )
+    return _thread_payload(thread)
+
+
+@router.get("/{thread_id}/trace")
+def thread_trace(
+    thread_id: str,
+    limit: int = Query(default=200, ge=1, le=500),
+    user: User = Depends(require_permission("chat:read")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    """Event tail for the Dock (prototype 轨迹/终端); ownership-checked."""
+    service.get_thread(
+        conn, tenant_id=user.tenant_id, owner_id=user.user_id, thread_id=thread_id
+    )
+    return {"items": service.list_trace(conn, thread_id=thread_id, limit=limit)}
 
 
 @router.get("/{thread_id}/messages")

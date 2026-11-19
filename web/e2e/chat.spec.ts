@@ -20,7 +20,7 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
   await login(page);
 
   // --- create a thread; URL carries threadId (URL-as-view) ---
-  await page.getByRole("button", { name: "＋ 新对话" }).click();
+  await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
   const threadUrl = page.url();
 
@@ -74,7 +74,7 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
 
 test("chat: denying the write leaves no approval behind", async ({ page }) => {
   await login(page);
-  await page.getByRole("button", { name: "＋ 新对话" }).click();
+  await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
 
   const box = page.getByLabel("消息输入框");
@@ -93,7 +93,7 @@ test("chat: denying the write leaves no approval behind", async ({ page }) => {
 
 test("chat: inflight cache paints after a refresh", async ({ page }) => {
   await login(page);
-  await page.getByRole("button", { name: "＋ 新对话" }).click();
+  await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
   const threadId = new URL(page.url()).searchParams.get("threadId")!;
 
@@ -121,7 +121,7 @@ test("chat: inflight cache paints after a refresh", async ({ page }) => {
 
 test("chat: 5s offline recovers the pending approval", async ({ page, context }) => {
   await login(page);
-  await page.getByRole("button", { name: "＋ 新对话" }).click();
+  await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
 
   const box = page.getByLabel("消息输入框");
@@ -149,7 +149,8 @@ test("chat: welcome quick-start sends on click", async ({ page }) => {
   const welcome = page.getByTestId("quick-prompt").first();
   await expect(welcome).toBeVisible();
   await expect(page.getByTestId("composer-model")).toBeVisible();
-  await expect(page.getByTestId("scroll-bottom")).toBeVisible();
+  // prototype: at the bottom of a fresh conversation there is nothing to jump to
+  await expect(page.getByTestId("scroll-bottom")).toHaveCount(0);
 
   await welcome.click();
   const assistant = page.getByTestId("bubble-assistant");

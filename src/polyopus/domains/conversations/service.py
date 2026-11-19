@@ -3,13 +3,29 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from polyopus.platform.errors import AppError
 from polyopus.platform.events.store import EventStore
+
+
+def parse_settings(raw: object) -> dict[str, Any]:
+    """Decode `threads.settings_json`, failing open to an empty object.
+
+    A corrupt row must not make the thread list unreadable; the next PATCH
+    overwrites it with a valid object."""
+    if not raw:
+        return {}
+    try:
+        value = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -24,6 +40,12 @@ class Thread:
     created_at: int
     agent_id: str | None = None
     agent_version_id: str | None = None
+    # Chat parity fields (prototype session list/header): pinning sorts first,
+    # branch_of points at the source conversation, settings carries the
+    # composer chips (model/KB/connector/sub-agent/approval policy).
+    pinned: bool = False
+    branch_of: str | None = None
+    settings: dict[str, Any] = field(default_factory=dict)
 
 
 def _thread(row: sqlite3.Row) -> Thread:
@@ -38,6 +60,9 @@ def _thread(row: sqlite3.Row) -> Thread:
         created_at=int(row["created_at"]),
         agent_id=row["agent_id"],
         agent_version_id=row["agent_version_id"],
+        pinned=bool(row["pinned"]),
+        branch_of=row["branch_of"],
+        settings=parse_settings(row["settings_json"]),
     )
 
 
@@ -48,6 +73,8 @@ def create_thread(
     owner_id: str,
     title: str = "新对话",
     agent_id: str | None = None,
+    settings: dict[str, Any] | None = None,
+    branch_of: str | None = None,
 ) -> Thread:
     thread_id = "th_" + secrets.token_hex(12)
     now = int(time.time())
@@ -63,13 +90,168 @@ def create_thread(
         """
         INSERT INTO threads
           (tenant_id, thread_id, owner_id, agent_id, agent_version_id, title,
-           status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
+           status, pinned, branch_of, settings_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?, ?)
         """,
-        (tenant_id, thread_id, owner_id, agent_id, version_id, title, now, now),
+        (
+            tenant_id, thread_id, owner_id, agent_id, version_id, title,
+            branch_of, json.dumps(settings or {}, ensure_ascii=False), now, now,
+        ),
     )
     conn.commit()
     return get_thread(conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id)
+
+
+def update_thread(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    owner_id: str,
+    thread_id: str,
+    title: str | None = None,
+    pinned: bool | None = None,
+    settings: dict[str, Any] | None = None,
+) -> Thread:
+    """Rename / pin / replace composer settings for one session.
+
+    Only fields present in the request change; `settings` is a full
+    replacement, which is what the composer's toggle handlers send (they
+    always hold the whole object)."""
+    current = get_thread(
+        conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id
+    )
+    updates: list[str] = []
+    params: list[object] = []
+    if title is not None:
+        clean = title.strip()
+        if not clean:
+            raise AppError(
+                "VALIDATION_FAILED", details={"fields": {"title": "required"}}
+            )
+        updates.append("title = ?")
+        params.append(clean[:200])
+    if pinned is not None:
+        updates.append("pinned = ?")
+        params.append(1 if pinned else 0)
+    if settings is not None:
+        merged = {**current.settings, **settings}
+        updates.append("settings_json = ?")
+        params.append(json.dumps(merged, ensure_ascii=False))
+    if updates:
+        updates.append("updated_at = ?")
+        params.append(int(time.time()))
+        params.append(thread_id)
+        conn.execute(
+            f"UPDATE threads SET {', '.join(updates)} WHERE thread_id = ?", params
+        )
+        conn.commit()
+    return get_thread(
+        conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id
+    )
+
+
+def delete_thread(
+    conn: sqlite3.Connection, *, tenant_id: str, owner_id: str, thread_id: str
+) -> None:
+    """Soft-delete: the row and its events stay for audit/replay; list and
+    get both filter `deleted_at`."""
+    get_thread(conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id)
+    now = int(time.time())
+    conn.execute(
+        "UPDATE threads SET status = 'deleted', deleted_at = ?, updated_at = ? "
+        "WHERE thread_id = ?",
+        (now, now, thread_id),
+    )
+    conn.commit()
+
+
+def branch_thread(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    owner_id: str,
+    thread_id: str,
+    title: str | None = None,
+) -> Thread:
+    """Fork a conversation: same expert/version/settings, copied messages.
+
+    The copy keeps message order and roles but drops `turn_id` (turns belong
+    to the original execution); a branch is a fresh start that still shows
+    the context it forked from."""
+    source = get_thread(
+        conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id
+    )
+    suffix = "（分支）"
+    base = (title or source.title or "新对话").strip()
+    clone = create_thread(
+        conn,
+        tenant_id=tenant_id,
+        owner_id=owner_id,
+        title=(base if base.endswith(suffix) else base + suffix)[:200],
+        agent_id=source.agent_id,
+        settings=source.settings,
+        branch_of=source.thread_id,
+    )
+    rows = conn.execute(
+        "SELECT role, content, status, seq, created_at FROM messages "
+        "WHERE thread_id = ? AND deleted_at IS NULL ORDER BY seq",
+        (source.thread_id,),
+    ).fetchall()
+    if rows:
+        now = int(time.time())
+        for row in rows:
+            conn.execute(
+                """
+                INSERT INTO messages
+                  (tenant_id, message_id, thread_id, turn_id, role, content,
+                   status, seq, created_at, updated_at)
+                VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tenant_id, "msg_" + secrets.token_hex(8), clone.thread_id,
+                    row["role"], row["content"], row["status"], row["seq"],
+                    row["created_at"], now,
+                ),
+            )
+        conn.execute(
+            "UPDATE threads SET last_message_at = ?, updated_at = ? WHERE thread_id = ?",
+            (now, now, clone.thread_id),
+        )
+        conn.commit()
+    return get_thread(
+        conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=clone.thread_id
+    )
+
+
+def list_trace(
+    conn: sqlite3.Connection, *, thread_id: str, limit: int = 200
+) -> list[dict[str, object]]:
+    """Recent event log for the chat Dock's 轨迹/终端 tabs.
+
+    Returns raw rows (payload decoded) so the UI can label tool starts,
+    approvals and turn boundaries without a second projection."""
+    rows = conn.execute(
+        "SELECT seq, type, ts, turn_id, run_id, payload_json FROM events "
+        "WHERE thread_id = ? ORDER BY seq DESC LIMIT ?",
+        (thread_id, max(1, min(limit, 500))),
+    ).fetchall()
+    out: list[dict[str, object]] = []
+    for row in reversed(rows):
+        try:
+            payload = json.loads(str(row["payload_json"]))
+        except ValueError:
+            payload = {}
+        out.append(
+            {
+                "seq": int(row["seq"]),
+                "type": str(row["type"]),
+                "ts": int(row["ts"]),
+                "turnId": row["turn_id"],
+                "runId": row["run_id"],
+                "payload": payload if isinstance(payload, dict) else {},
+            }
+        )
+    return out
 
 
 def get_thread(

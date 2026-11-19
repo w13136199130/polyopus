@@ -23,8 +23,11 @@ afterEach(() => {
 describe("apiFetch", () => {
   it("sends credentials, JSON headers and a trace id", async () => {
     const fetchMock = vi.fn(
-      (_input: RequestInfo | URL, _init?: RequestInit) =>
-        Promise.resolve(jsonResponse(200, { ok: true })) as Promise<Response>,
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        void input;
+        void init;
+        return jsonResponse(200, { ok: true });
+      },
     );
     vi.stubGlobal("fetch", fetchMock);
 
