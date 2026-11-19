@@ -152,6 +152,55 @@ def post_human_message(
     }
 
 
+def finish_after_attention(
+    conn: sqlite3.Connection, store: EventStore, ticket_id: str, *,
+    decision: str,
+) -> str:
+    """Close a ticket whose approval was answered inline (P2 交互还原).
+
+    The approval-resume turn never re-enters run_assignment's tail, so the
+    parked ticket would sit in `attention` with nothing pending. This writes
+    the closing Report, ends the ticket and releases subscriptions — the
+    same effects the assignment path produces, minus a re-run."""
+    ticket = _ticket(conn, ticket_id)
+    if str(ticket["state"]) != "open":
+        return "already_ended"
+    tenant = str(ticket["tenant_id"] or TENANT)
+    thread_id = thread_of_ticket(conn, ticket_id)
+    summary = (
+        f"审批已处理（{ '允许' if decision.startswith('approved') else '拒绝' }），"
+        "工单收尾"
+    )
+    assignment = conn.execute(
+        "SELECT assignment_id FROM assignments WHERE ticket_id = ? "
+        "ORDER BY id DESC LIMIT 1", (ticket_id,),
+    ).fetchone()
+    _record_report(
+        conn, store, ticket_id,
+        str(assignment["assignment_id"]) if assignment else "as_inline",
+        thread_id, "ready", summary, facts={},
+    )
+    now = _now()
+    conn.execute(
+        "UPDATE assignments SET state = 'ended', ended_at = ? "
+        "WHERE ticket_id = ? AND state IN ('pending', 'running')", (now, ticket_id),
+    )
+    conn.execute(
+        "UPDATE tickets SET state = 'ended', bucket = 'done', ended_at = ?, "
+        "updated_at = ? WHERE ticket_id = ? AND state = 'open'",
+        (now, now, ticket_id),
+    )
+    conn.commit()
+    _release_subscriptions(conn, ticket_id)
+    store.append(
+        thread_id, "ticket.ended",
+        {"ticket_id": ticket_id, "reason": "attention_resolved",
+         "decision": decision, "summary": summary},
+        tenant_id=tenant,
+    )
+    return "ended"
+
+
 def wake_thread_ticket(
     conn: sqlite3.Connection, store: EventStore, thread_id: str, turn_id: str
 ) -> bool:

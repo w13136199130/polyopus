@@ -1,34 +1,336 @@
-.facts {
-  margin: 0;
+/* task-timeline prototype: tk-head / why / KPI / budget bar / stage tl */
+
+.head {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-3);
 }
 
-.facts > div {
-  display: grid;
-  grid-template-columns: 84px 1fr;
-  gap: var(--space-3);
-  align-items: baseline;
-}
-
-dt {
-  color: var(--text-3);
-  font-size: 12px;
-}
-
-dd {
-  margin: 0;
-  font-size: 13px;
+.title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
   word-break: break-all;
 }
 
-dd code {
+.sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tagOutline {
+  border: 1px solid var(--line);
+  color: var(--text-3);
+}
+
+.tagBlue {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.tagGreen {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.tagRed {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.tagAmber {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.headActions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* why banner */
+.why {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-s);
+  padding: 10px 12px;
+  font-size: 12.5px;
+}
+
+.why b {
+  display: block;
+  font-size: 13px;
+}
+
+.why span {
+  color: var(--text-2);
+}
+
+.whyBlue {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.whyAmber {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.whyGreen {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.whyRed {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* KPI row */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+
+.kpi {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  padding: 8px 10px;
+}
+
+.kpi dt {
+  font-size: 10.5px;
+  color: var(--text-4);
+  letter-spacing: 0.04em;
+}
+
+.kpi dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* budget bar */
+.budget {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.budgetTop {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.bar {
+  height: 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--primary);
+}
+
+.barWarn i {
+  background: var(--amber);
+}
+
+/* panels */
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+}
+
+.panelH {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px 6px;
+}
+
+.panelH b {
+  font-size: 13px;
+}
+
+.panelH .sub {
+  margin: 0;
+  color: var(--text-4);
+  font-size: 11px;
+}
+
+.dl {
+  margin: 0;
+  padding: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dl > div {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.dl dt {
+  color: var(--text-4);
+}
+
+.dl dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.dl code {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   background: var(--surface-3);
   border-radius: 4px;
-  padding: 1px 6px;
+  padding: 1px 5px;
+}
+
+/* stage timeline (prototype .tl) */
+.tl {
+  list-style: none;
+  margin: 0;
+  padding: 6px 12px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.tlItem {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 0;
+  font-size: 12.5px;
+}
+
+.tlItem::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 22px;
+  bottom: -8px;
+  width: 2px;
+  background: var(--line);
+}
+
+.tlItem:last-child::before {
+  display: none;
+}
+
+.dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+  background: var(--surface);
+  position: relative;
+  top: 2px;
+}
+
+.tlDone .dot {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.tlActive .dot {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.tlWait .dot {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.tlFail .dot {
+  border-color: var(--red);
+  background: var(--red-soft);
+}
+
+.tlKind {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.tlTitle {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tlSub {
+  grid-column: 2 / 4;
+  color: var(--text-4);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tlTime {
+  color: var(--text-4);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* report */
+.reportSummary {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.factsList {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.factsList li {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+  word-break: break-all;
 }
 
 .reportState {
@@ -39,66 +341,13 @@ dd code {
   color: var(--text-2);
 }
 
-.ready {
-  background: var(--ok);
-  color: #fff;
+.reportStateReady {
+  background: var(--green-soft);
+  color: var(--green);
 }
 
-.blocked,
-.failed {
-  background: var(--danger);
-  color: #fff;
-}
-
-.waiting {
-  background: var(--warn);
-  color: #fff;
-}
-
-.reportSummary {
-  margin: var(--space-1) 0 0;
-  color: var(--text-2);
-  font-size: 12px;
-}
-
-.factsList {
-  list-style: none;
-  margin: var(--space-2) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-}
-
-.factsList li {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.factsList code {
-  font-family: var(--font-mono);
-  color: var(--text-3);
-}
-
-.timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-}
-
-.timeline li {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.timeline time {
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
+.reportStateBlocked,
+.reportStateFailed {
+  background: var(--red-soft);
+  color: var(--red);
 }

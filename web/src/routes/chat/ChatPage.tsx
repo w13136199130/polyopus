@@ -8,7 +8,9 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { useSearchParams } from "react-router";
 import { ErrorState, PageLoading, StreamConnectingIndicator } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
+import { useCan } from "@/lib/auth/permissions";
 import { useAgents } from "@/features/agents/api";
+import { useAdminSettings } from "@/features/settings/api";
 import {
   useCreateThread,
   useMessages,
@@ -41,6 +43,12 @@ export function ChatPage() {
   const { store, send } = useChatStream(threadId, onRollback);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const canWrite = useCan("chat:write");
+  const canReadSettings = useCan("settings:read");
+  const settingsQuery = useAdminSettings();
+  const modelLabel = canReadSettings && settingsQuery.data
+    ? (settingsQuery.data.modelName ?? "FakeModel")
+    : "";
 
   // autoscroll while streaming (follow when near the bottom)
   useEffect(() => {
@@ -133,15 +141,58 @@ export function ChatPage() {
               display: "flex",
               flexDirection: "column",
               background: "var(--surface)",
+              position: "relative",
             }}
           >
+            {!canWrite ? (
+              <div
+                role="banner"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 24px",
+                  fontSize: 12.5,
+                  color: "var(--amber)",
+                  background: "var(--amber-soft)",
+                  borderBottom: "1px solid var(--amber-border)",
+                }}
+              >
+                只读角色：可以查看会话与数据，不能发送消息或修改配置。
+              </div>
+            ) : null}
             <MessageList
               messages={messagesQuery.data?.items}
               snapshot={snapshot}
               onScrollRef={(node) => {
                 scrollRef.current = node;
               }}
+              onQuickPrompt={(prompt) => void handleSend(prompt)}
             />
+            <button
+              type="button"
+              aria-label="回到底部"
+              data-testid="scroll-bottom"
+              onClick={() => {
+                const node = scrollRef.current;
+                if (node) node.scrollTop = node.scrollHeight;
+              }}
+              style={{
+                position: "absolute",
+                right: 24,
+                bottom: 132,
+                width: 30,
+                height: 30,
+                borderRadius: 999,
+                border: "1px solid var(--line)",
+                background: "var(--surface)",
+                color: "var(--text-3)",
+                cursor: "pointer",
+                zIndex: 5,
+              }}
+            >
+              ↓
+            </button>
             {approvals.map((attention) => (
               <ApprovalCard
                 key={attention.attentionId}
@@ -158,6 +209,7 @@ export function ChatPage() {
               restoredInput={restored}
               onConsumedRestore={() => setRestored(null)}
               onSend={(content) => void handleSend(content)}
+              modelLabel={modelLabel}
             />
           </div>
         )}

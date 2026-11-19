@@ -483,6 +483,7 @@ async def run_turn(
                     conn, store,
                     tenant_id=tenant_id, thread_id=thread_id, turn_id=turn_id,
                     run_id=run_id, step_idx=tool_round,
+                    ticket_id=str(ticket_id) if ticket_id else None,
                     req=attention.ApprovalRequest(
                         tool=internal,
                         args_preview=call.arguments_json[:200],

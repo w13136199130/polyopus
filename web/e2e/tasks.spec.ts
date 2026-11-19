@@ -146,7 +146,7 @@ test("tasks: policy-gated ticket parks in 待决, stop moves it to done", async 
   await page.getByTestId("ticket-row").first().click();
   const drawer = page.getByRole("dialog", { name: "任务详情" });
   await expect(drawer).toContainText(ticket!);
-  await drawer.getByRole("button", { name: "停止任务" }).click();
+  await page.getByTestId("drawer-stop").click();
   // the confirm Dialog portals to <body>, outside the drawer's DOM
   const confirm = page.getByRole("dialog", { name: "确认停止" });
   await confirm.getByRole("button", { name: "确认停止" }).click();
@@ -188,4 +188,37 @@ test("tasks: manual create from the 新建任务 dialog", async ({ page }) => {
     String(beforeDone + 1),
     { timeout: 30_000 },
   );
+});
+
+/** Prototype restore: attention cards answer inline (允许/拒绝) without
+ * opening the drawer; bucket tab shows the red pending count. */
+test("tasks: inline approval on the attention card", async ({ page }) => {
+  await login(page);
+  await page.goto("/tasks");
+  await waitIdle(page);
+
+  const [ticket] = await seedTickets(page, [
+    "/polyopus 请用 fs.write 工具把内容 'inline-e2e' 写入 inline-e2e.txt",
+  ]);
+  await expect(page.getByTestId("bucket-attention")).toContainText("1", {
+    timeout: 30_000,
+  });
+
+  await page.getByTestId("bucket-attention").click();
+  // the card shows the ticket id truncated to 11 chars (tk_ + 6 hex)
+  const card = page.getByTestId("ticket-row").filter({ hasText: ticket!.slice(0, 11) });
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  const deny = card.getByTestId("card-deny");
+  await expect(deny).toBeVisible({ timeout: 15_000 });
+
+  // deny in place: the approval resolves without opening any drawer; the
+  // engine refuses the write, finishes its final round, and the ticket
+  // completes out of the attention bucket.
+  await deny.click();
+  await expect(deny).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByTestId("bucket-attention")).toContainText("0", {
+    timeout: 30_000,
+  });
+  const after = await listTickets(page);
+  expect(after.find((row) => row.ticketId === ticket)?.bucket).toBe("done");
 });

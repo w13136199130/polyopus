@@ -118,6 +118,19 @@ def _resolve_and_resume(
         conn, store, turn_id, decision=actual,
         config=engine.EngineConfig(workspace=workspace),
     )
+    # 交互还原 (prototype task-q): an approval answered on a TICKET turn must
+    # also close the ticket — the resume path never re-enters the assignment
+    # tail, so without this the ticket parks in `attention` orphaned.
+    if row["ticket_id"]:
+        from polyopus.domains.tickets import service as tickets
+
+        try:
+            tickets.finish_after_attention(
+                conn, store, str(row["ticket_id"]), decision=actual,
+            )
+        except AppError as exc:
+            if exc.normalized_code() != "TICKET_NOT_FOUND":
+                raise
     status_row = conn.execute(
         "SELECT status FROM attentions WHERE attention_id = ?",
         (row["attention_id"],),

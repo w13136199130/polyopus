@@ -139,3 +139,21 @@ test("chat: 5s offline recovers the pending approval", async ({ page, context })
   await card.getByRole("button", { name: "批准" }).click();
   await expect(card).toBeHidden({ timeout: 20_000 });
 });
+
+/** 交互还原 (prototype 欢迎页): quick-start cards send the prompt directly. */
+test("chat: welcome quick-start sends on click", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+
+  const welcome = page.getByTestId("quick-prompt").first();
+  await expect(welcome).toBeVisible();
+  await expect(page.getByTestId("composer-model")).toBeVisible();
+  await expect(page.getByTestId("scroll-bottom")).toBeVisible();
+
+  await welcome.click();
+  const assistant = page.getByTestId("bubble-assistant");
+  await expect(assistant.first()).toContainText("echo[", { timeout: 20_000 });
+  // welcome disappears once the first message lands
+  await expect(page.getByTestId("quick-prompt")).toHaveCount(0);
+});

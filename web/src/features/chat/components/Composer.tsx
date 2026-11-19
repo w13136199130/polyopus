@@ -9,12 +9,14 @@ interface Props {
   restoredInput: string | null;
   onConsumedRestore: () => void;
   onSend: (content: string) => void;
+  /** Resolved model name for the toolbar chip (prototype 模型 chip). */
+  modelLabel?: string;
 }
 
 const MAX_HEIGHT = 200;
 
 export function Composer({
-  disabled, status, restoredInput, onConsumedRestore, onSend,
+  disabled, status, restoredInput, onConsumedRestore, onSend, modelLabel,
 }: Props) {
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement | null>(null);
@@ -66,6 +68,11 @@ export function Composer({
         <div className={styles.toolbar}>
           <span className={styles.tool} title="附件（v1.1）">＋</span>
           <span className={styles.tool} title="知识库引用（v1.1）">@</span>
+          {modelLabel ? (
+            <span className={styles.modelChip} title="当前模型" data-testid="composer-model">
+              {modelLabel}
+            </span>
+          ) : null}
           <span className={styles.hint}>Enter 发送</span>
           <button
             type="button"

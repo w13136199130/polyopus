@@ -42,6 +42,7 @@ def request(
     run_id: str,
     step_idx: int,
     req: ApprovalRequest,
+    ticket_id: str | None = None,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
     now: int | None = None,
 ) -> tuple[str, str]:
@@ -82,9 +83,9 @@ def request(
             INSERT INTO attentions
               (tenant_id, attention_id, ticket_id, turn_id, kind, source_type,
                source_id, payload_json, status, expires_at, created_at)
-            VALUES (?, ?, NULL, ?, 'approval', 'approval', ?, ?, 'pending', ?, ?)
+            VALUES (?, ?, ?, ?, 'approval', 'approval', ?, ?, 'pending', ?, ?)
             """,
-            (tenant_id, attention_id, turn_id, approval_id,
+            (tenant_id, attention_id, ticket_id, turn_id, approval_id,
              json.dumps(
                  {
                      "summary": req.summary or req.tool,

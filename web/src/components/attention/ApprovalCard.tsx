@@ -9,54 +9,103 @@ interface Props {
   onAnswer: (attentionId: string, decision: "approve" | "deny") => void;
 }
 
-function summarize(attention: AttentionItem): { tool: string; preview: string } {
+interface Action {
+  tool?: string;
+  args_preview?: string;
+  risk?: string;
+}
+
+function summarize(attention: AttentionItem): { tool: string; preview: string; risk: string } {
   const payload = attention.payload as {
     summary?: string;
-    actions?: Array<{ tool?: string; args_preview?: string }>;
+    actions?: Action[];
   };
   const first = payload.actions?.[0];
   // older rows may only carry a summary; never render "unknown tool" noise
-  return { tool: first?.tool ?? payload.summary ?? "审批请求", preview: first?.args_preview ?? "" };
+  return {
+    tool: first?.tool ?? payload.summary ?? "审批请求",
+    preview: first?.args_preview ?? "",
+    risk: first?.risk ?? "high",
+  };
 }
 
-/** Policy-gate pause card: approve/deny via the Attention API (docs/48 V05-03). */
+function minutesLeft(expiresAt: number): number {
+  return Math.max(0, Math.round((expiresAt * 1000 - Date.now()) / 60000));
+}
+
+/**
+ * Policy-gate pause card restyled to the task-card prototype (待审批 state):
+ * tc-top (icon/title/pill) + 影响 line + auto-deny chip + tc-actions.
+ */
 export function ApprovalCard({ attention, busy, onAnswer }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const { tool, preview } = summarize(attention);
+  const { tool, preview, risk } = summarize(attention);
+  const minutes = minutesLeft(attention.expiresAt);
 
   return (
-    <div className={styles.card} data-testid="approval-card">
-      <div className={styles.head}>
-        <span className={styles.risk}>需审批</span>
-        <code className={styles.tool}>{tool}</code>
-        <button
-          type="button"
-          className={styles.toggle}
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-        >
-          {expanded ? "收起参数" : "查看参数"}
-        </button>
-      </div>
-      {expanded && preview ? (
-        <pre className={styles.args}>{preview}</pre>
-      ) : null}
-      <div className={styles.ops}>
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={() => onAnswer(attention.attentionId, "approve")}
-        >
-          批准
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => onAnswer(attention.attentionId, "deny")}
-        >
-          拒绝
-        </Button>
+    <div className={styles.wrap}>
+      <div className={styles.card} data-testid="approval-card">
+        <div className={styles.top}>
+          <span className={styles.icon} aria-hidden="true">⚑</span>
+          <span className={styles.title}>等待你批准：{tool}</span>
+          <span className={styles.pill}>待审批</span>
+        </div>
+
+        <div className={styles.line}>
+          <b>待批准</b>
+          <span>
+            <code>{tool}</code> · 风险 {risk}
+          </span>
+        </div>
+        <div className={styles.line}>
+          <b>影响</b>
+          <span>批准后继续执行，不会回滚；拒绝则跳过该工具</span>
+        </div>
+
+        {preview ? (
+          <div className={styles.line}>
+            <b>参数</b>
+            <button
+              type="button"
+              className={styles.toggle}
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={expanded}
+            >
+              {expanded ? "收起参数" : "查看参数"}
+            </button>
+            {expanded ? (
+              <pre className={styles.args}>{preview}</pre>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className={styles.chips}>
+          <span className={`${styles.chip} ${styles.chipAmber}`}>
+            {minutes > 0 ? `${minutes} 分钟后自动拒绝` : "即将自动拒绝"}
+          </span>
+          <span className={styles.chip}>审计已记录</span>
+        </div>
+
+        <div className={styles.actions}>
+          <Button
+            size="sm"
+            data-testid="approval-approve"
+            disabled={busy}
+            onClick={() => onAnswer(attention.attentionId, "approve")}
+          >
+            批准
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            data-testid="approval-deny"
+            disabled={busy}
+            onClick={() => onAnswer(attention.attentionId, "deny")}
+          >
+            拒绝
+          </Button>
+          <span className={styles.note}>任务卡不跳页</span>
+        </div>
       </div>
     </div>
   );

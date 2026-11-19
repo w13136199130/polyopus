@@ -244,15 +244,20 @@ def test_approval_resume_turn_does_not_wake_the_ticket(
     conn = sqlite3.connect(str(db))
     try:
         ticket = conn.execute(
-            "SELECT bucket FROM tickets WHERE ticket_id = ?", (ticket_id,)
+            "SELECT bucket, state FROM tickets WHERE ticket_id = ?", (ticket_id,)
         ).fetchone()
         resumed = conn.execute(
             "SELECT count(*) FROM events WHERE type = 'ticket.resumed'"
         ).fetchone()[0]
+        reruns = conn.execute(
+            "SELECT count(*) FROM assignments WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()[0]
     finally:
         conn.close()
-    # known gap (documented in docs/48): approval completes the turn but does
-    # not un-park the ticket; the human-message path owns the resume. The
-    # assertion pins the gate so an auto turn can never loop the ticket.
-    assert ticket[0] == "attention"
+    # 交互还原 (P2): answering an approval on a ticket turn closes the ticket
+    # (report + done) WITHOUT re-running it — no wake, no second assignment,
+    # so an auto turn can never loop the ticket back into the same pause.
+    assert ticket[0] == "done"
+    assert ticket[1] == "ended"
     assert resumed == 0
+    assert reruns == 1
