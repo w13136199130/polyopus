@@ -1,5 +1,5 @@
 {
-  "count": 121,
+  "count": 123,
   "ops": [
     {
       "method": "DELETE",
@@ -467,7 +467,15 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/tickets/{ticket_id}/budget"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/tickets/{ticket_id}/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{ticket_id}/reassign"
     },
     {
       "method": "POST",

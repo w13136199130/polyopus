@@ -60,6 +60,38 @@ export function useStopTicket() {
     mutationFn: (ticketId: string) => tickets.stop(ticketId),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: taskKeys.tickets });
+      void client.invalidateQueries({ queryKey: taskKeys.counts });
+    },
+  });
+}
+
+/** 重新派工: end the current assignment and requeue the same ticket. */
+export function useReassignTicket() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: string) => tickets.reassign(ticketId),
+    onSuccess: (_result, ticketId) => {
+      void client.invalidateQueries({ queryKey: taskKeys.tickets });
+      void client.invalidateQueries({ queryKey: taskKeys.counts });
+      void client.invalidateQueries({ queryKey: taskKeys.ticket(ticketId) });
+      void client.invalidateQueries({ queryKey: taskKeys.timeline(ticketId) });
+    },
+  });
+}
+
+/** 追加预算: raise the ticket ceiling by an increment (yuan -> micros). */
+export function useAddBudget() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { ticketId: string; additionalCostMicros: number }) =>
+      tickets.addBudget(input.ticketId, {
+        additionalCostMicros: input.additionalCostMicros,
+      }),
+    onSuccess: (_result, input) => {
+      void client.invalidateQueries({ queryKey: taskKeys.tickets });
+      void client.invalidateQueries({ queryKey: taskKeys.counts });
+      void client.invalidateQueries({ queryKey: taskKeys.ticket(input.ticketId) });
+      void client.invalidateQueries({ queryKey: taskKeys.timeline(input.ticketId) });
     },
   });
 }

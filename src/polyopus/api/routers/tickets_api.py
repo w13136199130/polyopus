@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from sqlite3 import Connection
+from sqlite3 import Connection, Row
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.identity.service import User
@@ -22,6 +22,85 @@ class CreateTicketBody(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str | None = Field(default=None, max_length=4000)
     priority: int = Field(default=0, ge=0, le=10)
+
+
+class AddBudgetBody(BaseModel):
+    additional_cost_micros: int = Field(
+        default=0, ge=0,
+        validation_alias=AliasChoices("additionalCostMicros", "additional_cost_micros"),
+    )
+    additional_tokens: int = Field(
+        default=0, ge=0,
+        validation_alias=AliasChoices("additionalTokens", "additional_tokens"),
+    )
+
+
+def _actor_of(raw: object, display_name: object = None) -> dict[str, str] | None:
+    try:
+        value = json.loads(str(raw)) if raw else {}
+    except ValueError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    actor_id = str(value.get("id") or "")
+    if not actor_id:
+        return None
+    return {
+        "id": actor_id,
+        "name": str(value.get("name") or display_name or actor_id),
+    }
+
+
+def _progress(value: object) -> int:
+    """assignments.progress is 0..1; stale rows may carry 0..100."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+    percent = number * 100 if number <= 1 else number
+    return max(0, min(100, int(round(percent))))
+
+
+_LIST_SQL = """
+SELECT t.ticket_id, t.title, t.state, t.bucket, t.strength, t.source_id,
+       t.cost_micros, t.created_at, t.actor_json, t.summary, t.policy_version,
+       (SELECT COALESCE(u.display_name, u.username) FROM users u
+         WHERE u.user_id = json_extract(t.actor_json, '$.id')) AS actor_name,
+       s.name AS source_name, s.kind AS source_kind,
+       (SELECT a.executor FROM assignments a
+         WHERE a.ticket_id = t.ticket_id ORDER BY a.id DESC LIMIT 1) AS executor,
+       (SELECT a.progress FROM assignments a
+         WHERE a.ticket_id = t.ticket_id ORDER BY a.id DESC LIMIT 1) AS progress,
+       (SELECT r.summary FROM reports r
+         WHERE r.ticket_id = t.ticket_id ORDER BY r.id DESC LIMIT 1) AS report_summary,
+       (SELECT r.state FROM reports r
+         WHERE r.ticket_id = t.ticket_id ORDER BY r.id DESC LIMIT 1) AS report_state
+FROM tickets t
+LEFT JOIN sources s ON s.source_id = t.source_id AND s.tenant_id = t.tenant_id
+WHERE t.tenant_id = ?
+ORDER BY t.id DESC LIMIT 100
+"""
+
+
+def _ticket_row(row: Row) -> dict[str, object]:
+    return {
+        "ticketId": row["ticket_id"],
+        "title": row["title"],
+        "state": row["state"],
+        "bucket": row["bucket"],
+        "strength": row["strength"],
+        "policyVersion": int(row["policy_version"] or 1),
+        "sourceId": row["source_id"],
+        "sourceName": row["source_name"],
+        "sourceKind": row["source_kind"],
+        "actor": _actor_of(row["actor_json"], row["actor_name"]),
+        "executor": row["executor"],
+        "progress": _progress(row["progress"]),
+        "summary": row["summary"] or row["report_summary"] or "",
+        "reportState": row["report_state"],
+        "costMicros": int(row["cost_micros"] or 0),
+        "createdAt": row["created_at"],
+    }
 
 
 @router.post("", status_code=201)
@@ -43,27 +122,8 @@ def create_ticket(
 def list_tickets(
     user: User = Depends(require_permission("ticket:read")), conn: Connection = Depends(get_db)
 ) -> dict[str, object]:
-    rows = conn.execute(
-        "SELECT ticket_id, title, state, bucket, strength, source_id, "
-        "cost_micros, created_at "
-        "FROM tickets WHERE tenant_id = ? ORDER BY id DESC LIMIT 100",
-        (user.tenant_id,),
-    ).fetchall()
-    return {
-        "items": [
-            {
-                "ticketId": r["ticket_id"],
-                "title": r["title"],
-                "state": r["state"],
-                "bucket": r["bucket"],
-                "strength": r["strength"],
-                "sourceId": r["source_id"],
-                "costMicros": int(r["cost_micros"] or 0),
-                "createdAt": r["created_at"],
-            }
-            for r in rows
-        ]
-    }
+    rows = conn.execute(_LIST_SQL, (user.tenant_id,)).fetchall()
+    return {"items": [_ticket_row(row) for row in rows]}
 
 
 @router.get("/counts")
@@ -108,6 +168,8 @@ _TIMELINE_KIND = {
     "execution_thread": "ticket",
     "human_message": "ticket",
     "trigger_fanned_out": "trigger",
+    "reassigned": "assignment",
+    "budget_adjusted": "report",
 }
 
 
@@ -204,7 +266,23 @@ def ticket_timeline(
                 ),
             })
 
-    items.sort(key=lambda item: (str(item["at"]), str(item["id"])))
+    # Same-second rows: keep the stage order the prototype teaches
+    # (Trigger → Ticket → Assignment → Report → Attention), not id strings.
+    kind_order = {
+        "trigger": 0, "gate": 1, "eval": 2, "ticket": 3,
+        "assignment": 4, "report": 5, "attention": 6, "channel": 7,
+    }
+    for index, item in enumerate(items):
+        item["_seq"] = index
+    items.sort(
+        key=lambda item: (
+            str(item["at"]),
+            kind_order.get(str(item["kind"]), 99),
+            int(str(item["_seq"])),
+        )
+    )
+    for item in items:
+        item.pop("_seq", None)
     return {"items": items[:limit]}
 
 
@@ -215,7 +293,25 @@ def get_ticket(
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     row = conn.execute(
-        "SELECT * FROM tickets WHERE tenant_id = ? AND ticket_id = ?",
+        """
+        SELECT t.ticket_id, t.title, t.state, t.bucket, t.strength, t.source_id,
+               t.cost_micros, t.created_at, t.actor_json, t.summary,
+               t.policy_version, t.scope_json, t.budget_json,
+               (SELECT COALESCE(u.display_name, u.username) FROM users u
+                 WHERE u.user_id = json_extract(t.actor_json, '$.id')) AS actor_name,
+               s.name AS source_name, s.kind AS source_kind,
+               (SELECT a.executor FROM assignments a
+                 WHERE a.ticket_id = t.ticket_id ORDER BY a.id DESC LIMIT 1) AS executor,
+               (SELECT a.progress FROM assignments a
+                 WHERE a.ticket_id = t.ticket_id ORDER BY a.id DESC LIMIT 1) AS progress,
+               (SELECT r.summary FROM reports r
+                 WHERE r.ticket_id = t.ticket_id ORDER BY r.id DESC LIMIT 1) AS report_summary,
+               (SELECT r.state FROM reports r
+                 WHERE r.ticket_id = t.ticket_id ORDER BY r.id DESC LIMIT 1) AS report_state
+        FROM tickets t
+        LEFT JOIN sources s ON s.source_id = t.source_id AND s.tenant_id = t.tenant_id
+        WHERE t.tenant_id = ? AND t.ticket_id = ?
+        """,
         (user.tenant_id, ticket_id),
     ).fetchone()
     if row is None:
@@ -225,11 +321,30 @@ def get_ticket(
         "WHERE ticket_id = ? ORDER BY id DESC LIMIT 1",
         (ticket_id,),
     ).fetchone()
+    artifacts: list[dict[str, object]] = []
+    try:
+        thread_id = service.thread_of_ticket(conn, ticket_id)
+    except AppError:
+        thread_id = None
+    if thread_id:
+        artifacts = [
+            {
+                "artifactId": item["artifact_id"],
+                "kind": item["kind"],
+                "ref": item["ref"],
+                "mime": item["mime"],
+                "size": int(item["size"] or 0),
+                "createdAt": item["created_at"],
+            }
+            for item in conn.execute(
+                "SELECT artifact_id, kind, ref, mime, size, created_at "
+                "FROM artifacts WHERE tenant_id = ? AND thread_id = ? "
+                "ORDER BY id DESC LIMIT 20",
+                (user.tenant_id, thread_id),
+            ).fetchall()
+        ]
     return {
-        "ticketId": row["ticket_id"],
-        "title": row["title"],
-        "state": row["state"],
-        "bucket": row["bucket"],
+        **_ticket_row(row),
         "scope": json.loads(row["scope_json"] or "[]"),
         "budget": json.loads(row["budget_json"]) if row["budget_json"] else None,
         "costMicros": int(row["cost_micros"] or 0),
@@ -242,6 +357,7 @@ def get_ticket(
             if report
             else None
         ),
+        "artifacts": artifacts,
     }
 
 
@@ -255,6 +371,36 @@ def stop_ticket(
     service.stop(conn, store, ticket_id, by=user.user_id,
                  tenant_id=user.tenant_id)
     return {"ticketId": ticket_id, "state": "ended", "reason": "stopped_by_human"}
+
+
+@router.post("/{ticket_id}/reassign")
+def reassign_ticket(
+    ticket_id: str,
+    user: User = Depends(require_permission("ticket:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    service.reassign(
+        conn, store, ticket_id, by=user.user_id, tenant_id=user.tenant_id
+    )
+    return {"ticketId": ticket_id, "bucket": "queued", "state": "open"}
+
+
+@router.post("/{ticket_id}/budget")
+def add_ticket_budget(
+    ticket_id: str,
+    body: AddBudgetBody,
+    user: User = Depends(require_permission("ticket:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    budget = service.add_budget(
+        conn, store, ticket_id, by=user.user_id,
+        additional_cost_micros=body.additional_cost_micros,
+        additional_tokens=body.additional_tokens,
+        tenant_id=user.tenant_id,
+    )
+    return {"ticketId": ticket_id, **budget}
 
 
 class HumanMessageBody(BaseModel):

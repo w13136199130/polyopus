@@ -33,20 +33,20 @@ test("sources: create webhook -> test event -> task -> stop", async ({ page }) =
   await expect(page.getByText(/已触发任务|已发送 webhook/)).toBeVisible();
 
   await page.getByRole("link", { name: "任务" }).click();
-  await page.getByTestId("source-filter").selectOption({ label: `${name}（webhook）` });
+  await page.getByTestId("task-source").filter({ hasText: name }).click();
 
   const ticket = page.getByTestId("ticket-row").first();
   await expect(ticket).toBeVisible({ timeout: 15_000 });
   await ticket.click();
 
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByTestId("ticket-detail")).toBeVisible();
   // The test event carries write intent and the source scope allows fs:write,
   // so the ticket parks at the policy gate -- deterministic stop target.
   await page.getByTestId("drawer-stop").click();
   await page.getByRole("button", { name: "确认停止" }).click();
 
   await page.getByTestId("bucket-done").click();
-  await expect(page.getByTestId("ticket-row").filter({ hasText: "/polyopus" })).toBeVisible({
+  await expect(page.getByTestId("ticket-row").filter({ hasText: "保存结果" })).toBeVisible({
     timeout: 15_000,
   });
 });

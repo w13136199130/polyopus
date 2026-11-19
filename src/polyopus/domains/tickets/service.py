@@ -758,6 +758,159 @@ def stop(
     )
 
 
+def reassign(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    ticket_id: str,
+    *,
+    by: str,
+    tenant_id: str | None = None,
+) -> None:
+    """Human "重新派工": end current assignments and put the ticket back in
+    the queue. The ticket worker claims it again (same builtin executor).
+
+    Refused while an attention is pending: re-running then duplicates the
+    waiting turn instead of making progress."""
+    ticket = _ticket(conn, ticket_id, tenant_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
+    if str(ticket["state"]) != "open":
+        raise AppError(
+            "CONFLICT", details={"reason": "ticket_ended", "ticketId": ticket_id}
+        )
+    pending = conn.execute(
+        "SELECT 1 FROM attentions WHERE tenant_id = ? AND ticket_id = ? "
+        "AND status = 'pending' LIMIT 1",
+        (tenant, ticket_id),
+    ).fetchone()
+    if pending is not None:
+        raise AppError(
+            "CONFLICT",
+            details={"reason": "pending_attention", "ticketId": ticket_id},
+        )
+    thread_id = thread_of_ticket(conn, ticket_id)
+    now = _now()
+    for row in conn.execute(
+        "SELECT assignment_id FROM assignments WHERE ticket_id = ? "
+        "AND state IN ('pending', 'running')",
+        (ticket_id,),
+    ).fetchall():
+        conn.execute(
+            "UPDATE assignments SET state = 'ended', ended_at = ? "
+            "WHERE assignment_id = ?",
+            (now, row["assignment_id"]),
+        )
+    conn.execute(
+        "UPDATE tickets SET bucket = 'queued', updated_at = ? WHERE ticket_id = ?",
+        (now, ticket_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO timeline_events
+          (event_id, tenant_id, ticket_id, kind, title, actor, payload_json,
+           created_at)
+        VALUES (?, ?, ?, 'reassigned', '重新派工', ?, ?, ?)
+        """,
+        ("tl_" + secrets.token_hex(8), tenant, ticket_id, by,
+         json.dumps({"by": by}, ensure_ascii=False), now),
+    )
+    conn.commit()
+    store.append(
+        thread_id,
+        "ticket.reassigned",
+        {"ticket_id": ticket_id, "by": by},
+        tenant_id=tenant,
+    )
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn, tenant_id=tenant, action="ticket.reassign", result="ok",
+        actor_id=by, resource_type="ticket", resource_id=ticket_id,
+        ticket_id=ticket_id, detail={},
+    )
+
+
+def add_budget(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    ticket_id: str,
+    *,
+    by: str,
+    additional_cost_micros: int = 0,
+    additional_tokens: int = 0,
+    tenant_id: str | None = None,
+) -> dict[str, int | None]:
+    """Human "追加预算": raise the ticket ceiling by an increment.
+
+    The mandate itself stays immutable; only the ticket budget changes, and
+    the adjustment is written to the timeline + event log."""
+    if additional_cost_micros <= 0 and additional_tokens <= 0:
+        raise AppError(
+            "VALIDATION_FAILED",
+            details={"fields": {"amount": "must be positive"}},
+        )
+    ticket = _ticket(conn, ticket_id, tenant_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
+    if str(ticket["state"]) != "open":
+        raise AppError(
+            "CONFLICT", details={"reason": "ticket_ended", "ticketId": ticket_id}
+        )
+    budget = Budget.of(ticket)
+    max_cost = (budget.max_cost_micros or 0) + additional_cost_micros
+    max_tokens = (budget.max_total_tokens or 0) + additional_tokens
+    payload: dict[str, int] = {}
+    if max_cost > 0:
+        payload["max_cost_micros"] = max_cost
+    if max_tokens > 0:
+        payload["max_total_tokens"] = max_tokens
+    thread_id = thread_of_ticket(conn, ticket_id)
+    now = _now()
+    conn.execute(
+        "UPDATE tickets SET budget_json = ?, updated_at = ? WHERE ticket_id = ?",
+        (json.dumps(payload), now, ticket_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO timeline_events
+          (event_id, tenant_id, ticket_id, kind, title, actor, payload_json,
+           created_at)
+        VALUES (?, ?, ?, 'budget_adjusted', '追加预算', ?, ?, ?)
+        """,
+        (
+            "tl_" + secrets.token_hex(8), tenant, ticket_id, by,
+            json.dumps(
+                {"additional_cost_micros": additional_cost_micros,
+                 "additional_tokens": additional_tokens,
+                 "max_cost_micros": max_cost or None,
+                 "max_total_tokens": max_tokens or None},
+                ensure_ascii=False,
+            ),
+            now,
+        ),
+    )
+    conn.commit()
+    store.append(
+        thread_id,
+        "ticket.budget_adjusted",
+        {"ticket_id": ticket_id, "by": by,
+         "additional_cost_micros": additional_cost_micros,
+         "additional_tokens": additional_tokens},
+        tenant_id=tenant,
+    )
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn, tenant_id=tenant, action="ticket.add_budget", result="ok",
+        actor_id=by, resource_type="ticket", resource_id=ticket_id,
+        ticket_id=ticket_id,
+        detail={"additional_cost_micros": additional_cost_micros,
+                "additional_tokens": additional_tokens},
+    )
+    return {
+        "maxCostMicros": max_cost or None,
+        "maxTotalTokens": max_tokens or None,
+    }
+
+
 def create_manual(
     conn: sqlite3.Connection,
     store: EventStore,

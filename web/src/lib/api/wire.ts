@@ -214,6 +214,16 @@ export interface TicketRow {
   strength: string;
   sourceId: string | null;
   createdAt: number;
+  sourceName?: string | null;
+  sourceKind?: string | null;
+  actor?: { id: string; name: string } | null;
+  executor?: string | null;
+  policyVersion?: number;
+  /** 0..100, from the latest assignment. */
+  progress?: number;
+  summary?: string;
+  reportState?: string | null;
+  costMicros?: number;
 }
 
 export interface TicketListResponse {
@@ -242,11 +252,21 @@ export interface TicketTimelineResponse {
   items: TicketTimelineItem[];
 }
 
+export interface TicketArtifact {
+  artifactId: string;
+  kind: string;
+  ref: string;
+  mime: string | null;
+  size: number;
+  createdAt: number;
+}
+
 export interface TicketDetail extends TicketRow {
   scope: string[];
   budget: { maxTotalTokens?: number; maxCostMicros?: number } | null;
   costMicros?: number;
   report: { state: string; summary: string; facts: Record<string, unknown> } | null;
+  artifacts?: TicketArtifact[];
 }
 
 export interface UsageSummaryItem {

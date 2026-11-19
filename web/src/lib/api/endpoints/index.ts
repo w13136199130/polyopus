@@ -275,6 +275,24 @@ export const tickets = {
       `/tickets/${encodeURIComponent(ticketId)}/stop`,
       { method: "POST" },
     )),
+  reassign: op("POST", "/tickets/{ticket_id}/reassign", (ticketId: string) =>
+    apiFetch<{ ticketId: string; bucket: string; state: string }>(
+      `/tickets/${encodeURIComponent(ticketId)}/reassign`,
+      { method: "POST" },
+    )),
+  addBudget: op(
+    "POST",
+    "/tickets/{ticket_id}/budget",
+    (ticketId: string, body: { additionalCostMicros?: number; additionalTokens?: number }) =>
+      apiFetch<{
+        ticketId: string;
+        maxCostMicros: number | null;
+        maxTotalTokens: number | null;
+      }>(`/tickets/${encodeURIComponent(ticketId)}/budget`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  ),
   watchdogRun: op("POST", "/tickets/watchdog/run", () =>
     apiFetch<{ alerts: number }>("/tickets/watchdog/run", { method: "POST" })),
 };

@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
  *
  * Stable assertions instead:
  *  - wait for the worker to idle, seed 2, watch the DONE bucket grow by 2
- *  - detail drawer shows the ready Report (scope/budget/执行 completed)
+ *  - inline detail shows the ready Report (scope/budget/执行 completed)
  *  - stop flow via a ticket paused at the policy gate (deterministic pause):
  *    FakeModel's write intent parks the ticket in 待决 -> stop -> done
  */
@@ -85,7 +85,7 @@ async function seedTickets(
   return ids;
 }
 
-test("tasks: auto-execution fills the done bucket, drawer shows the report", async ({
+test("tasks: auto-execution fills the done bucket, detail shows the report", async ({
   page,
 }) => {
   await login(page);
@@ -105,14 +105,13 @@ test("tasks: auto-execution fills the done bucket, drawer shows the report", asy
     { timeout: 30_000 },
   );
 
-  // drawer: report ready + scope, ticketId lands in the URL
+  // inline detail: report ready + scope, ticketId lands in the URL
   await page.getByTestId("ticket-row").first().click();
-  const drawer = page.getByRole("dialog", { name: "任务详情" });
-  await expect(drawer).toBeVisible();
-  await expect(drawer).toContainText("workspace:default");
-  await expect(drawer).toContainText("completed");
+  const detail = page.getByTestId("ticket-detail");
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText("workspace:default");
+  await expect(detail).toContainText("completed");
   expect(page.url()).toMatch(/ticketId=/);
-  await page.keyboard.press("Escape");
 });
 
 test("tasks: policy-gated ticket parks in 待决, stop moves it to done", async ({
@@ -136,21 +135,18 @@ test("tasks: policy-gated ticket parks in 待决, stop moves it to done", async 
     { timeout: 30_000 },
   );
 
-  // the inbox carries the matching approval card
-  await expect(page.getByTestId("approval-card").first()).toBeVisible({
-    timeout: 15_000,
-  });
-
-  // stop via the drawer's confirm dialog -> done +1, attention back
+  // the card carries the matching approval actions inline
   await page.getByTestId("bucket-attention").click();
-  await page.getByTestId("ticket-row").first().click();
-  const drawer = page.getByRole("dialog", { name: "任务详情" });
-  await expect(drawer).toContainText(ticket!);
+  const card = page.getByTestId("ticket-row").filter({ hasText: ticket!.slice(0, 11) });
+  await expect(card.getByTestId("card-approve")).toBeVisible({ timeout: 15_000 });
+
+  // stop via the inline detail's confirm dialog -> done +1, attention back
+  await card.click();
+  const detail = page.getByTestId("ticket-detail");
+  await expect(detail).toContainText(ticket!);
   await page.getByTestId("drawer-stop").click();
-  // the confirm Dialog portals to <body>, outside the drawer's DOM
   const confirm = page.getByRole("dialog", { name: "确认停止" });
   await confirm.getByRole("button", { name: "确认停止" }).click();
-  await expect(drawer).toBeHidden({ timeout: 15_000 });
 
   await expect(page.getByTestId("bucket-attention")).toContainText(
     String(beforeAttention),
@@ -162,7 +158,7 @@ test("tasks: policy-gated ticket parks in 待决, stop moves it to done", async 
 });
 
 /** P0-3: manual ticket — 新建任务 dialog creates a queued ticket that the
- * worker then drives to done, and the drawer opens on it. */
+ * worker then drives to done, and the inline detail opens on it. */
 test("tasks: manual create from the 新建任务 dialog", async ({ page }) => {
   await login(page);
   await page.goto("/tasks");
@@ -179,9 +175,9 @@ test("tasks: manual create from the 新建任务 dialog", async ({ page }) => {
     .fill("请把工作日志整理成三行总结，不要写文件。");
   await dialog.getByTestId("new-ticket-submit").click();
 
-  // creation opens the drawer on the new ticket
-  const drawer = page.getByRole("dialog", { name: "任务详情" });
-  await expect(drawer).toContainText(title, { timeout: 15_000 });
+  // creation selects the new ticket in the inline detail
+  const detail = page.getByTestId("ticket-detail");
+  await expect(detail).toContainText(title, { timeout: 15_000 });
 
   // and the worker drains it to done like any source ticket
   await expect(page.getByTestId("bucket-done")).toContainText(
@@ -191,7 +187,7 @@ test("tasks: manual create from the 新建任务 dialog", async ({ page }) => {
 });
 
 /** Prototype restore: attention cards answer inline (允许/拒绝) without
- * opening the drawer; bucket tab shows the red pending count. */
+ * leaving the list; bucket tab shows the red pending count. */
 test("tasks: inline approval on the attention card", async ({ page }) => {
   await login(page);
   await page.goto("/tasks");
@@ -211,7 +207,7 @@ test("tasks: inline approval on the attention card", async ({ page }) => {
   const deny = card.getByTestId("card-deny");
   await expect(deny).toBeVisible({ timeout: 15_000 });
 
-  // deny in place: the approval resolves without opening any drawer; the
+  // deny in place: the approval resolves without leaving the list; the
   // engine refuses the write, finishes its final round, and the ticket
   // completes out of the attention bucket.
   await deny.click();
@@ -221,4 +217,32 @@ test("tasks: inline approval on the attention card", async ({ page }) => {
   });
   const after = await listTickets(page);
   expect(after.find((row) => row.ticketId === ticket)?.bucket).toBe("done");
+});
+
+/** Prototype task detail: 追加预算 raises the ceiling without touching the
+ * mandate and writes an auditable timeline row. */
+test("tasks: add budget from inline detail", async ({ page }) => {
+  await login(page);
+  await page.goto("/tasks");
+  await waitIdle(page);
+
+  const [ticket] = await seedTickets(page, [
+    "/polyopus 请用 fs.write 工具把内容 'budget-e2e' 写入 budget-e2e.txt",
+  ]);
+  await expect(page.getByTestId("bucket-attention")).toContainText("1", {
+    timeout: 30_000,
+  });
+  await page.getByTestId("bucket-attention").click();
+  const card = page.getByTestId("ticket-row").filter({ hasText: ticket!.slice(0, 11) });
+  await card.click();
+  const detail = page.getByTestId("ticket-detail");
+  await expect(detail).toContainText(ticket!);
+
+  await detail.getByTestId("detail-budget").click();
+  const dialog = page.getByRole("dialog", { name: "追加预算" });
+  await dialog.getByTestId("budget-amount").fill("2");
+  await dialog.getByTestId("budget-submit").click();
+  await expect(detail).toContainText("已追加预算 ¥2.00", { timeout: 15_000 });
+  await expect(detail).toContainText("¥2.00", { timeout: 15_000 });
+  await expect(detail).toContainText("追加预算");
 });

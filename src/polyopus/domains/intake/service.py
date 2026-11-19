@@ -27,6 +27,18 @@ FILTER_REASONS = ("actor_not_allowed", "bot_not_allowed", "not_explicit",
                   "rate_limited", "rule_denied", "self_message")
 
 
+def _clean_title(text: str) -> str:
+    """Card title: drop a leading slash command (`/polyopus 修复构建`).
+
+    The command is routing syntax, not part of the task; keeping it makes
+    every card start with the same noise. Only a short first token is
+    stripped, so ordinary text is untouched."""
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) == 2 and parts[0].startswith("/") and len(parts[0]) <= 24:
+        text = parts[1]
+    return text.strip()[:80] or "webhook 工单"
+
+
 @dataclass(frozen=True)
 class SourceConfig:
     source_id: str
@@ -264,7 +276,7 @@ def open_ticket(
     ticket_id = "tk_" + secrets.token_hex(8)
     mandate_id = "md_" + secrets.token_hex(8)
     thread_id = "th_" + secrets.token_hex(12)
-    title = str(payload.get("text", ""))[:80] or "webhook 工单"
+    title = _clean_title(str(payload.get("text", "")))
     scope = list(scope) if scope else list(cfg.default_scope)
 
     # ADR-012: all execution lands on thread+turn; the ticket carries the mandate

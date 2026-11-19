@@ -1,27 +1,45 @@
 /**
- * Tasks page: inbox strip + four-bucket board + detail drawer.
- * P0-3 adds manual ticket creation (POST /tickets) so a fresh install has a
- * real entry point instead of a demo-webhook seed.
+ * Tasks page — prototype 3-pane layout: page-local side rail (search/source/
+ * executor/quick), middle task list with inline decisions, right inline
+ * detail (mandate / timeline / report / artifacts).
+ *
+ * URL is the view state for filters + selection: `?bucket=`, `?ticketId=`,
+ * `?source=`, `?executor=`, `?kind=schedule`.
  */
 
-import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { Button, Dialog } from "@/components/ui";
-import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
-import { pendingInbox, useAttentions } from "@/lib/api/hooks";
 import {
   bucketCounts,
   inBucket,
   useCreateTicket,
   useTicketCounts,
   useTickets,
+  type Bucket,
   type BucketFilter,
 } from "@/features/tasks/api";
 import { useSources } from "@/features/sources/api";
-import { InboxStrip } from "@/features/tasks/components/InboxStrip";
-import { TicketBoard } from "@/features/tasks/components/TicketBoard";
-import { TicketDetailDrawer } from "@/features/tasks/components/TicketDetailDrawer";
+import { TaskSidebar } from "@/features/tasks/components/TaskSidebar";
+import { TicketDetailPanel } from "@/features/tasks/components/TicketDetailPanel";
+import { TicketList } from "@/features/tasks/components/TicketList";
+import styles from "./TasksPage.module.css";
+
+const BUCKETS: Array<[BucketFilter, string]> = [
+  ["all", "全部"],
+  ["attention", "待我决定"],
+  ["running", "进行中"],
+  ["queued", "已排队"],
+  ["done", "已完成"],
+];
+
+function todayStart(): number {
+  const now = new Date();
+  return Math.floor(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000,
+  );
+}
 
 export function TasksPage() {
   const [params, setParams] = useSearchParams();
@@ -33,42 +51,110 @@ export function TasksPage() {
     : "all";
   const ticketId = params.get("ticketId");
   const sourceParam = params.get("source") ?? "";
+  const executorParam = params.get("executor") ?? "";
   const scheduleOnly = params.get("kind") === "schedule";
 
   const ticketsQuery = useTickets();
   const countsQuery = useTicketCounts();
-  const attentionsQuery = useAttentions();
   const sourcesQuery = useSources();
   const createTicket = useCreateTicket();
   const canWrite = useCan("ticket:write");
 
+  const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftSource, setDraftSource] = useState(sourceParam);
+  const [draftExecutor, setDraftExecutor] = useState(executorParam);
+  const [draftSchedule, setDraftSchedule] = useState(scheduleOnly);
   const [title, setTitle] = useState("");
   const [brief, setBrief] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const sources = sourcesQuery.data?.items ?? [];
-  const scheduleIds = new Set(
-    sources.filter((source) => source.kind === "schedule").map((source) => source.sourceId),
+  const sources = useMemo(
+    () => sourcesQuery.data?.items ?? [],
+    [sourcesQuery.data],
   );
-  const filtered = (ticketsQuery.data?.items ?? []).filter((row) => {
-    if (sourceParam && row.sourceId !== sourceParam) return false;
-    if (scheduleOnly && (!row.sourceId || !scheduleIds.has(row.sourceId))) return false;
-    return true;
-  });
-  const rows = inBucket(filtered, filter);
-  // Server counts are global; with a source/schedule filter we aggregate the
-  // filtered set locally so the tabs stay truthful.
-  const localCounts = bucketCounts(filtered);
-  const counts = sourceParam || scheduleOnly
+  const scheduleIds = useMemo(
+    () =>
+      new Set(
+        sources
+          .filter((source) => source.kind === "schedule")
+          .map((source) => source.sourceId),
+      ),
+    [sources],
+  );
+  const allRows = useMemo(
+    () => ticketsQuery.data?.items ?? [],
+    [ticketsQuery.data],
+  );
+
+  // source/executor/schedule/search filters, before the bucket tab
+  const baseFiltered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return allRows.filter((row) => {
+      if (sourceParam && row.sourceId !== sourceParam) return false;
+      if (executorParam && (row.executor || "builtin") !== executorParam) return false;
+      if (scheduleOnly && (!row.sourceId || !scheduleIds.has(row.sourceId))) return false;
+      if (needle) {
+        const haystack = [
+          row.title,
+          row.ticketId,
+          row.actor?.name ?? "",
+          row.summary ?? "",
+          row.sourceName ?? "",
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [allRows, sourceParam, executorParam, scheduleOnly, scheduleIds, query]);
+
+  const rows = inBucket(baseFiltered, filter);
+  const localCounts = bucketCounts(baseFiltered);
+  const counts = sourceParam || executorParam || scheduleOnly || query
     ? localCounts
     : (countsQuery.data ?? localCounts);
+
+  const selectedId = ticketId && rows.some((row) => row.ticketId === ticketId)
+    ? ticketId
+    : rows[0]?.ticketId ?? null;
+
+  const todayCount = allRows.filter((row) => row.createdAt >= todayStart()).length;
+  const attentionCount = (countsQuery.data ?? localCounts).attention;
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(params);
     if (value === null) next.delete(key);
     else next.set(key, value);
+    // switching filters invalidates the selected ticket in the list
+    next.delete("ticketId");
     setParams(next, { replace: true });
+  }
+
+  function applyFilters() {
+    const next = new URLSearchParams(params);
+    if (draftSource) next.set("source", draftSource);
+    else next.delete("source");
+    if (draftExecutor) next.set("executor", draftExecutor);
+    else next.delete("executor");
+    if (draftSchedule) next.set("kind", "schedule");
+    else next.delete("kind");
+    next.delete("ticketId");
+    setParams(next, { replace: true });
+    setFilterOpen(false);
+  }
+
+  function clearFilters() {
+    setDraftSource("");
+    setDraftExecutor("");
+    setDraftSchedule(false);
+    const next = new URLSearchParams(params);
+    next.delete("source");
+    next.delete("executor");
+    next.delete("kind");
+    next.delete("ticketId");
+    setParams(next, { replace: true });
+    setFilterOpen(false);
   }
 
   async function submitCreate(event: React.FormEvent) {
@@ -82,93 +168,169 @@ export function TasksPage() {
       setCreating(false);
       setTitle("");
       setBrief("");
-      setParam("ticketId", created.ticketId);
+      setParams({ ticketId: created.ticketId });
       await ticketsQuery.refetch();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "创建失败");
     }
   }
 
+  const executors = Array.from(
+    new Set(allRows.map((row) => row.executor || "builtin")),
+  );
+  const activeFilterCount =
+    (sourceParam ? 1 : 0) + (executorParam ? 1 : 0) + (scheduleOnly ? 1 : 0);
+
   return (
-    <PageShell
-      title="任务"
-      subtitle="Agent 替你干活的主界面：收件箱待决、四桶看进度。"
-      actions={
-        <Button
-          size="sm"
-          data-testid="new-ticket"
-          disabled={!canWrite}
-          onClick={() => setCreating(true)}
-        >
-          ＋ 新建任务
-        </Button>
-      }
-    >
-      <div style={{ padding: "0 24px", display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
-        <InboxStrip
-          items={pendingInbox(attentionsQuery.data?.items)}
-          loading={attentionsQuery.isLoading}
-          error={attentionsQuery.isError}
-          onRetry={() => void attentionsQuery.refetch()}
-        />
-        <div
-          style={{
-            display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap",
-            padding: "8px 0",
-          }}
-        >
-          <label htmlFor="source-filter" style={{ fontSize: 12, color: "var(--text-2)" }}>
-            来源
-          </label>
-          <select
-            id="source-filter"
-            data-testid="source-filter"
-            value={sourceParam}
-            onChange={(event) => setParam("source", event.target.value || null)}
-            style={{ padding: "5px 8px", fontSize: 12 }}
-          >
-            <option value="">全部来源</option>
-            {sources.map((source) => (
-              <option key={source.sourceId} value={source.sourceId}>
-                {source.name}（{source.kind}）
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            data-testid="kind-schedule"
-            aria-pressed={scheduleOnly}
-            onClick={() => setParam("kind", scheduleOnly ? null : "schedule")}
-            style={{
-              padding: "5px 10px",
-              fontSize: 12,
-              borderRadius: 999,
-              border: "1px solid var(--line)",
-              background: scheduleOnly ? "var(--primary)" : "var(--surface)",
-              color: scheduleOnly ? "#fff" : "var(--text)",
-              cursor: "pointer",
-            }}
-          >
-            仅定时任务
-          </button>
-        </div>
-        <TicketBoard
-          rows={rows}
-          loading={ticketsQuery.isLoading}
-          error={ticketsQuery.isError}
-          counts={counts}
-          filter={filter}
-          onFilter={(next) => setParam("bucket", next === "all" ? null : next)}
-          onOpen={(id) => setParam("ticketId", id)}
-          onCreate={() => setCreating(true)}
-          creating={createTicket.isPending}
-          onRetry={() => void ticketsQuery.refetch()}
-        />
-      </div>
-      <TicketDetailDrawer
-        ticketId={ticketId}
-        onClose={() => setParam("ticketId", null)}
+    <div className={styles.root}>
+      <TaskSidebar
+        rows={allRows}
+        todayCount={todayCount}
+        attentionCount={attentionCount}
+        sources={sources}
+        query={query}
+        onQuery={setQuery}
+        sourceId={sourceParam}
+        onSource={(id) => setParam("source", id || null)}
+        executor={executorParam}
+        onExecutor={(value) => setParam("executor", value || null)}
+        onAttention={() => setParam("bucket", "attention")}
       />
+
+      <section className={styles.main}>
+        <header className={styles.head}>
+          <div className={styles.heading}>
+            <h1 className={styles.title}>任务</h1>
+            <p className={styles.sub}>
+              Agent 正在处理的工作；需要你决定的事会出现在最上面。
+            </p>
+          </div>
+          <div className={styles.actions}>
+            <Link to="/connections" className={styles.linkBtn}>
+              ◷ 自动化
+            </Link>
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="task-filter"
+              onClick={() => {
+                setDraftSource(sourceParam);
+                setDraftExecutor(executorParam);
+                setDraftSchedule(scheduleOnly);
+                setFilterOpen(true);
+              }}
+            >
+              ⚲ 筛选{activeFilterCount ? ` · ${activeFilterCount}` : ""}
+            </Button>
+            <Button
+              size="sm"
+              data-testid="new-ticket"
+              disabled={!canWrite}
+              onClick={() => setCreating(true)}
+            >
+              ＋ 新建任务
+            </Button>
+          </div>
+        </header>
+
+        <div className={styles.tabs} role="tablist" aria-label="任务桶">
+          {BUCKETS.map(([bucket, label]) => (
+            <button
+              key={bucket}
+              type="button"
+              role="tab"
+              aria-selected={filter === bucket}
+              className={`${styles.tab} ${filter === bucket ? styles.tabActive : ""}`}
+              data-testid={bucket === "all" ? undefined : `bucket-${bucket}`}
+              onClick={() => setParam("bucket", bucket === "all" ? null : bucket)}
+            >
+              {label}
+              <span
+                className={`${styles.count} ${
+                  bucket === "attention" ? styles.countRed : ""
+                }`}
+              >
+                {bucket === "all" ? baseFiltered.length : counts[bucket as Bucket]}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.split}>
+          <div className={styles.listPane}>
+            <TicketList
+              rows={rows}
+              loading={ticketsQuery.isLoading}
+              error={ticketsQuery.isError}
+              selectedId={selectedId}
+              onOpen={(id) => {
+                const next = new URLSearchParams(params);
+                next.set("ticketId", id);
+                setParams(next, { replace: true });
+              }}
+              onCreate={() => setCreating(true)}
+              creating={createTicket.isPending}
+              onRetry={() => void ticketsQuery.refetch()}
+            />
+          </div>
+          <div className={styles.detailPane}>
+            <TicketDetailPanel ticketId={selectedId} />
+          </div>
+        </div>
+      </section>
+
+      <Dialog
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        title="筛选任务"
+        footer={
+          <>
+            <Button variant="ghost" onClick={clearFilters}>清除筛选</Button>
+            <Button data-testid="filter-apply" onClick={applyFilters}>应用</Button>
+          </>
+        }
+      >
+        <div className={styles.filterForm}>
+          <label className={styles.field}>
+            来源
+            <select
+              data-testid="filter-source"
+              value={draftSource}
+              onChange={(event) => setDraftSource(event.target.value)}
+            >
+              <option value="">全部来源</option>
+              {sources.map((source) => (
+                <option key={source.sourceId} value={source.sourceId}>
+                  {source.name}（{source.kind}）
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.field}>
+            执行器
+            <select
+              data-testid="filter-executor"
+              value={draftExecutor}
+              onChange={(event) => setDraftExecutor(event.target.value)}
+            >
+              <option value="">全部执行器</option>
+              {executors.map((value) => (
+                <option key={value} value={value}>
+                  {value === "builtin" ? "内置" : value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.check}>
+            <input
+              type="checkbox"
+              checked={draftSchedule}
+              onChange={(event) => setDraftSchedule(event.target.checked)}
+            />
+            仅定时任务
+          </label>
+        </div>
+      </Dialog>
 
       <Dialog
         open={creating}
@@ -192,11 +354,9 @@ export function TasksPage() {
       >
         <form id="new-ticket-form" onSubmit={(event) => void submitCreate(event)}>
           {createError ? (
-            <div role="alert" style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>
-              {createError}
-            </div>
+            <div role="alert" className={styles.formError}>{createError}</div>
           ) : null}
-          <label style={{ display: "block", fontSize: 12, color: "var(--text-2)", marginBottom: 4 }}>
+          <label className={styles.field}>
             标题
             <input
               data-testid="new-ticket-title"
@@ -204,11 +364,10 @@ export function TasksPage() {
               maxLength={200}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              style={{ width: "100%", marginTop: 4 }}
               placeholder="例如：整理本周工作日志"
             />
           </label>
-          <label style={{ display: "block", fontSize: 12, color: "var(--text-2)", marginTop: 12 }}>
+          <label className={styles.field}>
             任务说明（可选，作为首条人工消息）
             <textarea
               data-testid="new-ticket-brief"
@@ -216,12 +375,11 @@ export function TasksPage() {
               rows={4}
               value={brief}
               onChange={(event) => setBrief(event.target.value)}
-              style={{ width: "100%", marginTop: 4, resize: "vertical" }}
               placeholder="要做什么、产出是什么、有什么约束"
             />
           </label>
         </form>
       </Dialog>
-    </PageShell>
+    </div>
   );
 }
