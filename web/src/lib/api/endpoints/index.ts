@@ -529,6 +529,10 @@ export const knowledge = {
       `/knowledge-bases/${encodeURIComponent(kbId)}/reindex-all`,
       { method: "POST" },
     )),
+  reindexDoc: op("POST", "/knowledge-docs/{doc_id}/reindex", (docId: string) =>
+    apiFetch<KnowledgeDocRow>(
+      `/knowledge-docs/${encodeURIComponent(docId)}/reindex`, { method: "POST" },
+    )),
 };
 
 export const agents = {

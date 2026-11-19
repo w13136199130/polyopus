@@ -80,3 +80,42 @@ test("knowledge: file upload, preview, retrieval and batch delete", async ({ pag
     .getByRole("button", { name: "确认删除" }).click();
   await expect(page.getByText(`已删除 ${name}`)).toBeVisible();
 });
+
+/** 交互还原 (knowledge-debug): pipeline chips + per-doc 重建 on the doc row. */
+test("knowledge: pipeline chips and per-doc reindex", async ({ page }) => {
+  await login(page);
+  await page.goto("/knowledge");
+
+  const name = `E2E 管线 ${Date.now()}`;
+  await page.getByTestId("kb-name").fill(name);
+  await page.getByTestId("kb-create").click();
+  await expect(page.getByText(`已创建知识库 ${name}`)).toBeVisible();
+
+  await page.getByTestId("kb-paste-toggle").click();
+  await page.getByTestId("doc-filename").fill("pipeline.md");
+  await page.getByTestId("doc-content").fill(
+    "# 运维\n## 备份\n每天备份，保留七份。\n",
+  );
+  await page.getByTestId("doc-upload").click();
+  const row = page.locator("tr", { hasText: "pipeline.md" });
+  await expect(row).toBeVisible({ timeout: 15_000 });
+
+  // retrieval: pipeline chips with latency + hit, ranked rows with score bar
+  await page.getByTestId("kb-tab-retrieval").click();
+  await page.getByTestId("kb-query").fill("备份保留几份");
+  await page.getByTestId("kb-search").click();
+  await expect(page.getByTestId("kb-pipeline")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("kb-pipeline")).toContainText("ms");
+  await expect(page.getByTestId("kb-pipeline")).toContainText("命中", {
+    ignoreCase: false,
+  });
+  await expect(page.getByTestId("kb-pipeline")).not.toContainText("无命中");
+  await expect(page.getByTestId("kb-hit").first()).toContainText("#1");
+
+  // per-doc reindex from the doc row (摄取队列行内操作)
+  await page.getByTestId("kb-tab-docs").click();
+  await row.getByTestId("doc-reindex").click();
+  await expect(page.getByText("已重建 pipeline.md 的索引")).toBeVisible({
+    timeout: 15_000,
+  });
+});

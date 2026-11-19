@@ -232,6 +232,60 @@
   font-size: 13px;
 }
 
+.modeSelect {
+  font-size: 12px;
+  padding: 7px 8px;
+  background: var(--surface);
+}
+
+/* 检索链路 chips（knowledge-debug 原型） */
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.pipeChip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pipeGreen {
+  background: var(--green-soft);
+  border-color: var(--green-border);
+  color: var(--green);
+}
+
+.pipeRed {
+  background: var(--red-soft);
+  border-color: var(--red-border);
+  color: var(--red);
+}
+
+.rank {
+  flex: none;
+  width: 22px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .hit {
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
@@ -262,11 +316,56 @@
   line-height: 1.6;
 }
 
+.hitBar {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.hitBar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--primary);
+}
+
 .abstain {
   color: var(--text-3);
   font-size: 12.5px;
   padding: var(--space-4);
   text-align: center;
+}
+
+.abstainSub {
+  margin-top: 6px;
+  color: var(--text-4);
+  font-size: 11.5px;
+}
+
+/* 摄取队列状态 chips */
+.statusChip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.statusReady {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.statusPending {
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+
+.statusFailed {
+  background: var(--red-soft);
+  color: var(--red);
 }
 
 /* settings */

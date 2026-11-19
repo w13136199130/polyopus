@@ -78,7 +78,7 @@ def test_business_tables_carry_tenant_id(env: tuple[Path, TestClient]) -> None:
         r[0]
         for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'kb_chunks_fts'"
+            "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'kb_chunks_fts%'"
         )
     ]
     # global by design in docs/31: migration ledger, price catalog, model

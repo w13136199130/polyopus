@@ -30,7 +30,15 @@ OVERLAP_RATIO = 0.12  # spec: 10-15%
 ABSTAIN_BM25 = -7.0  # measured: relevant hits -1..-5, irrelevant -> zero rows
 TOP_K = 8
 
-FTS_TABLE = "kb_chunks_fts"
+FTS_PREFIX = "kb_chunks_fts"
+
+
+def fts_table(kb_id: str) -> str:
+    """One FTS5 table PER KB: BM25's IDF is computed over the whole virtual
+    table, so a shared index lets other KBs' chunks dilute this KB's scores
+    (seen as false abstains once several KBs exist). kb ids are hex, safe
+    as an identifier suffix."""
+    return f"{FTS_PREFIX}_{kb_id}"
 
 
 def _bigram_tokens(text: str) -> str:
@@ -147,25 +155,29 @@ def chunk_markdown(markdown: str) -> list[Chunk]:
 # ---- derived FTS index (runtime; rebuilds per KB on ingest) -------------------
 
 
-def ensure_index(conn: sqlite3.Connection) -> None:
+def ensure_index(conn: sqlite3.Connection, kb_id: str) -> str:
+    table = fts_table(kb_id)
     conn.execute(
         f"""
-        CREATE VIRTUAL TABLE IF NOT EXISTS {FTS_TABLE}
+        CREATE VIRTUAL TABLE IF NOT EXISTS "{table}"
         USING fts5(content, kb_id UNINDEXED)
         """
     )
     conn.commit()
+    return table
 
 
 def _reindex_kb(conn: sqlite3.Connection, kb_id: str) -> None:
-    ensure_index(conn)
-    conn.execute(f"DELETE FROM {FTS_TABLE} WHERE kb_id = ?", (kb_id,))
+    table = ensure_index(conn, kb_id)
+    conn.execute(f'DELETE FROM "{table}" WHERE kb_id = ?', (kb_id,))
     for row in conn.execute(
         "SELECT id, content FROM knowledge_chunks WHERE kb_id = ?", (kb_id,)
     ).fetchall():
+        # explicit rowid = knowledge_chunks.id: the search JOINs on f.rowid,
+        # so auto-assigned rowids would silently point at the wrong chunk
         conn.execute(
-            f"INSERT INTO {FTS_TABLE}(content, kb_id) VALUES (?, ?)",
-            (_bigram_tokens(str(row["content"])), kb_id),
+            f'INSERT INTO "{table}"(rowid, content, kb_id) VALUES (?, ?, ?)',
+            (int(row["id"]), _bigram_tokens(str(row["content"])), kb_id),
         )
     conn.commit()
 
@@ -295,8 +307,8 @@ def delete_kb(
         " WHERE tenant_id = ? AND kb_id = ?", (now, now, tenant_id, kb_id),
     )
     conn.commit()
-    ensure_index(conn)
-    conn.execute(f"DELETE FROM {FTS_TABLE} WHERE kb_id = ?", (kb_id,))
+    table = ensure_index(conn, kb_id)
+    conn.execute(f'DROP TABLE IF EXISTS "{table}"')
     conn.commit()
 
 
@@ -495,19 +507,19 @@ def search(
             "KB_NOT_READY", details={"kbId": kb_id, "reason": "no processed documents"}
         )
 
-    ensure_index(conn)
+    table = ensure_index(conn, kb_id)
     rows = conn.execute(
         f"""
         SELECT c.chunk_id, c.doc_id, c.idx, c.content, c.heading_path,
                c.char_start, c.char_end, d.filename,
-               bm25({FTS_TABLE}) AS score
-        FROM {FTS_TABLE} f
+               bm25("{table}") AS score
+        FROM "{table}" f
         JOIN knowledge_chunks c ON c.id = f.rowid
         JOIN knowledge_docs d ON d.doc_id = c.doc_id AND d.deleted_at IS NULL
-        WHERE {FTS_TABLE} MATCH ? AND f.kb_id = ?
+        WHERE "{table}" MATCH ?
         ORDER BY score LIMIT ?
         """,
-        (_match_expression(query), kb_id, top_k),
+        (_match_expression(query), top_k),
     ).fetchall()
 
     if not rows or float(rows[0]["score"]) < ABSTAIN_BM25:

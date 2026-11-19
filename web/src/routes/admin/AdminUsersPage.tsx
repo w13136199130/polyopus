@@ -49,6 +49,17 @@ export function AdminUsersPage({ embedded = false, onNotice }: {
   const [invite, setInvite] = useState({ email: "", role: "member" });
   const [inviteToken, setInviteToken] = useState<string | null>(null);
 
+  // admin-bulk 原型：批量选择 + 逐项结果
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // CSV dry-run：列 username,display_name,role,email；逐行校验，预览后才导入
+  const [csvName, setCsvName] = useState<string | null>(null);
+  const [csvRows, setCsvRows] = useState<Array<{
+    line: number; username: string; displayName: string; role: string;
+    verdict: "create" | "skip" | "fail"; reason: string;
+  }>>([]);
+
   const roles = rolesQuery.data?.items ?? [];
   const users = usersQuery.data?.items ?? [];
   const invites = invitesQuery.data?.items ?? [];
@@ -107,6 +118,92 @@ export function AdminUsersPage({ embedded = false, onNotice }: {
     setPendingDelete(null);
   }
 
+  // ---- 批量操作（admin-bulk 原型）：逐项返回成功/失败，不半途而废 ----
+  async function bulkStatus(status: "active" | "disabled") {
+    setBulkBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const userId of selected) {
+      try {
+        await updateUser.mutateAsync({ userId, status });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setBulkBusy(false);
+    setNotice(`批量${status === "active" ? "启用" : "禁用"}：成功 ${ok} · 失败 ${fail}`);
+  }
+
+  async function bulkDelete() {
+    setBulkBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const userId of selected) {
+      try {
+        await deleteUser.mutateAsync(userId);
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setBulkBusy(false);
+    setSelected(new Set());
+    setNotice(`批量删除：成功 ${ok} · 失败 ${fail}`);
+  }
+
+  // ---- CSV dry-run：客户端校验 → 预览 → 逐行创建 ----
+  function parseCsv(text: string) {
+    const existing = new Set(users.map((row) => row.username));
+    let lines = text.split(/\r?\n/).filter((line) => line.trim());
+    if (lines[0]?.toLowerCase().startsWith("username,")) lines = lines.slice(1);
+    const out: typeof csvRows = [];
+    lines.forEach((line, index) => {
+      const [username = "", displayName = "", role = "", _email = ""] =
+        line.split(",").map((cell) => cell.trim());
+      const lineNo = index + 2; // +1 表头 +1 1 基
+      if (!username) {
+        out.push({ line: lineNo, username, displayName, role,
+          verdict: "fail", reason: "username 为空" });
+      } else if (existing.has(username)
+          || out.some((row) => row.username === username)) {
+        out.push({ line: lineNo, username, displayName, role,
+          verdict: "skip", reason: "用户名已存在" });
+      } else if (!roleNames.includes(role)) {
+        out.push({ line: lineNo, username, displayName, role,
+          verdict: "fail", reason: `角色 ${role || "（空）"} 不存在` });
+      } else {
+        out.push({ line: lineNo, username, displayName, role,
+          verdict: "create", reason: "—" });
+      }
+    });
+    setCsvRows(out);
+  }
+
+  async function importCsv() {
+    const toCreate = csvRows.filter((row) => row.verdict === "create");
+    setBulkBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const row of toCreate) {
+      try {
+        await createUser.mutateAsync({
+          username: row.username,
+          displayName: row.displayName || undefined,
+          password: `poly-${Date.now()}-${ok}`, // 首登改密；dry-run 表已提示
+          roles: [row.role],
+        });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setBulkBusy(false);
+    setCsvRows([]);
+    setCsvName(null);
+    setNotice(`CSV 导入：成功 ${ok} · 失败 ${fail}（初始密码见服务端日志）`);
+  }
+
   const body = (
     <>
       <div className={styles.page}>
@@ -115,17 +212,69 @@ export function AdminUsersPage({ embedded = false, onNotice }: {
 
         <section className={styles.panel}>
           <div className={styles.head}><h2>用户</h2><span>{users.length} 人</span></div>
+
+          {selected.size > 0 ? (
+            <div className={styles.bulkbar} data-testid="admin-bulkbar">
+              已选 {selected.size} 项
+              <Button size="sm" disabled={!canWrite || bulkBusy}
+                onClick={() => void bulkStatus("active")}>
+                启用
+              </Button>
+              <Button size="sm" disabled={!canWrite || bulkBusy}
+                onClick={() => void bulkStatus("disabled")}>
+                禁用
+              </Button>
+              <Button size="sm" variant="danger" disabled={!canWrite || bulkBusy}
+                onClick={() => void bulkDelete()}>
+                删除
+              </Button>
+              <span className={styles.bulkNote}>逐项返回成功/失败</span>
+            </div>
+          ) : null}
+
           {usersQuery.isLoading ? <Loading label="载入用户…" /> : usersQuery.isError ? (
             <ErrorState message="用户加载失败" onRetry={() => void usersQuery.refetch()} />
           ) : users.length === 0 ? <Empty title="暂无用户" /> : (
             <ul className={styles.rows}>
+              <li className={styles.row} style={{ cursor: "default", background: "var(--surface-2)" }}>
+                <label className={styles.who} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    aria-label="全选用户"
+                    data-testid="admin-select-all"
+                    disabled={!canWrite}
+                    checked={selected.size === users.length && users.length > 0}
+                    onChange={(event) =>
+                      setSelected(event.target.checked
+                        ? new Set(users.map((row) => row.userId))
+                        : new Set())}
+                  />
+                  <span style={{ fontSize: 11.5, color: "var(--text-4)" }}>全选（{users.length}）</span>
+                </label>
+              </li>
               {users.map((row) => (
                 <li key={row.userId} className={styles.row} data-testid="admin-user-row">
-                  <div className={styles.who}>
-                    <strong>{row.displayName}</strong>
-                    <code>{row.username}</code>
-                    <span className={styles.status}>{row.status}</span>
-                  </div>
+                  <label className={styles.who} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${row.username}`}
+                      data-testid="admin-user-check"
+                      disabled={!canWrite}
+                      checked={selected.has(row.userId)}
+                      onChange={(event) =>
+                        setSelected((current) => {
+                          const next = new Set(current);
+                          if (event.target.checked) next.add(row.userId);
+                          else next.delete(row.userId);
+                          return next;
+                        })}
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <strong>{row.displayName}</strong>
+                      <code>{row.username}</code>
+                      <span className={styles.status}>{row.status}</span>
+                    </div>
+                  </label>
                   <div className={styles.actions}>
                     <select
                       data-testid="admin-role-select"
@@ -151,6 +300,77 @@ export function AdminUsersPage({ embedded = false, onNotice }: {
               ))}
             </ul>
           )}
+
+          {/* CSV 导入 · dry-run（admin-bulk 原型） */}
+          <div className={styles.importbox}>
+            <h4>CSV 导入 · dry-run</h4>
+            <p className={styles.importNote}>
+              列：username,display_name,role,email；重复/非法行不写入，先给预览。
+            </p>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                aria-label="选择 CSV"
+                data-testid="admin-csv-file"
+                disabled={!canWrite}
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  setCsvName(file.name);
+                  parseCsv(await file.text());
+                }}
+              />
+              {csvName ? <span className={styles.importNote}>{csvName}</span> : null}
+            </div>
+            {csvRows.length > 0 ? (
+              <>
+                <div className={styles.resultHead} data-testid="admin-csv-summary">
+                  Dry-run 结果：可创建 {csvRows.filter((r) => r.verdict === "create").length}
+                  {" · "}跳过 {csvRows.filter((r) => r.verdict === "skip").length}（重复）
+                  {" · "}失败 {csvRows.filter((r) => r.verdict === "fail").length}（非法）
+                </div>
+                <div className={styles.tableWrap}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr><th>行</th><th>用户</th><th>角色</th><th>结果</th><th>原因</th></tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.map((row) => (
+                        <tr key={row.line} data-testid="admin-csv-row">
+                          <td>{row.line}</td>
+                          <td className={styles.mono}>{row.username || "—"}</td>
+                          <td>{row.role || "—"}</td>
+                          <td>
+                            <span className={`${styles.bulkChip} ${
+                              row.verdict === "create" ? styles.bulkOk
+                                : row.verdict === "skip" ? styles.bulkSkip
+                                  : styles.bulkFail
+                            }`}>
+                              {row.verdict}
+                            </span>
+                          </td>
+                          <td className={styles.muted}>{row.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <Button size="sm" disabled={!canWrite || bulkBusy}
+                    data-testid="admin-csv-import"
+                    loading={bulkBusy}
+                    onClick={() => void importCsv()}>
+                    确认导入（{csvRows.filter((r) => r.verdict === "create").length}）
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setCsvRows([]); setCsvName(null); }}>
+                    取消
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
 
           <form className={styles.form} onSubmit={(event) => void submitUser(event)}>
             <label>用户名<input data-testid="admin-new-username" required

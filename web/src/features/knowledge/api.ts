@@ -69,3 +69,15 @@ export function useSearchKb(kbId: string) {
 export function useReindexKb() {
   return useMutation({ mutationFn: knowledge.reindex });
 }
+
+/** Per-doc reindex (knowledge-debug 摄取队列行内操作). */
+export function useReindexDoc(kbId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => knowledge.reindexDoc(docId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: knowledgeKeys.docs(kbId) });
+      void client.invalidateQueries({ queryKey: knowledgeKeys.kbs });
+    },
+  });
+}

@@ -18,6 +18,7 @@ import {
   useDeleteKb,
   useKnowledgeBases,
   useKnowledgeDocs,
+  useReindexDoc,
   useReindexKb,
   useSearchKb,
   useUploadDoc,
@@ -49,6 +50,7 @@ export function KnowledgePage() {
   const upload = useUploadDoc(kbId ?? "");
   const deleteDoc = useDeleteDoc(kbId ?? "");
   const reindex = useReindexKb();
+  const reindexDoc = useReindexDoc(kbId ?? "");
   const search = useSearchKb(kbId ?? "");
 
   const [newKbName, setNewKbName] = useState("");
@@ -58,6 +60,8 @@ export function KnowledgePage() {
   const [filename, setFilename] = useState("notes.md");
   const [content, setContent] = useState("# 标题\n## 小节\n内容。\n");
   const [query, setQuery] = useState("");
+  const [mode, setMode] = useState("lexical"); // dense/hybrid 待 v1.1 向量层
+  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const [result, setResult] = useState<KnowledgeSearchResult | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [pendingKbDelete, setPendingKbDelete] = useState(false);
@@ -141,8 +145,11 @@ export function KnowledgePage() {
     event.preventDefault();
     if (!kbId || !query.trim()) return;
     setError(null);
+    const started = performance.now();
     try {
-      setResult(await search.mutateAsync(query.trim()));
+      const found = await search.mutateAsync(query.trim());
+      setResult(found);
+      setLastLatencyMs(Math.max(1, Math.round(performance.now() - started)));
     } catch (err) {
       setError(messageOf(err));
     }
@@ -368,7 +375,13 @@ export function KnowledgePage() {
                             <td className={styles.mono}>{doc.filename}</td>
                             <td>{doc.chunkCount}</td>
                             <td>
-                              <span className={styles.muted}>{doc.status}</span>
+                              <span className={`${styles.statusChip} ${
+                                doc.status === "ready" ? styles.statusReady
+                                  : doc.status === "failed" ? styles.statusFailed
+                                    : styles.statusPending
+                              }`}>
+                                {doc.status}
+                              </span>
                             </td>
                             <td className={styles.muted}>
                               {new Date(doc.createdAt * 1000).toLocaleString("zh-CN")}
@@ -377,6 +390,15 @@ export function KnowledgePage() {
                               <Button size="sm" variant="ghost" data-testid="doc-preview"
                                 onClick={() => setPreviewId(doc.docId)}>
                                 预览
+                              </Button>
+                              <Button size="sm" variant="ghost" data-testid="doc-reindex"
+                                disabled={!canWrite}
+                                loading={reindexDoc.isPending && reindexDoc.variables === doc.docId}
+                                onClick={() => reindexDoc.mutate(doc.docId, {
+                                  onSuccess: () => setNotice(`已重建 ${doc.filename} 的索引`),
+                                  onError: (err) => setError(messageOf(err)),
+                                })}>
+                                重建
                               </Button>
                               <Button size="sm" variant="danger"
                                 disabled={!canWrite}
@@ -404,24 +426,68 @@ export function KnowledgePage() {
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                   />
+                  <select
+                    aria-label="检索模式"
+                    data-testid="kb-mode"
+                    value={mode}
+                    onChange={(event) => setMode(event.target.value)}
+                    className={styles.modeSelect}
+                  >
+                    <option value="lexical">lexical（FTS5 · BM25）</option>
+                    <option value="dense" disabled>dense（v1.1 向量）</option>
+                    <option value="hybrid" disabled>hybrid（v1.1）</option>
+                  </select>
                   <Button type="submit" data-testid="kb-search"
                     disabled={!query.trim()} loading={search.isPending}>
                     检索
                   </Button>
                 </form>
+
+                {/* 检索链路 chips（knowledge-debug 原型） */}
+                {result ? (
+                  <div className={styles.pipeline} data-testid="kb-pipeline">
+                    <span className={styles.pipeChip}>top-k {result.hits.length}</span>
+                    <span className={styles.pipeChip}>候选 {active?.chunkCount ?? 0} chunks</span>
+                    <span className={styles.pipeChip}>rerank 无（lexical）</span>
+                    {lastLatencyMs !== null ? (
+                      <span className={`${styles.pipeChip} ${styles.pipeGreen}`}>
+                        {lastLatencyMs}ms
+                      </span>
+                    ) : null}
+                    <span className={styles.spacer} />
+                    {result.status === "ok" ? (
+                      <span className={`${styles.pipeChip} ${styles.pipeGreen}`}>命中</span>
+                    ) : (
+                      <span className={`${styles.pipeChip} ${styles.pipeRed}`}>
+                        {result.status === "abstain" ? "无命中 · 分数低于阈值" : result.status}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
+
                 {result ? result.status === "abstain" ? (
                   <div className={styles.abstain} data-testid="kb-abstain">
                     {result.reason ?? "知识库中没有找到依据"}
+                    <div className={styles.abstainSub}>
+                      不是"没有文档"：当前库 {active?.docCount ?? 0} 文档 / {active?.chunkCount ?? 0} 切片；
+                      分数低于置信阈值时宁可弃答。
+                    </div>
                   </div>
                 ) : (
-                  result.hits.map((hit) => (
+                  result.hits.map((hit, index) => (
                     <div key={hit.chunkId} className={styles.hit} data-testid="kb-hit">
                       <div className={styles.hitHead}>
+                        <span className={styles.rank}>#{index + 1}</span>
                         <b>{hit.doc}</b>
                         <span>{hit.heading || "正文"}</span>
-                        <span>score {hit.score} · {hit.span[0]}-{hit.span[1]}</span>
+                        <span>score {hit.score} · char {hit.span[0]}–{hit.span[1]}</span>
                       </div>
                       <p>{hit.content}</p>
+                      <div className={styles.hitBar}>
+                        <i style={{
+                          width: `${Math.min(100, Math.max(0, Math.round(Math.abs(hit.score) * 8)))}%`,
+                        }} />
+                      </div>
                     </div>
                   ))
                 ) : null}
