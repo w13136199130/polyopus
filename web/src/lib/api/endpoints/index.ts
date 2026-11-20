@@ -117,10 +117,37 @@ export const threads = {
   branch: op(
     "POST",
     "/threads/{thread_id}/branch",
-    (threadId: string, title?: string) =>
+    (threadId: string, title?: string, messageId?: string) =>
       apiFetch<ThreadListResponse["items"][number]>(
         `/threads/${encodeURIComponent(threadId)}/branch`,
-        { method: "POST", body: JSON.stringify({ title }) },
+        { method: "POST", body: JSON.stringify({ title, messageId }) },
+      ),
+  ),
+  stopTurn: op(
+    "POST",
+    "/threads/{thread_id}/turns/{turn_id}/stop",
+    (threadId: string, turnId: string) =>
+      apiFetch<{ turnId: string; status: string }>(
+        `/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/stop`,
+        { method: "POST" },
+      ),
+  ),
+  regenerateTurn: op(
+    "POST",
+    "/threads/{thread_id}/turns/{turn_id}/regenerate",
+    (threadId: string, turnId: string) =>
+      apiFetch<{ turnId: string; status: string }>(
+        `/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/regenerate`,
+        { method: "POST" },
+      ),
+  ),
+  editTurn: op(
+    "POST",
+    "/threads/{thread_id}/turns/{turn_id}/edit",
+    (threadId: string, turnId: string, content: string) =>
+      apiFetch<{ turnId: string; status: string }>(
+        `/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/edit`,
+        { method: "POST", body: JSON.stringify({ content }) },
       ),
   ),
   trace: op("GET", "/threads/{thread_id}/trace", (threadId: string) =>

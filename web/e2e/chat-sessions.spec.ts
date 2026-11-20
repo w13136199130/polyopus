@@ -81,7 +81,7 @@ test("chat: composer KB/approval/attachment/@// menus work and persist", async (
   await page.reload();
   await page.waitForURL("**/chat");
 
-  await newThread(page);
+  const threadId = await newThread(page);
 
   // knowledge base chip -> checkbox -> count, persists across reload
   await page.getByTestId("composer-kb").click();
@@ -97,6 +97,15 @@ test("chat: composer KB/approval/attachment/@// menus work and persist", async (
     .getByRole("button", { name: /本会话全允许/ })
     .click();
   await expect(page.getByTestId("composer-approval")).toContainText("全允许");
+  // the assertion above is optimistic; wait for the PATCH before reload
+  await expect
+    .poll(async () => {
+      const body = await (await page.request.get("/api/v1/threads")).json();
+      return body.items.find(
+        (item: { threadId: string }) => item.threadId === threadId,
+      )?.settings?.approvalPolicy;
+    })
+    .toBe("auto");
 
   await page.reload();
   await expect(page.getByTestId("composer-kb")).toContainText("知识库 · 1");
@@ -158,4 +167,88 @@ test("chat: Dock opens files/trace/terminal and persists its state", async ({ pa
 
   await page.reload();
   await expect(page.getByTestId("dock-files")).toHaveCount(0);
+});
+
+test("chat: edit re-runs, regenerate keeps one answer, branch forks", async ({ page }) => {
+  await login(page);
+  const threadId = await newThread(page);
+  const box = page.getByLabel("消息输入框");
+  await box.fill("hello edit parity");
+  await box.press("Enter");
+  await expect(page.getByTestId("bubble-assistant").last()).toContainText("echo[", {
+    timeout: 20_000,
+  });
+  // wait until the turn is terminal: edit/regenerate actions appear then
+  const user = page.getByTestId("bubble-user").last();
+  await expect(user.getByRole("button", { name: "编辑消息" })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await user.getByRole("button", { name: "编辑消息" }).click();
+  await page.getByLabel("编辑消息").fill("hello edited parity");
+  await page.getByRole("button", { name: "保存并重新发送" }).click();
+  await expect(page.getByTestId("bubble-user").last()).toContainText(
+    "hello edited parity",
+    { timeout: 20_000 },
+  );
+  await expect(page.getByTestId("bubble-assistant").last()).toContainText("echo[", {
+    timeout: 20_000,
+  });
+
+  // regenerate: one answer remains once the new run lands
+  const assistant = page.getByTestId("bubble-assistant").last();
+  await expect(assistant.getByRole("button", { name: "重新生成" })).toBeVisible({
+    timeout: 20_000,
+  });
+  await assistant.getByRole("button", { name: "重新生成" }).click();
+  await expect(page.getByTestId("bubble-assistant")).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  await page.waitForTimeout(1_500);
+
+  // branch at the (fresh) answer -> new thread URL + 分支 title
+  await page.reload();
+  await page.waitForURL(/threadId=/);
+  const branchButton = page.getByTestId("bubble-assistant").last()
+    .getByRole("button", { name: "创建分支" });
+  await expect(branchButton).toBeVisible({ timeout: 20_000 });
+  await branchButton.click();
+  await page.waitForFunction(
+    (source) =>
+      new URL(window.location.href).searchParams.get("threadId") !== source,
+    threadId,
+  );
+  await expect(page.getByTestId("chat-header")).toContainText("（分支）");
+});
+
+test("chat: knowledge citations appear on the answer", async ({ page }) => {
+  await login(page);
+  const name = `引用知识库 ${Date.now()}`;
+  const kb = await page.request.post("/api/v1/knowledge-bases", {
+    data: { name },
+  });
+  expect(kb.ok()).toBe(true);
+  const kbId = (await kb.json()).kbId as string;
+  const doc = await page.request.post(`/api/v1/knowledge-bases/${kbId}/docs`, {
+    data: {
+      filename: "deploy.md",
+      content: "# 发布流程\n\n生产发布必须先走灰度，确认无异常后再全量。",
+    },
+  });
+  expect(doc.ok()).toBe(true);
+
+  await page.reload();
+  await page.waitForURL("**/chat");
+  await newThread(page);
+  await page.getByTestId("composer-kb").click();
+  await page.getByRole("dialog", { name: "输入选项" })
+    .getByRole("checkbox").first().click();
+  await page.getByTestId("chat-header").click();
+
+  const box = page.getByLabel("消息输入框");
+  await box.fill("生产发布流程是什么？");
+  await box.press("Enter");
+  await expect(page.getByTestId("citations")).toContainText(name, {
+    timeout: 30_000,
+  });
 });

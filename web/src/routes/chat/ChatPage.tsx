@@ -22,11 +22,15 @@ import { useAdminSettings } from "@/features/settings/api";
 import { useKnowledgeBases } from "@/features/knowledge/api";
 import { useConnectorInstances } from "@/features/connectors/api";
 import {
+  useBranchMessage,
   useBranchThread,
   useCreateThread,
   useDeleteThread,
+  useEditTurn,
   useMessages,
   useModels,
+  useRegenerateTurn,
+  useStopTurn,
   useThreadTrace,
   useThreads,
   useUpdateThread,
@@ -37,7 +41,7 @@ import {
   useAnswerAttention,
   useAttentions,
 } from "@/lib/api/hooks";
-import type { Thread, ThreadSettings } from "@/lib/api/wire";
+import type { Message, Thread, ThreadSettings } from "@/lib/api/wire";
 import { useChatStream } from "@/features/chat/useChatStream";
 import { ApprovalCard } from "@/components/attention/ApprovalCard";
 import { ChatHeader } from "@/features/chat/components/ChatHeader";
@@ -84,6 +88,10 @@ export function ChatPage() {
   const updateThread = useUpdateThread();
   const deleteThread = useDeleteThread();
   const branchThread = useBranchThread();
+  const branchMessage = useBranchMessage();
+  const stopTurn = useStopTurn();
+  const regenerateTurn = useRegenerateTurn();
+  const editTurn = useEditTurn();
   const messagesQuery = useMessages(threadId);
   const attentionsQuery = useAttentions();
   const answerMutation = useAnswerAttention();
@@ -95,6 +103,7 @@ export function ChatPage() {
   const [pendingSend, setPendingSend] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showScroll, setShowScroll] = useState(false);
+  const [queued, setQueued] = useState<string[]>([]);
   const [dockOpen, setDockOpen] = useState(() => readBool(DOCK_KEY, false));
   const [dockTab, setDockTab] = useState<DockTab>(readTab);
   const [renameTarget, setRenameTarget] = useState<Thread | null>(null);
@@ -102,7 +111,7 @@ export function ChatPage() {
   const [deleteTarget, setDeleteTarget] = useState<Thread | null>(null);
 
   const onRollback = useCallback((content: string) => setRestored(content), []);
-  const { store, send } = useChatStream(threadId, onRollback);
+  const { store, send, trackTurn } = useChatStream(threadId, onRollback);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canWrite = useCan("chat:write");
@@ -112,8 +121,9 @@ export function ChatPage() {
     ? (settingsQuery.data.modelName ?? "FakeModel")
     : "";
 
-  const traceEnabled = dockOpen && (dockTab === "trace" || dockTab === "terminal");
-  const traceQuery = useThreadTrace(threadId, traceEnabled);
+  // The transcript decorates messages with tool steps/citations, and the
+  // Dock reuses the same tail; one poller for both.
+  const traceQuery = useThreadTrace(threadId, threadId !== null);
   const workspaceQuery = useWorkspaceTree(Boolean(threadId));
 
   useEffect(() => {
@@ -138,6 +148,17 @@ export function ChatPage() {
     const timer = window.setTimeout(() => setNotice(null), 4_000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  // flush the queue one message at a time once the active turn ends
+  useEffect(() => {
+    if (!threadId || queued.length === 0) return;
+    if (snapshot.status !== "finished" && snapshot.status !== "idle") return;
+    const [next, ...rest] = queued;
+    setQueued(rest);
+    void send(next).then((ok) => {
+      if (!ok) setRestored(next);
+    });
+  }, [threadId, queued, snapshot.status, send]);
 
   // autoscroll while streaming (follow when near the bottom)
   useEffect(() => {
@@ -191,6 +212,12 @@ export function ChatPage() {
   }
 
   async function handleSend(content: string) {
+    if (threadId && composerBusy) {
+      // prototype: sending while a turn runs queues the text instead of
+      // racing a second turn; the next send flushes after turn.finished.
+      setQueued((current) => [...current.slice(-4), content]);
+      return;
+    }
     if (!threadId) {
       setPendingSend(content);
       createThread.mutate(
@@ -317,6 +344,83 @@ export function ChatPage() {
     handleCreate(activeThread?.agentId ?? null);
   }
 
+  function handleStop() {
+    if (!threadId || !snapshot.turnId) return;
+    stopTurn.mutate({ threadId, turnId: snapshot.turnId });
+  }
+
+  /**
+   * A server-started turn (regenerate/edit) may finish before the SSE client
+   * is tracking it. Track it for live painting, then fall back to the
+   * projection if no delta ever arrives.
+   */
+  function trackServerTurn(turnId: string) {
+    trackTurn(turnId);
+    window.setTimeout(() => {
+      void messagesQuery.refetch().then(() => {
+        const snap = store.getSnapshot();
+        if (snap.turnId === turnId && snap.status === "streaming" && !snap.text) {
+          store.resetToIdle();
+        }
+      });
+    }, 1_500);
+  }
+
+  function handleRegenerate(turnId: string) {
+    if (!threadId) return;
+    regenerateTurn.mutate(
+      { threadId, turnId },
+      {
+        onSuccess: (result) => trackServerTurn(result.turnId),
+        onError: (error) => setNotice(`重新生成失败：${error instanceof Error ? error.message : "请稍后重试"}`),
+      },
+    );
+  }
+
+  function handleEditMessage(message: Message, content: string) {
+    if (!threadId || !message.turnId) return;
+    editTurn.mutate(
+      { threadId, turnId: message.turnId, content },
+      {
+        onSuccess: (result) => trackServerTurn(result.turnId),
+        onError: (error) => setNotice(`编辑失败：${error instanceof Error ? error.message : "请稍后重试"}`),
+      },
+    );
+  }
+
+  function handleBranchMessage(message: Message) {
+    if (!threadId) return;
+    branchMessage.mutate(
+      { threadId, messageId: message.messageId },
+      {
+        onSuccess: (clone) => {
+          setParams({ threadId: clone.threadId });
+          setNotice("已从该回答创建分支。");
+        },
+      },
+    );
+  }
+
+  function handleFollowUp(action: "trace" | "share") {
+    if (action === "trace") {
+      setDockTab("trace");
+      setDockOpen(true);
+      return;
+    }
+    const last = [...(messagesQuery.data?.items ?? [])]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (!last) return;
+    if (!navigator.clipboard) {
+      setNotice("当前环境不支持剪贴板。");
+      return;
+    }
+    void navigator.clipboard
+      .writeText(last.content)
+      .then(() => setNotice("结论已复制到剪贴板。"))
+      .catch(() => setNotice("复制失败，请手动选择文本。"));
+  }
+
   const approvals = pendingApprovalsForTurn(
     attentionsQuery.data?.items, snapshot.turnId,
   );
@@ -389,6 +493,14 @@ export function ChatPage() {
                   }
                 }}
                 onQuickPrompt={(prompt) => void handleSend(prompt)}
+                trace={traceQuery.data?.items}
+                agentName={activeAgent?.name}
+                onFollowUp={handleFollowUp}
+                onNotice={setNotice}
+                onRegenerate={handleRegenerate}
+                onBranch={handleBranchMessage}
+                onEditMessage={handleEditMessage}
+                turnActive={composerBusy || snapshot.status === "waiting_approval"}
               />
             )}
 
@@ -422,7 +534,7 @@ export function ChatPage() {
             ))}
 
             <Composer
-              disabled={composerBusy || !canWrite}
+              disabled={!canWrite}
               status={snapshot.status}
               restoredInput={restored}
               onConsumedRestore={() => setRestored(null)}
@@ -448,6 +560,12 @@ export function ChatPage() {
               onNewThread={newThreadFromComposer}
               onExport={exportTranscript}
               onNotice={setNotice}
+              streaming={composerBusy}
+              onStop={handleStop}
+              queued={queued}
+              onQueue={(content) => setQueued((current) => [...current.slice(-4), content])}
+              onRemoveQueued={(index) =>
+                setQueued((current) => current.filter((_, i) => i !== index))}
             />
           </div>
 

@@ -130,6 +130,58 @@ export function useBranchThread() {
   });
 }
 
+/** Stop one turn (queued/running/approval). */
+export function useStopTurn() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { threadId: string; turnId: string }) =>
+      threads.stopTurn(input.threadId, input.turnId),
+    onSuccess: (_result, input) => {
+      void client.invalidateQueries({ queryKey: chatKeys.messages(input.threadId) });
+      void client.invalidateQueries({ queryKey: chatKeys.threads });
+      void client.invalidateQueries({ queryKey: chatKeys.attentions });
+    },
+  });
+}
+
+/** Regenerate the latest turn (old assistant rows are soft-deleted). */
+export function useRegenerateTurn() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { threadId: string; turnId: string }) =>
+      threads.regenerateTurn(input.threadId, input.turnId),
+    onSuccess: (_result, input) => {
+      void client.invalidateQueries({ queryKey: chatKeys.messages(input.threadId) });
+      void client.invalidateQueries({ queryKey: chatKeys.threads });
+    },
+  });
+}
+
+/** Edit the latest user message and re-run its turn. */
+export function useEditTurn() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { threadId: string; turnId: string; content: string }) =>
+      threads.editTurn(input.threadId, input.turnId, input.content),
+    onSuccess: (_result, input) => {
+      void client.invalidateQueries({ queryKey: chatKeys.messages(input.threadId) });
+      void client.invalidateQueries({ queryKey: chatKeys.threads });
+    },
+  });
+}
+
+/** Branch at a specific assistant message (copies history up to it). */
+export function useBranchMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { threadId: string; messageId: string }) =>
+      threads.branch(input.threadId, undefined, input.messageId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: chatKeys.threads });
+    },
+  });
+}
+
 export function useMessages(threadId: string | null) {
   return useQuery({
     queryKey: chatKeys.messages(threadId ?? "none"),

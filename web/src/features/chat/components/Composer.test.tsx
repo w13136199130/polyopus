@@ -78,6 +78,39 @@ describe("Composer", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("Enter queues instead of sending while a turn streams", async () => {
+    const onSend = vi.fn();
+    const onQueue = vi.fn();
+    render(
+      <Composer
+        {...baseProps}
+        streaming
+        onQueue={onQueue}
+        onSend={onSend}
+      />,
+    );
+    const box = screen.getByLabelText("消息输入框");
+    await userEvent.type(box, "接下来再补一个测试");
+    await userEvent.keyboard("{Enter}");
+    expect(onQueue).toHaveBeenCalledWith("接下来再补一个测试");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(box).toHaveValue("");
+  });
+
+  it("renders queued chips and removes one by index", async () => {
+    const onRemoveQueued = vi.fn();
+    render(
+      <Composer
+        {...baseProps}
+        queued={["第一条", "第二条"]}
+        onRemoveQueued={onRemoveQueued}
+      />,
+    );
+    expect(screen.getByTestId("composer-queue")).toHaveTextContent("第一条");
+    await userEvent.click(screen.getByLabelText("撤回队列消息 2"));
+    expect(onRemoveQueued).toHaveBeenCalledWith(1);
+  });
+
   it("restored input lands back in the box (rollback never swallows text)", async () => {
     render(<Harness restored="没发出去的话" />);
     const box = screen.getByLabelText("消息输入框");

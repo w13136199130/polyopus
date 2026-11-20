@@ -56,6 +56,12 @@ export interface ComposerProps {
   onNewThread: () => void;
   onExport: () => void;
   onNotice?: (message: string) => void;
+  /** A turn is streaming: the send button becomes Stop, Enter queues. */
+  streaming?: boolean;
+  onStop?: () => void;
+  queued?: string[];
+  onQueue?: (content: string) => void;
+  onRemoveQueued?: (index: number) => void;
 }
 
 const MAX_HEIGHT = 180;
@@ -95,7 +101,8 @@ export function Composer({
   connectors, connectorIds, onToggleConnector,
   subagents, subagentIds, onToggleSubagent,
   approvalPolicy, onApprovalPolicyChange,
-  mentionFiles = [], onNewThread, onExport, onNotice,
+  mentionFiles = [], onNewThread, onExport, onNotice, streaming = false, onStop,
+  queued = [], onQueue, onRemoveQueued,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -164,7 +171,11 @@ export function Composer({
     setValue("");
     setAttachments([]);
     setMenu(null);
-    onSend(content.trim());
+    if (streaming && onQueue) {
+      onQueue(content.trim());
+    } else {
+      onSend(content.trim());
+    }
     ref.current?.focus();
   }
 
@@ -242,6 +253,23 @@ export function Composer({
 
   return (
     <div className={styles.wrap} ref={root}>
+      {queued.length ? (
+        <div className={styles.queueRow} data-testid="composer-queue">
+          <span className={styles.queueLabel}>队列 {queued.length}</span>
+          {queued.map((item, index) => (
+            <span key={`${item}-${index}`} className={styles.queueChip}>
+              {item.length > 32 ? `${item.slice(0, 32)}…` : item}
+              <button
+                type="button"
+                aria-label={`撤回队列消息 ${index + 1}`}
+                onClick={() => onRemoveQueued?.(index)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       {attachments.length ? (
         <div className={styles.attachRow}>
           {attachments.map((file, index) => (
@@ -534,7 +562,7 @@ export function Composer({
           ref={ref}
           className={styles.input}
           rows={2}
-          placeholder="回复，或输入 / 命令、@ 文件…"
+          placeholder={streaming ? "回复生成中；Enter 加入队列…" : "回复，或输入 / 命令、@ 文件…"}
           value={value}
           onChange={onChange}
           onKeyDown={onKeyDown}
@@ -648,17 +676,30 @@ export function Composer({
             >
               —
             </span>
-            <button
-              type="button"
-              className={styles.send}
-              onClick={submit}
-              disabled={busy || (!value.trim() && attachments.length === 0)}
-              aria-label="发送"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />
-              </svg>
-            </button>
+            {streaming ? (
+              <button
+                type="button"
+                className={`${styles.send} ${styles.stop}`}
+                onClick={onStop}
+                aria-label="停止生成"
+                data-testid="composer-stop"
+                title="停止生成"
+              >
+                ■
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={styles.send}
+                onClick={submit}
+                disabled={busy || (!value.trim() && attachments.length === 0)}
+                aria-label="发送"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </div>

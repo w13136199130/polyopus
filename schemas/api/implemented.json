@@ -1,5 +1,5 @@
 {
-  "count": 123,
+  "count": 126,
   "ops": [
     {
       "method": "DELETE",
@@ -456,6 +456,18 @@
     {
       "method": "POST",
       "path": "/api/v1/threads/{thread_id}/turns"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/{thread_id}/turns/{turn_id}/edit"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/{thread_id}/turns/{turn_id}/regenerate"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/{thread_id}/turns/{turn_id}/stop"
     },
     {
       "method": "POST",

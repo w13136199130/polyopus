@@ -62,6 +62,13 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
   // resume streams a final round (FakeModel echoes the request again)
   await expect(assistant.last()).toContainText("echo[", { timeout: 20_000 });
 
+  // rich message: the tool step and the written file are visible after the
+  // turn; the trace poller decorates the assistant bubble.
+  await expect(page.getByTestId("tool-card")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("file-card")).toContainText("chat-e2e.txt", {
+    timeout: 20_000,
+  });
+
   // --- reload: ?threadId restores the same conversation ---
   await page.reload();
   await page.waitForURL(/threadId=/);

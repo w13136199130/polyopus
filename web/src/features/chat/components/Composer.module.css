@@ -144,10 +144,59 @@
 
 .send:hover:not(:disabled) { background: var(--primary-hover); }
 
+.stop {
+  background: var(--red);
+  font-size: 11px;
+}
+
+.stop:hover:not(:disabled) { background: var(--red); opacity: 0.88; }
+
 .send:disabled {
   background: var(--surface-3);
   color: var(--text-4);
 }
+
+/* queued turns while streaming */
+.queueRow {
+  max-width: 920px;
+  margin: 0 auto 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.queueLabel { flex: none; }
+
+.queueChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queueChip button {
+  border: 0;
+  background: none;
+  color: var(--text-4);
+  cursor: pointer;
+  padding: 0 1px;
+  font-size: 12px;
+}
+
+.queueChip button:hover { color: var(--red); }
 
 /* attachments queue above the card */
 .attachRow {

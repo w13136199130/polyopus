@@ -23,6 +23,8 @@ const ACK_TIMEOUT_MS = 2_000; // docs/49 §4.4: withdraw + restore on no-ack
 export interface UseChatStream {
   store: ChatStreamStore;
   transport: StreamTransport;
+  /** Track a server-started turn (regenerate / edit) so deltas keep painting. */
+  trackTurn: (turnId: string) => void;
   /**
    * Send with optimistic bubble + 2s ack rollback. Returns false when the
    * optimistic message was withdrawn (caller restores the composer text).
@@ -173,5 +175,10 @@ export function useChatStream(
     }
   };
 
-  return { store, transport, send };
+  return {
+    store,
+    transport,
+    send,
+    trackTurn: (turnId: string) => store.beginTracking(turnId),
+  };
 }

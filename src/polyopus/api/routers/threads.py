@@ -76,6 +76,13 @@ class PatchThreadBody(BaseModel):
 
 class BranchThreadBody(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+    message_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("messageId", "message_id")
+    )
+
+
+class EditTurnBody(BaseModel):
+    content: str = Field(min_length=1, max_length=20_000)
 
 
 def _thread_payload(thread: service.Thread) -> dict[str, object]:
@@ -154,8 +161,55 @@ def branch_thread(
     thread = service.branch_thread(
         conn, tenant_id=user.tenant_id, owner_id=user.user_id,
         thread_id=thread_id, title=body.title,
+        up_to_message_id=body.message_id,
     )
     return _thread_payload(thread)
+
+
+@router.post("/{thread_id}/turns/{turn_id}/stop")
+def stop_turn(
+    thread_id: str,
+    turn_id: str,
+    user: User = Depends(require_permission("chat:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    status = service.stop_turn(
+        conn, store, tenant_id=user.tenant_id, owner_id=user.user_id,
+        thread_id=thread_id, turn_id=turn_id,
+    )
+    return {"turnId": turn_id, "status": status}
+
+
+@router.post("/{thread_id}/turns/{turn_id}/regenerate", status_code=202)
+def regenerate_turn(
+    thread_id: str,
+    turn_id: str,
+    user: User = Depends(require_permission("chat:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    service.requeue_turn(
+        conn, store, tenant_id=user.tenant_id, owner_id=user.user_id,
+        thread_id=thread_id, turn_id=turn_id,
+    )
+    return {"turnId": turn_id, "status": "queued"}
+
+
+@router.post("/{thread_id}/turns/{turn_id}/edit", status_code=202)
+def edit_turn(
+    thread_id: str,
+    turn_id: str,
+    body: EditTurnBody,
+    user: User = Depends(require_permission("chat:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    service.requeue_turn(
+        conn, store, tenant_id=user.tenant_id, owner_id=user.user_id,
+        thread_id=thread_id, turn_id=turn_id, content=body.content,
+    )
+    return {"turnId": turn_id, "status": "queued"}
 
 
 @router.get("/{thread_id}/trace")

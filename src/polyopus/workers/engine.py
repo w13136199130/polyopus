@@ -43,6 +43,17 @@ from polyopus.workers import async_tools
 logger = tlog.get_logger("polyopus.engine")
 
 
+class _Cancelled(Exception):
+    """The turn was cancelled by a human while streaming."""
+
+
+def _cancel_requested(conn: sqlite3.Connection, turn_id: str) -> bool:
+    row = conn.execute(
+        "SELECT status FROM turns WHERE turn_id = ?", (turn_id,)
+    ).fetchone()
+    return row is not None and str(row[0]) in ("cancel_requested", "cancelled")
+
+
 @dataclass(frozen=True)
 class EngineConfig:
     chunk_words: int = 4
@@ -90,22 +101,26 @@ def _thread_settings(conn: sqlite3.Connection, thread_id: str) -> dict[str, obje
     return value if isinstance(value, dict) else {}
 
 
-def _kb_context(
+def _kb_evidence(
     conn: sqlite3.Connection,
     *,
     tenant_id: str,
     query: str,
     kb_ids: object,
-) -> str | None:
+) -> tuple[str | None, list[dict[str, object]]]:
     """Prototype 知识库 chip: inject the top KB hits as grounded context.
 
-    Only ready KBs contribute; one that is still ingesting or abstains is
-    skipped rather than failing the turn."""
+    Returns the system block plus citation metadata for the chat message
+    renderer (the same hits the model was shown). Only ready KBs contribute;
+    one that is still ingesting or abstains is skipped rather than failing
+    the turn."""
     if not isinstance(kb_ids, list) or not kb_ids or not query.strip():
-        return None
+        return None, []
     from polyopus.domains.knowledge import service as kb_service
 
     lines: list[str] = []
+    citations: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str]] = set()
     for kb_id in [str(x) for x in kb_ids][:8]:
         try:
             result = kb_service.search(
@@ -120,15 +135,39 @@ def _kb_context(
             content = str(hit.get("content", "")).strip()
             if not content:
                 continue
+            doc = str(hit.get("doc", ""))
             heading = str(hit.get("heading") or "").strip()
-            where = " › ".join(x for x in (str(hit.get("doc", "")), heading) if x)
+            where = " › ".join(x for x in (doc, heading) if x)
             lines.append(f"- [{kb_name} · {where}] {content[:400]}")
+            key = (kb_name, doc, heading)
+            if key not in seen and len(citations) < 8:
+                seen.add(key)
+                citations.append({
+                    "kb": kb_name,
+                    "doc": doc,
+                    "heading": heading,
+                    "score": hit.get("score"),
+                })
     if not lines:
-        return None
-    return (
+        return None, []
+    block = (
         "会话已启用知识库，以下是与当前问题最相关的检索依据（回答时优先引用；"
         "依据不足要明确说明）：\n" + "\n".join(lines)
     )
+    return block, citations
+
+
+def _kb_context(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    query: str,
+    kb_ids: object,
+) -> str | None:
+    """Back-compat wrapper used by tests; engine uses `_kb_evidence`."""
+    return _kb_evidence(
+        conn, tenant_id=tenant_id, query=query, kb_ids=kb_ids
+    )[0]
 
 
 def _set_turn_status(
@@ -165,11 +204,19 @@ async def _stream_round(
     run_id: str,
     tenant_id: str,
     message_id: str,
+    conn: sqlite3.Connection | None = None,
 ) -> list[gateway_types.ToolCallDelta]:
-    """Stream one model round into events; returns accumulated tool calls."""
+    """Stream one model round into events; returns accumulated tool calls.
+
+    `conn` enables cooperative cancellation: a human stop flips the turn to
+    `cancel_requested` and the next delta check aborts the stream."""
     calls: list[gateway_types.ToolCallDelta] = []
     state.reasoning = ""  # reasoning belongs to this round's assistant message
+    seen = 0
     async for delta in gateway.stream(request):
+        seen += 1
+        if conn is not None and seen % 8 == 0 and _cancel_requested(conn, turn_id):
+            raise _Cancelled
         if isinstance(delta, gateway_types.TextDelta):
             if state.first_token_ms is None:
                 state.first_token_ms = int((time.monotonic() - state.started) * 1000)
@@ -426,10 +473,20 @@ async def run_turn(
         memory_block = f"已知记忆（供参考）：\n{lines}"
     # 会话级知识库（composer 的「知识库 · N」chip）：检索依据作为系统上下文，
     # 未选库或未命中时什么也不加，保持旧会话行为不变。
-    kb_context = _kb_context(
+    kb_context, kb_citations = _kb_evidence(
         conn, tenant_id=tenant_id, query=user_content,
         kb_ids=session.get("kbIds"),
-    ) or ""
+    )
+    kb_context = kb_context or ""
+    if kb_citations:
+        # The message renderer reads the exact evidence the model saw; the
+        # trace endpoint already exposes this event, no projection change.
+        store.append(
+            thread_id,
+            "context.knowledge",
+            {"turn_id": turn_id, "citations": kb_citations},
+            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+        )
     history = context_svc.message_history(
         conn, tenant_id=tenant_id, thread_id=thread_id
     )
@@ -512,11 +569,39 @@ async def run_turn(
             tenant_id=tenant_id,
             trace_id=trace_id,
         )
-        calls = await _stream_round(
-            store, source, request, state,
-            thread_id=thread_id, turn_id=turn_id, run_id=run_id,
-            tenant_id=tenant_id, message_id=message_id,
-        )
+        try:
+            calls = await _stream_round(
+                store, source, request, state,
+                thread_id=thread_id, turn_id=turn_id, run_id=run_id,
+                tenant_id=tenant_id, message_id=message_id, conn=conn,
+            )
+        except _Cancelled:
+            projection.apply(
+                conn,
+                store.append(
+                    thread_id,
+                    "message.failed",
+                    {
+                        "message_id": message_id,
+                        "blocks": [{"type": "text", "text": state.text}],
+                        "reason": "cancelled",
+                    },
+                    tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+                ),
+            )
+            _record_usage(
+                conn, store, tenant_id=tenant_id, thread_id=thread_id,
+                turn_id=turn_id, model=resolved.model,
+                input_tokens=state.input_tokens, output_tokens=state.output_tokens,
+                cached_tokens=state.cached_tokens,
+                first_token_ms=state.first_token_ms,
+            )
+            _finish(
+                conn, store, tenant_id=tenant_id, thread_id=thread_id,
+                turn_id=turn_id, run_id=run_id, status="cancelled",
+                note="cancelled_by_human",
+            )
+            return "cancelled"
         if not calls or tool_round >= cfg.max_tool_rounds:
             break
         tool_round += 1
@@ -826,13 +911,41 @@ def resume_after_approval(
         model=resolved.model, messages=tuple(messages), max_output_tokens=2048,
         tools=(), tenant_id=tenant_id,
     )
-    asyncio.run(
-        _stream_round(
-            store, source, request, state,
-            thread_id=thread_id, turn_id=turn_id, run_id=run_id,
-            tenant_id=tenant_id, message_id=message_id,
+    try:
+        asyncio.run(
+            _stream_round(
+                store, source, request, state,
+                thread_id=thread_id, turn_id=turn_id, run_id=run_id,
+                tenant_id=tenant_id, message_id=message_id, conn=conn,
+            )
         )
-    )
+    except _Cancelled:
+        projection.apply(
+            conn,
+            store.append(
+                thread_id,
+                "message.failed",
+                {
+                    "message_id": message_id,
+                    "blocks": [{"type": "text", "text": state.text}],
+                    "reason": "cancelled",
+                },
+                tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+            ),
+        )
+        _record_usage(
+            conn, store, tenant_id=tenant_id, thread_id=thread_id,
+            turn_id=turn_id, model=resolved.model,
+            input_tokens=state.input_tokens, output_tokens=state.output_tokens,
+            cached_tokens=state.cached_tokens,
+            first_token_ms=state.first_token_ms,
+        )
+        _finish(
+            conn, store, tenant_id=tenant_id, thread_id=thread_id,
+            turn_id=turn_id, run_id=run_id, status="cancelled",
+            note="cancelled_by_human",
+        )
+        return "cancelled"
     projection.apply(
         conn,
         store.append(

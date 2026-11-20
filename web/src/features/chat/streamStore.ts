@@ -196,6 +196,19 @@ export class ChatStreamStore {
     }
   }
 
+  /** Track a turn started outside this store (regenerate / edit-resend):
+   * future deltas paint until its terminal event. */
+  beginTracking(turnId: string): void {
+    this.flush();
+    this.commit({
+      turnId,
+      status: "streaming",
+      text: "",
+      userMessageId: null,
+      pendingUser: null,
+    });
+  }
+
   /** After finished: drop the turn so the next send starts clean. */
   resetToIdle(): void {
     this.flush();
