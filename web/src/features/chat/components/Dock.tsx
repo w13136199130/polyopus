@@ -22,6 +22,7 @@ interface Props {
   onClose: () => void;
   trace: TraceEvent[] | undefined;
   traceLoading: boolean;
+  onOpenTrace: () => void;
   tree: WorkspaceTree | undefined;
   treeLoading: boolean;
 }
@@ -195,6 +196,7 @@ function payloadText(event: TraceEvent): string {
  */
 export function Dock({
   threadId, tab, onTab, onClose, trace, traceLoading, tree, treeLoading,
+  onOpenTrace,
 }: Props) {
   const [preview, setPreview] = useState<string | null>(null);
   const rows = (trace ?? [])
@@ -265,6 +267,14 @@ export function Dock({
               <div className={styles.traceTools}>
                 <span className={styles.traceTitle}>本会话全部轨迹</span>
                 <span className={styles.spacer} />
+                <button
+                  type="button"
+                  className={styles.openFull}
+                  onClick={onOpenTrace}
+                  data-testid="trace-open-full"
+                >
+                  展开完整轨迹
+                </button>
                 <span className={styles.hint}>{rows.length} 条</span>
               </div>
               <div className={styles.traceList}>

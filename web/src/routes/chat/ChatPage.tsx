@@ -47,6 +47,7 @@ import { ApprovalCard } from "@/components/attention/ApprovalCard";
 import { ChatHeader } from "@/features/chat/components/ChatHeader";
 import { Composer } from "@/features/chat/components/Composer";
 import { Dock, type DockTab } from "@/features/chat/components/Dock";
+import { TraceExplorer } from "@/features/chat/components/TraceExplorer";
 import { MessageList } from "@/features/chat/components/MessageList";
 import { ThreadRail } from "@/features/chat/components/ThreadRail";
 import styles from "./ChatPage.module.css";
@@ -105,6 +106,7 @@ export function ChatPage() {
   const [showScroll, setShowScroll] = useState(false);
   const [queued, setQueued] = useState<string[]>([]);
   const [dockOpen, setDockOpen] = useState(() => readBool(DOCK_KEY, false));
+  const [traceOpen, setTraceOpen] = useState(false);
   const [dockTab, setDockTab] = useState<DockTab>(readTab);
   const [renameTarget, setRenameTarget] = useState<Thread | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -403,8 +405,7 @@ export function ChatPage() {
 
   function handleFollowUp(action: "trace" | "share") {
     if (action === "trace") {
-      setDockTab("trace");
-      setDockOpen(true);
+      setTraceOpen(true);
       return;
     }
     const last = [...(messagesQuery.data?.items ?? [])]
@@ -581,12 +582,21 @@ export function ChatPage() {
               onClose={() => setDockOpen(false)}
               trace={traceQuery.data?.items}
               traceLoading={traceQuery.isLoading}
+              onOpenTrace={() => setTraceOpen(true)}
               tree={workspaceQuery.data}
               treeLoading={workspaceQuery.isLoading}
             />
           ) : null}
         </div>
       </section>
+
+      <TraceExplorer
+        open={traceOpen}
+        onOpenChange={setTraceOpen}
+        threadTitle={activeThread?.title}
+        trace={traceQuery.data?.items}
+        loading={traceQuery.isLoading}
+      />
 
       {notice ? (
         <button

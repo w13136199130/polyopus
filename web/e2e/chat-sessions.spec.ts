@@ -156,6 +156,17 @@ test("chat: Dock opens files/trace/terminal and persists its state", async ({ pa
   await page.getByTestId("trace-row").first().locator("summary").click();
   await expect(page.getByTestId("trace-row").first()).toContainText("seq");
 
+  // full explorer: turn-grouped list + record input/output/raw detail
+  await page.getByTestId("trace-open-full").click();
+  await expect(page.getByTestId("trace-explorer")).toBeVisible();
+  await expect(page.getByTestId("trace-item").first()).toContainText("用户");
+  await page.getByTestId("trace-item").last().click();
+  await expect(page.getByTestId("trace-detail")).toContainText("概览");
+  await page.getByRole("tab", { name: "输出" }).click();
+  await expect(page.getByTestId("trace-detail")).toContainText("输出");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("trace-explorer")).toHaveCount(0);
+
   await page.getByTestId("dock-terminal").click();
   await expect(
     page.getByText(/还没有工具调用|fs\.(read|write)|demo\.sleep/).first(),
