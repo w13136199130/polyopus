@@ -426,6 +426,9 @@ export function ChatPage() {
   );
   const composerBusy =
     snapshot.status === "optimistic" || snapshot.status === "streaming";
+  const latestTurnId = [...(messagesQuery.data?.items ?? [])]
+    .reverse()
+    .find((message) => message.turnId)?.turnId ?? null;
   const publishedAgents = (agentsQuery.data?.items ?? []).filter(
     (agent) =>
       agent.status === "published"
@@ -501,6 +504,7 @@ export function ChatPage() {
                 onBranch={handleBranchMessage}
                 onEditMessage={handleEditMessage}
                 turnActive={composerBusy || snapshot.status === "waiting_approval"}
+                latestTurnId={latestTurnId}
               />
             )}
 

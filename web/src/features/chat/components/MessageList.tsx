@@ -21,6 +21,8 @@ interface Props {
   onEditMessage?: (message: Message, content: string) => void;
   /** A turn is still running: hide edit/regenerate/branch until it ends. */
   turnActive?: boolean;
+  /** Editing/regenerating only makes sense for the newest turn. */
+  latestTurnId?: string | null;
 }
 
 const QUICK_PROMPTS: Array<[string, string, string]> = [
@@ -226,13 +228,15 @@ function Citations({ trace }: { trace: TurnTrace }) {
 }
 
 const UserRow = memo(function UserRow({
-  bubble, onNotice, onEditMessage, turnActive,
+  bubble, onNotice, onEditMessage, turnActive, latestTurnId,
 }: {
   bubble: Bubble;
   onNotice?: (message: string) => void;
   onEditMessage?: (message: Message, content: string) => void;
   /** A turn is still running: hide edit/regenerate/branch until it ends. */
   turnActive?: boolean;
+  /** Editing/regenerating only makes sense for the newest turn. */
+  latestTurnId?: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(bubble.content);
@@ -288,7 +292,7 @@ const UserRow = memo(function UserRow({
             >
               ⧉
             </button>
-            {onEditMessage && !turnActive ? (
+            {onEditMessage && !turnActive && bubble.turnId === latestTurnId ? (
               <button
                 type="button"
                 title="编辑并重新发送"
@@ -310,6 +314,7 @@ const UserRow = memo(function UserRow({
 
 const AssistantRow = memo(function AssistantRow({
   bubble, trace, agentName, onNotice, onRegenerate, onBranch, turnActive,
+  latestTurnId,
 }: {
   bubble: Bubble;
   trace: TurnTrace;
@@ -318,6 +323,7 @@ const AssistantRow = memo(function AssistantRow({
   onRegenerate?: (turnId: string) => void;
   onBranch?: (message: Message) => void;
   turnActive?: boolean;
+  latestTurnId?: string | null;
 }) {
   const message: Message = {
     messageId: bubble.key,
@@ -358,7 +364,7 @@ const AssistantRow = memo(function AssistantRow({
             >
               ⧉
             </button>
-            {onRegenerate && bubble.turnId && !turnActive ? (
+            {onRegenerate && bubble.turnId === latestTurnId && !turnActive ? (
               <button
                 type="button"
                 title="重新生成"
@@ -390,6 +396,7 @@ const AssistantRow = memo(function AssistantRow({
 export function MessageList({
   messages, snapshot, onScrollRef, onQuickPrompt, trace, agentName,
   onFollowUp, onNotice, onRegenerate, onBranch, onEditMessage, turnActive,
+  latestTurnId,
 }: Props) {
   const bubbles = buildBubbles(messages, snapshot);
   const byTurn = useMemo(() => summarizeTrace(trace), [trace]);
@@ -448,6 +455,7 @@ export function MessageList({
                     onNotice={onNotice}
                     onEditMessage={onEditMessage}
                     turnActive={turnActive}
+                    latestTurnId={latestTurnId}
                   />
                 );
               }
@@ -465,6 +473,7 @@ export function MessageList({
                   onRegenerate={onRegenerate}
                   onBranch={onBranch}
                   turnActive={turnActive}
+                  latestTurnId={latestTurnId}
                 />
               );
             })}
