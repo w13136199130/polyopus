@@ -140,3 +140,14 @@ def test_unknown_route_uses_envelope(client: TestClient) -> None:
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
     assert "traceId" in response.json()["error"]
+
+
+def test_update_own_display_name(client: TestClient) -> None:
+    login(client)
+    updated = client.patch("/api/v1/auth/me", json={"displayName": "新名字"})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["user"]["displayName"] == "新名字"
+    me = client.get("/api/v1/auth/me").json()["user"]
+    assert me["displayName"] == "新名字"
+    blank = client.patch("/api/v1/auth/me", json={"displayName": "  "})
+    assert blank.status_code in (400, 422)

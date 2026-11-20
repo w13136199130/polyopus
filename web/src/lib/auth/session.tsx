@@ -21,6 +21,8 @@ interface SessionValue {
   user: SessionUser | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Re-read /auth/me after a profile change. */
+  refresh: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -73,6 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus("authed");
   }, []);
 
+  const refresh = useCallback(async () => {
+    const found = await me();
+    if (found) setUser(found);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await apiFetch("/auth/logout", { method: "POST", skipUnauthorized: true });
@@ -84,8 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, login, logout }),
-    [status, user, login, logout],
+    () => ({ status, user, login, logout, refresh }),
+    [status, user, login, logout, refresh],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -95,3 +95,64 @@ html[data-theme="dark"] {
   --purple: #b37feb;
   --purple-soft: #241a33;
 }
+
+/* Accent palettes (prototype 9 套配色): primary + derived soft/border. */
+html[data-palette="rose"] {
+  --primary: #e11d48;
+  --primary-hover: #f43f5e;
+  --primary-active: #be123c;
+  --primary-soft: color-mix(in srgb, #e11d48 12%, var(--surface));
+  --primary-border: color-mix(in srgb, #e11d48 38%, var(--surface));
+}
+html[data-palette="indigo"] {
+  --primary: #4f46e5;
+  --primary-hover: #6366f1;
+  --primary-active: #4338ca;
+  --primary-soft: color-mix(in srgb, #4f46e5 12%, var(--surface));
+  --primary-border: color-mix(in srgb, #4f46e5 38%, var(--surface));
+}
+html[data-palette="teal"] {
+  --primary: #0d9488;
+  --primary-hover: #14b8a6;
+  --primary-active: #0f766e;
+  --primary-soft: color-mix(in srgb, #0d9488 12%, var(--surface));
+  --primary-border: color-mix(in srgb, #0d9488 38%, var(--surface));
+}
+html[data-palette="violet"] {
+  --primary: #7c3aed;
+  --primary-hover: #8b5cf6;
+  --primary-active: #6d28d9;
+  --primary-soft: color-mix(in srgb, #7c3aed 12%, var(--surface));
+  --primary-border: color-mix(in srgb, #7c3aed 38%, var(--surface));
+}
+html[data-palette="emerald"] {
+  --primary: #059669;
+  --primary-hover: #10b981;
+  --primary-active: #047857;
+  --primary-soft: color-mix(in srgb, #059669 12%, var(--surface));
+  --primary-border: color-mix(in srgb, #059669 38%, var(--surface));
+}
+html[data-palette="amber"] {
+  --primary: #d97706;
+  --primary-hover: #f59e0b;
+  --primary-active: #b45309;
+  --primary-soft: color-mix(in srgb, #d97706 12%, var(--surface));
+  --primary-border: color-mix(in srgb, #d97706 38%, var(--surface));
+}
+html[data-palette="slate"] {
+  --primary: #475569;
+  --primary-hover: #64748b;
+  --primary-active: #334155;
+  --primary-soft: color-mix(in srgb, #475569 12%, var(--surface));
+  --primary-border: color-mix(in srgb, #475569 38%, var(--surface));
+}
+
+/* Compact density shrinks the shared spacing scale. */
+html[data-density="compact"] {
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-5: 16px;
+}
+html[data-density="compact"] body { font-size: 13px; }

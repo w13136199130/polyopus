@@ -14,7 +14,7 @@ const PAGES: Array<[string, string]> = [
   ["/knowledge", "知识"],
   ["/extensions", "扩展"],
   ["/admin", "管理"],
-  ["/settings", "设置"],
+  ["/settings", "个人设置"],
 ];
 
 async function login(page: import("@playwright/test").Page) {

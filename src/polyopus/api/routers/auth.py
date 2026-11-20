@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from sqlite3 import Connection
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -44,6 +45,13 @@ class RefreshBody(BaseModel):
     refresh_token: str | None = Field(
         default=None,
         validation_alias=AliasChoices("refresh_token", "refreshToken"),
+    )
+
+
+class UpdateMeBody(BaseModel):
+    display_name: str = Field(
+        min_length=1, max_length=64,
+        validation_alias=AliasChoices("displayName", "display_name"),
     )
 
 
@@ -236,6 +244,32 @@ def me(
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return {"user": {**_user_payload(user), "mfaEnabled": mfa.is_enabled(conn, user)}}
+
+
+@router.patch("/me")
+def update_me(
+    body: UpdateMeBody,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    clean = body.display_name.strip()
+    if not clean:
+        raise AppError(
+            "VALIDATION_FAILED", details={"fields": {"displayName": "required"}}
+        )
+    conn.execute(
+        "UPDATE users SET display_name = ?, updated_at = ? "
+        "WHERE tenant_id = ? AND user_id = ?",
+        (clean, int(time.time()), user.tenant_id, user.user_id),
+    )
+    conn.commit()
+    return {
+        "user": {
+            **_user_payload(user),
+            "displayName": clean,
+            "mfaEnabled": mfa.is_enabled(conn, user),
+        },
+    }
 
 
 @router.post("/logout")

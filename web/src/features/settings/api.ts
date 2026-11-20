@@ -1,12 +1,18 @@
 /** Settings/security data hooks (V1-16). */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { settings } from "@/lib/api/endpoints";
+import { auth, settings } from "@/lib/api/endpoints";
 
 export const settingsKeys = {
   admin: ["admin-settings"] as const,
   keys: ["api-keys"] as const,
 };
+
+export function useUpdateProfile() {
+  return useMutation({
+    mutationFn: (displayName: string) => auth.updateMe(displayName),
+  });
+}
 
 export function useAdminSettings() {
   return useQuery({ queryKey: settingsKeys.admin, queryFn: settings.get });

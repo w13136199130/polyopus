@@ -78,6 +78,11 @@ export const auth = {
     })),
   me: op("GET", "/auth/me", () =>
     apiFetch<{ user: SessionUser }>("/auth/me", { skipUnauthorized: true })),
+  updateMe: op("PATCH", "/auth/me", (displayName: string) =>
+    apiFetch<{ user: SessionUser }>("/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify({ displayName }),
+    })),
   logout: op("POST", "/auth/logout", () =>
     apiFetch<{ ok: boolean }>("/auth/logout", {
       method: "POST",
