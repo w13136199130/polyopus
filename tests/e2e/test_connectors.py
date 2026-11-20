@@ -119,3 +119,31 @@ def test_oauth_state_is_validated(env: tuple[Path, TestClient]) -> None:
 
     after = client.get(f"/api/v1/connectors/oauth/pending/{state}")
     assert after.json()["status"] == "authorized"
+
+
+def test_mcp_instance_visual_config_probes_by_server_shape(
+    env: tuple[Path, TestClient]
+) -> None:
+    _db, client = env
+    catalog = client.get("/api/v1/connectors/catalog").json()["items"]
+    assert any(row["kind"] == "mcp" for row in catalog)
+
+    created = client.post("/api/v1/connectors/instances", json={
+        "kind": "mcp",
+        "displayName": "我的 MCP",
+        "config": {"servers": {
+            "knowledge": {"type": "http", "url": "https://mcp.example.com/mcp"},
+        }},
+    })
+    assert created.status_code == 201, created.text
+    instance_id = created.json()["instanceId"]
+    ok = client.post(f"/api/v1/connectors/instances/{instance_id}/probe")
+    assert ok.json()["ok"] is True
+
+    patch = client.patch(f"/api/v1/connectors/instances/{instance_id}", json={
+        "config": {"servers": {"broken": {"type": "http", "url": ""}}},
+    })
+    assert patch.status_code == 200, patch.text
+    failed = client.post(f"/api/v1/connectors/instances/{instance_id}/probe")
+    assert failed.json()["ok"] is False
+    assert "url required" in failed.json()["error"]

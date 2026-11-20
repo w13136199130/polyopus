@@ -460,12 +460,20 @@ export const connectors = {
     kind: string;
     displayName: string;
     config: Record<string, unknown>;
+    defaultOpen?: boolean;
+    shared?: boolean;
   }) => apiFetch<ConnectorInstanceRow>("/connectors/instances", {
     method: "POST", body: JSON.stringify(body),
   })),
   update: op("PATCH", "/connectors/instances/{instance_id}", (
     instanceId: string,
-    body: { displayName?: string; config?: Record<string, unknown>; status?: string },
+    body: {
+      displayName?: string;
+      config?: Record<string, unknown>;
+      status?: string;
+      shared?: boolean;
+      defaultOpen?: boolean;
+    },
   ) => apiFetch<ConnectorInstanceRow>(
     `/connectors/instances/${encodeURIComponent(instanceId)}`,
     { method: "PATCH", body: JSON.stringify(body) },

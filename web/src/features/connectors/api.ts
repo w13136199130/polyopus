@@ -30,6 +30,21 @@ export function useCreateConnector() {
   return useMutation({ mutationFn: connectors.create, onSuccess: invalidate });
 }
 
+export function useUpdateConnector() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: ({ instanceId, ...body }: {
+      instanceId: string;
+      displayName?: string;
+      config?: Record<string, unknown>;
+      shared?: boolean;
+      defaultOpen?: boolean;
+      status?: string;
+    }) => connectors.update(instanceId, body),
+    onSuccess: invalidate,
+  });
+}
+
 export function useProbeConnector() {
   const invalidate = useInvalidate();
   return useMutation({ mutationFn: connectors.probe, onSuccess: invalidate });

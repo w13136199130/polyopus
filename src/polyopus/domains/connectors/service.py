@@ -21,6 +21,8 @@ CATALOG: tuple[dict[str, Any], ...] = (
      "authKind": "token", "category": "automation"},
     {"catalogId": "imap", "kind": "imap", "name": "IMAP 邮箱",
      "authKind": "imap", "category": "mail"},
+    {"catalogId": "mcp", "kind": "mcp", "name": "自定义 MCP",
+     "authKind": "token", "category": "mcp"},
 )
 
 
@@ -220,6 +222,33 @@ def _required_fields(kind: str) -> tuple[str, ...]:
     }.get(kind, ())
 
 
+def _mcp_errors(config: dict[str, Any]) -> list[str]:
+    """Validate the server map without exposing credentials.
+
+    Accepted shape: {"servers": {"name": {...}}} or a bare name->server map.
+    HTTP servers need a URL; stdio servers need a command."""
+    servers = config.get("servers", config)
+    if not isinstance(servers, dict) or not servers:
+        return ["missing MCP server"]
+    errors: list[str] = []
+    for name, raw in servers.items():
+        if name in ("auth", "headers"):
+            continue
+        if not isinstance(raw, dict):
+            errors.append(f"{name}: server must be an object")
+            continue
+        transport = str(raw.get("type") or raw.get("transport") or "http")
+        if transport == "http":
+            if not str(raw.get("url") or "").strip():
+                errors.append(f"{name}: url required")
+        elif transport == "stdio":
+            if not str(raw.get("command") or "").strip():
+                errors.append(f"{name}: command required")
+        else:
+            errors.append(f"{name}: unsupported transport {transport}")
+    return errors
+
+
 def probe(
     conn: sqlite3.Connection, *,
     tenant_id: str,
@@ -233,8 +262,11 @@ def probe(
         config = json.loads(secretbox.decrypt(str(row["config_enc"]), secret_key))
     except (ValueError, TypeError):
         config = {}
-    missing = [key for key in _required_fields(str(row["kind"]))
-               if not config.get(key)]
+    if str(row["kind"]) == "mcp":
+        missing = _mcp_errors(config)
+    else:
+        missing = [key for key in _required_fields(str(row["kind"]))
+                   if not config.get(key)]
     ok = not missing
     status = "active" if ok else "error"
     conn.execute(
