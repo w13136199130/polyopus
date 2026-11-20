@@ -37,7 +37,10 @@ from polyopus.platform.errors import AppError
 from polyopus.platform.events import projection
 from polyopus.platform.events.store import EventStore
 from polyopus.platform.queue import lease
+from polyopus.platform.telemetry import log as tlog
 from polyopus.workers import async_tools
+
+logger = tlog.get_logger("polyopus.engine")
 
 
 @dataclass(frozen=True)
@@ -352,9 +355,17 @@ async def run_turn(
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
     session = _thread_settings(conn, thread_id)
+    # A thread pins its expert version at creation; that version's prompt and
+    # model are the agent's identity for this conversation. Explicit config
+    # and per-session model choices stay stronger than the agent default.
+    from polyopus.domains.conversations import context as context_svc
+
+    agent_ctx = context_svc.agent_context(
+        conn, tenant_id=tenant_id, thread_id=thread_id
+    )
     model_hint = cfg.model_hint or (
         str(session["model"]) if session.get("model") else None
-    )
+    ) or agent_ctx.model
     resolved = registry.resolve(model_hint)
 
     # V1-05 defense in depth: post_turn already rejects over-quota requests,
@@ -409,25 +420,39 @@ async def run_turn(
     user_content = _user_content(conn, turn_id)
     agent_id = _agent_of(conn, thread_id)
     hints = memory_svc.recall(conn, tenant_id, agent_id, user_content)
-    messages: list[gateway_types.ChatMessage] = []
+    memory_block = ""
     if hints:
         lines = "\n".join(f"- [{h['kind']}] {h['text']}" for h in hints)
-        messages.append(
-            gateway_types.ChatMessage(
-                role="system", content=f"已知记忆（供参考）：\n{lines}"
-            )
-        )
+        memory_block = f"已知记忆（供参考）：\n{lines}"
     # 会话级知识库（composer 的「知识库 · N」chip）：检索依据作为系统上下文，
     # 未选库或未命中时什么也不加，保持旧会话行为不变。
     kb_context = _kb_context(
         conn, tenant_id=tenant_id, query=user_content,
         kb_ids=session.get("kbIds"),
+    ) or ""
+    history = context_svc.message_history(
+        conn, tenant_id=tenant_id, thread_id=thread_id
     )
-    if kb_context:
-        messages.append(
-            gateway_types.ChatMessage(role="system", content=kb_context)
-        )
-    messages.append(gateway_types.ChatMessage(role="user", content=user_content))
+    messages, context_stats = context_svc.assemble(
+        system_prompt=agent_ctx.system_prompt,
+        agent_name=agent_ctx.name,
+        memory=memory_block,
+        knowledge=kb_context,
+        history=history,
+        current_user_content=user_content,
+        max_input_tokens=resolved.caps.max_input_tokens,
+    )
+    tlog.log(
+        logger, 20, "turn.context",
+        turn_id=turn_id,
+        history=context_stats.history_messages,
+        tokens=context_stats.estimated_tokens,
+        budget=context_stats.budget_tokens,
+        dropped_history=context_stats.dropped_history,
+        dropped_knowledge=context_stats.dropped_knowledge,
+        dropped_memory=context_stats.dropped_memory,
+        truncated=context_stats.truncated,
+    )
 
     state = _StreamState()
     message_id = "msg_" + secrets.token_hex(8)
@@ -652,9 +677,15 @@ def resume_after_approval(
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
     session = _thread_settings(conn, thread_id)
+    from polyopus.domains.conversations import context as context_svc
+
+    agent_ctx = context_svc.agent_context(
+        conn, tenant_id=tenant_id, thread_id=thread_id
+    )
     resolved = registry.resolve(
         cfg.model_hint
         or (str(session["model"]) if session.get("model") else None)
+        or agent_ctx.model
     )
     run_row = conn.execute(
         "SELECT * FROM runs WHERE turn_id = ? ORDER BY attempt DESC LIMIT 1", (turn_id,)
@@ -758,8 +789,21 @@ def resume_after_approval(
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
         ),
     )
+    # The final round must see the same expert prefix + history as the first
+    # round; only the tool exchange is new.
+    base_messages, _stats = context_svc.assemble(
+        system_prompt=agent_ctx.system_prompt,
+        agent_name=agent_ctx.name,
+        memory="",
+        knowledge="",
+        history=context_svc.message_history(
+            conn, tenant_id=tenant_id, thread_id=thread_id
+        ),
+        current_user_content=user_content,
+        max_input_tokens=resolved.caps.max_input_tokens,
+    )
     messages: list[gateway_types.ChatMessage] = [
-        gateway_types.ChatMessage(role="user", content=user_content),
+        *base_messages,
         gateway_types.ChatMessage(
             role="assistant", content="",
             reasoning_content=str(request_data.get("reasoning_content") or "") or None,
