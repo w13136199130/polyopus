@@ -12,7 +12,7 @@ def test_version_flag() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert "1.0.0" in result.stdout
+    assert "1.0.1" in result.stdout
 
 
 def test_help_lists_commands() -> None:

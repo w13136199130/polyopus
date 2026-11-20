@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=TIMEOUT) as c:
         health = c.get("/healthz")
         checks.check(1, "healthz", health.status_code == 200 and
-                     health.json().get("version") == "1.0.0", health.text[:80])
+                     health.json().get("version") == "1.0.1", health.text[:80])
 
         login = c.post("/api/v1/auth/login", json={
             "username": args.username, "password": args.password,
@@ -184,6 +184,62 @@ def main(argv: list[str] | None = None) -> int:
                      user.status_code == 201 and invite.status_code == 201,
                      f"user={user.status_code} invite={invite.status_code}")
 
+        # --- 12. admin config: overview + storage + security + provider ---
+        overview = c.get("/api/v1/admin/overview")
+        storage = c.get("/api/v1/admin/storage")
+        security = c.get("/api/v1/admin/security")
+        provider = c.post("/api/v1/admin/providers", json={
+            "name": f"Smoke Provider {run}",
+            "baseUrl": "http://127.0.0.1:9/v1",
+            "apiKey": "sk-smoke",
+            "models": ["smoke-model"],
+        })
+        provider_id = provider.json().get("providerId") if provider.status_code == 201 else None
+        probed = c.post(f"/api/v1/admin/providers/{provider_id}/probe") if provider_id else None
+        removed = c.delete(f"/api/v1/admin/providers/{provider_id}") if provider_id else None
+        checks.check(11, "admin overview + storage + security + provider",
+                     overview.status_code == 200
+                     and "health" in overview.json()
+                     and storage.status_code == 200
+                     and storage.json().get("backend") == "local"
+                     and security.status_code == 200
+                     and "policy" in security.json()
+                     and provider is not None and provider.status_code == 201
+                     and probed is not None and probed.status_code == 200
+                     and probed.json().get("ok") is False
+                     and removed is not None and removed.status_code == 200,
+                     f"provider={provider_id}")
+
+        # --- 13. automation: create -> run now -> delete ---
+        cron = c.post("/api/v1/cron-jobs", json={
+            "name": f"Smoke Cron {run}",
+            "schedule": "interval:3600",
+            "timezone": "UTC",
+            "text": "/polyopus smoke cron",
+        })
+        job_id = cron.json().get("cronJobId") if cron.status_code == 201 else None
+        ran = c.post(f"/api/v1/cron-jobs/{job_id}/run") if job_id else None
+        runs = c.get(f"/api/v1/cron-jobs/{job_id}/runs") if job_id else None
+        deleted_job = c.delete(f"/api/v1/cron-jobs/{job_id}") if job_id else None
+        checks.check(12, "automation create + run now + delete",
+                     cron.status_code == 201
+                     and ran is not None and ran.status_code == 200
+                     and ran.json().get("status") == "succeeded"
+                     and runs is not None and runs.status_code == 200
+                     and any(row["runId"] == ran.json().get("runId")
+                             for row in runs.json().get("items", []))
+                     and deleted_job is not None and deleted_job.status_code == 200,
+                     f"job={job_id}")
+
+        # --- 14. notifications: list + mark all read ---
+        notes = c.get("/api/v1/notifications")
+        read_all = c.post("/api/v1/notifications/read-all")
+        checks.check(13, "notifications list + read-all",
+                     notes.status_code == 200
+                     and read_all.status_code == 200
+                     and read_all.json().get("ok") is True,
+                     f"unread={notes.json().get('unreadCount')}")
+
         # --- 11. metrics groups ---
         metrics = c.get("/metrics")
         text = metrics.text
@@ -194,15 +250,15 @@ def main(argv: list[str] | None = None) -> int:
             "usage": "poly_usage_tokens_total" in text,
             "slo": "poly_slo_target_ratio" in text,
         }
-        checks.check(11, "/metrics four groups + SLO",
+        checks.check(14, "/metrics four groups + SLO",
                      metrics.status_code == 200 and all(groups.values()),
                      groups)
 
     print()
     if checks.failures:
-        print(f"SMOKE FAILED: {len(checks.failures)}/{11} — {checks.failures}")
+        print(f"SMOKE FAILED: {len(checks.failures)}/{14} — {checks.failures}")
         return 1
-    print("SMOKE PASSED: 11/11")
+    print("SMOKE PASSED: 14/14")
     return 0
 
 
