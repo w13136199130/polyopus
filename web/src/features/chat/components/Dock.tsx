@@ -288,7 +288,7 @@ export function Dock({
                     </summary>
                     <div className={styles.traceDetail}>
                       <dl className={styles.traceMeta}>
-                        <dt>seq</dt><dd>{event.seq}</dd>
+                        <dt>seq</dt><dd>{event.seq > 0 ? event.seq : "message"}</dd>
                         <dt>turn</dt><dd>{event.turnId ?? "—"}</dd>
                         <dt>run</dt><dd>{event.runId ?? "—"}</dd>
                         <dt>时间</dt><dd>{new Date(event.ts * 1000).toLocaleString("zh-CN")}</dd>
