@@ -170,5 +170,9 @@ def test_reasoning_is_persisted_separately_from_text(tmp_path: Path) -> None:
         for block in blocks
     )
     trace = conversations.list_trace(conn, thread_id=thread.thread_id)
-    assert any(item["type"] == "message.reasoning" for item in trace)
+    completed = next(item for item in trace if item["type"] == "message.completed")
+    assert any(
+        block.get("type") == "reasoning"
+        for block in completed["payload"]["blocks"]
+    )
     conn.close()

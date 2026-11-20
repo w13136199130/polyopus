@@ -26,6 +26,9 @@ export interface Citation {
 }
 
 export interface TurnTrace {
+  model?: string;
+  finished?: boolean;
+  durationMs?: number;
   steps: ToolStep[];
   files: FileChange[];
   citations: Citation[];
@@ -77,6 +80,7 @@ export function summarizeTrace(
   items: TraceEvent[] | undefined,
 ): Map<string, TurnTrace> {
   const byTurn = new Map<string, TurnTrace>();
+  const started = new Map<string, number>();
   const open = new Map<string, { turnId: string; step: ToolStep; startedAt: number }>();
 
   const ensure = (turnId: string): TurnTrace => {
@@ -93,6 +97,21 @@ export function summarizeTrace(
     if (!turnId) continue;
     const payload = payloadOf(event);
 
+    if (event.type === "turn.started") {
+      const trace = ensure(turnId);
+      trace.model = String(payload.model ?? "");
+      started.set(turnId, event.ts);
+      continue;
+    }
+    if (event.type === "turn.finished") {
+      const trace = ensure(turnId);
+      trace.finished = true;
+      const start = started.get(turnId);
+      if (start !== undefined && event.ts > start) {
+        trace.durationMs = (event.ts - start) * 1000;
+      }
+      continue;
+    }
     if (event.type === "context.knowledge") {
       const trace = ensure(turnId);
       const citations = Array.isArray(payload.citations) ? payload.citations : [];

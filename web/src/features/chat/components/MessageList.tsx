@@ -141,9 +141,26 @@ async function copyText(text: string, onNotice?: (message: string) => void) {
 }
 
 function Steps({ trace }: { trace: TurnTrace }) {
-  if (!trace.steps.length) return null;
+  if (!trace.model && !trace.steps.length) return null;
   return (
     <div className={styles.process}>
+      {trace.model ? (
+        <div className={styles.step}>
+          <span
+            className={`${styles.stepIcon} ${
+              trace.finished ? styles.stepOk : styles.stepRun
+            }`}
+            aria-hidden="true"
+          >
+            {trace.finished ? "✓" : "◌"}
+          </span>
+          <b>模型</b>
+          <span className={styles.stepArg}>{trace.model}</span>
+          {trace.durationMs ? (
+            <span className={styles.stepTime}>{duration(trace.durationMs)}</span>
+          ) : null}
+        </div>
+      ) : null}
       {trace.steps.map((step) => (
         <div key={step.id} className={styles.step}>
           <span
@@ -234,14 +251,16 @@ function Citations({ trace }: { trace: TurnTrace }) {
 }
 
 function Thinking({ text, streaming }: { text?: string; streaming?: boolean }) {
-  if (!text?.trim()) return null;
+  if (!text?.trim() && !streaming) return null;
   return (
     <details className={styles.thinking} open={streaming || undefined}>
       <summary>
         <span className={styles.thinkingDot} aria-hidden="true" />
         {streaming ? "思考中…" : "思考过程"}
       </summary>
-      <pre className={styles.thinkingBody}>{text}</pre>
+      <pre className={styles.thinkingBody}>
+        {text?.trim() ? text : "模型正在阅读上下文并生成…"}
+      </pre>
     </details>
   );
 }

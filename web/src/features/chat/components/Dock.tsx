@@ -84,7 +84,7 @@ function formatSize(size: number): string {
   return `${Math.round(size / 1024 / 102.4) / 10}MB`;
 }
 
-type TraceCategory = "turn" | "message" | "tool" | "approval" | "context";
+type TraceCategory = "turn" | "message" | "user" | "tool" | "approval" | "context";
 
 interface TraceRowView {
   category: TraceCategory;
@@ -102,6 +102,18 @@ function preview(value: unknown, max = 90): string {
 function traceRow(event: TraceEvent): TraceRowView | null {
   const payload = event.payload as Record<string, unknown>;
   switch (event.type) {
+    case "turn.queued":
+      return { category: "turn", label: "回合", tone: "neutral", summary: "消息入队" };
+    case "message.user":
+      return {
+        category: "user", label: "用户", tone: "info",
+        summary: preview(payload.content, 110),
+      };
+    case "message.assistant":
+      return {
+        category: "message", label: "回复", tone: "ok",
+        summary: preview(payload.content, 110),
+      };
     case "turn.started":
       return {
         category: "turn", label: "回合", tone: "info",
@@ -185,11 +197,9 @@ export function Dock({
   threadId, tab, onTab, onClose, trace, traceLoading, tree, treeLoading,
 }: Props) {
   const [preview, setPreview] = useState<string | null>(null);
-  const [traceFilter, setTraceFilter] = useState<"all" | TraceCategory>("all");
   const rows = (trace ?? [])
     .map((event) => ({ event, row: traceRow(event) }))
     .filter((item) => item.row !== null)
-    .filter((item) => traceFilter === "all" || item.row!.category === traceFilter)
     .slice(-200);
 
   const toolEvents = (trace ?? []).filter((event) =>
@@ -252,24 +262,8 @@ export function Dock({
             <Empty title="还没有运行记录" hint="发送消息后，模型、工具与审批步骤会出现在这里。" />
           ) : (
             <>
-              <div className={styles.traceTools} role="tablist" aria-label="轨迹筛选">
-                {([
-                  ["all", "全部"], ["turn", "回合"], ["message", "回复"],
-                  ["tool", "工具"], ["approval", "审批"], ["context", "上下文"],
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="tab"
-                    aria-selected={traceFilter === value}
-                    className={`${styles.traceChip} ${
-                      traceFilter === value ? styles.traceChipOn : ""
-                    }`}
-                    onClick={() => setTraceFilter(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className={styles.traceTools}>
+                <span className={styles.traceTitle}>本会话全部轨迹</span>
                 <span className={styles.spacer} />
                 <span className={styles.hint}>{rows.length} 条</span>
               </div>

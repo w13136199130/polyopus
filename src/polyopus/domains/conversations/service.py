@@ -240,32 +240,68 @@ def branch_thread(
 def list_trace(
     conn: sqlite3.Connection, *, thread_id: str, limit: int = 200
 ) -> list[dict[str, object]]:
-    """Recent event log for the chat Dock's 轨迹/终端 tabs.
+    """Conversation trace for the Dock.
 
-    Returns raw rows (payload decoded) so the UI can label tool starts,
-    approvals and turn boundaries without a second projection."""
-    rows = conn.execute(
+    Deltas and reasoning chunks are intentionally excluded: replaying 600
+    token events hides the meaningful turn/tool/approval records. Messages
+    are merged in as synthetic records so a branched or pre-upgrade thread
+    still shows what the user and assistant said even when no event exists.
+    """
+    cap = max(1, min(limit, 500))
+    event_rows = conn.execute(
         "SELECT seq, type, ts, turn_id, run_id, payload_json FROM events "
-        "WHERE thread_id = ? ORDER BY seq DESC LIMIT ?",
-        (thread_id, max(1, min(limit, 500))),
+        "WHERE thread_id = ? AND type NOT IN "
+        "('message.delta', 'message.reasoning', 'usage.recorded') "
+        "ORDER BY seq DESC LIMIT ?",
+        (thread_id, cap),
     ).fetchall()
-    out: list[dict[str, object]] = []
-    for row in reversed(rows):
+    events: list[dict[str, object]] = []
+    for row in reversed(event_rows):
         try:
             payload = json.loads(str(row["payload_json"]))
         except ValueError:
             payload = {}
-        out.append(
-            {
-                "seq": int(row["seq"]),
-                "type": str(row["type"]),
-                "ts": int(row["ts"]),
-                "turnId": row["turn_id"],
-                "runId": row["run_id"],
-                "payload": payload if isinstance(payload, dict) else {},
-            }
-        )
-    return out
+        events.append({
+            "seq": int(row["seq"]),
+            "type": str(row["type"]),
+            "ts": int(row["ts"]),
+            "turnId": row["turn_id"],
+            "runId": row["run_id"],
+            "payload": payload if isinstance(payload, dict) else {},
+        })
+
+    completed_turns = {
+        str(item["turnId"]) for item in events
+        if item["type"] == "message.completed" and item["turnId"]
+    }
+    message_rows = conn.execute(
+        "SELECT id, message_id, turn_id, role, content, created_at FROM messages "
+        "WHERE thread_id = ? AND deleted_at IS NULL "
+        "AND role IN ('user', 'assistant') AND content <> '' ORDER BY seq",
+        (thread_id,),
+    ).fetchall()
+    synthetic: list[dict[str, object]] = []
+    for row in message_rows:
+        role = str(row["role"])
+        turn_id = row["turn_id"]
+        if role == "assistant" and turn_id and str(turn_id) in completed_turns:
+            continue
+        synthetic.append({
+            "seq": -int(row["id"]),
+            "type": "message.user" if role == "user" else "message.assistant",
+            "ts": int(row["created_at"]),
+            "turnId": turn_id,
+            "runId": None,
+            "payload": {
+                "message_id": row["message_id"],
+                "content": row["content"],
+                "synthetic": True,
+            },
+        })
+
+    merged = events + synthetic
+    merged.sort(key=lambda item: (int(str(item["ts"])), int(str(item["seq"]))))
+    return merged[-cap:]
 
 
 def get_thread(

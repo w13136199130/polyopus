@@ -127,7 +127,11 @@ def test_trace_tail_returns_queued_event(client: TestClient) -> None:
     client.post(f"/api/v1/threads/{thread_id}/turns", json={"content": "hello"})
     trace = client.get(f"/api/v1/threads/{thread_id}/trace").json()["items"]
     assert any(item["type"] == "turn.queued" for item in trace)
-    assert all(item["seq"] > 0 for item in trace)
+    # user messages are merged in as synthetic records (no event row)
+    assert any(
+        item["type"] == "message.user" and item["payload"]["content"] == "hello"
+        for item in trace
+    )
 
 
 def test_workspace_tree_and_file_are_confined(client: TestClient) -> None:
