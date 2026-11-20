@@ -599,6 +599,16 @@ export interface ConnectorInstanceRow {
   updatedAt: number;
 }
 
+export interface ConnectorToolRow {
+  toolKey: string;
+  wireName: string;
+  server: string;
+  toolName: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  enabled?: boolean;
+}
+
 export interface PluginRow {
   pluginId: string;
   name: string;

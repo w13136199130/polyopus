@@ -20,6 +20,7 @@ from typing import cast
 
 from polyopus.domains.agents import models as agents_registry
 from polyopus.domains.attention import service as attention
+from polyopus.domains.connectors.tool_catalog import ConnectorToolBinding
 from polyopus.kernel.models import FakeModel
 from polyopus.kernel.models import gateway as gateway_types
 from polyopus.kernel.tools import (
@@ -29,6 +30,7 @@ from polyopus.kernel.tools import (
     PolicyEngine,
     Rule,
     ToolError,
+    ToolPolicySpec,
     ToolRuntime,
     dispatch,
     internal_name,
@@ -266,7 +268,9 @@ def _tool_messages_parts(
         tool_calls=tuple(
             gateway_types.ToolCallMessagePart(
                 id=c.id or f"tc_{tool_round}",
-                name=internal_name(c.name),
+                # Echo exactly the wire name the provider produced; MCP names
+                # are already sanitized and builtin names may use dots.
+                name=c.name,
                 arguments_json=c.arguments_json,
             )
             for c in calls
@@ -287,16 +291,21 @@ def _execute_call(
     turn_id: str,
     tenant_id: str,
     tool_round: int,
-    workspace: Path,
+    workspace: Path | None,
+    runtime_tool: _RuntimeTool | None = None,
 ) -> tuple[str, bool]:
-    """Run one allowed tool; returns (output_json, ok). Emits tool.* events."""
+    """Run one allowed builtin or MCP tool; returns (output_json, ok)."""
+    connector = runtime_tool.connector if runtime_tool is not None else None
+    source = "mcp" if connector is not None else "builtin"
+    display_name = connector.tool_name if connector is not None else internal
     store.append(
         thread_id,
         "tool.started",
         {
             "tool_call_id": call_id,
-            "name": internal,
-            "source": "builtin",
+            "name": display_name,
+            "tool_key": internal,
+            "source": source,
             "risk": risk,
             "args_digest": str(len(arguments_json)),
             "args_preview": arguments_json[:200],
@@ -305,22 +314,42 @@ def _execute_call(
     )
     now_tool = _now()
     try:
-        result = dispatch(internal, workspace, arguments_json)
-        output_json = json.dumps(result.output, ensure_ascii=False)
+        output: dict[str, object]
+        if connector is not None:
+            from polyopus.config import load_settings
+            from polyopus.domains.connectors import tool_catalog
+
+            output = tool_catalog.call_tool(
+                conn,
+                tenant_id=tenant_id,
+                instance_id=connector.instance_id,
+                server=connector.server,
+                tool_name=connector.tool_name,
+                arguments=_args_of(arguments_json),
+                secret_key=str(load_settings().secret_key),
+            )
+        else:
+            if workspace is None:
+                raise ToolError("TOOL_WORKSPACE", "工作区未配置，无法执行内置工具")
+            result = dispatch(internal, workspace, arguments_json)
+            output = result.output
+        output_json = json.dumps(output, ensure_ascii=False)
         store.append(
             thread_id,
             "tool.completed",
-            {"tool_call_id": call_id, "output": result.output},
+            {"tool_call_id": call_id, "output": output, "source": source},
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
         )
         ok = True
-    except ToolError as exc:
-        output_json = json.dumps({"error": exc.code, "message": str(exc)})
+    except (ToolError, AppError, OSError, RuntimeError) as exc:
+        code = exc.code if isinstance(exc, (ToolError, AppError)) else "TOOL_FAILED"
+        message = str(exc)
+        output_json = json.dumps({"error": code, "message": message})
         store.append(
             thread_id,
             "tool.failed",
-            {"tool_call_id": call_id, "code": exc.code, "message": str(exc),
-             "retryable": False},
+            {"tool_call_id": call_id, "code": code, "message": message,
+             "retryable": False, "source": source},
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
         )
         ok = False
@@ -337,7 +366,7 @@ def _execute_call(
     conn.commit()
     from polyopus.platform.observability import metrics
 
-    metrics.tool_call(internal, "ok" if ok else "failed")
+    metrics.tool_call(display_name, "ok" if ok else "failed")
     return output_json, ok
 
 
@@ -553,19 +582,20 @@ async def run_turn(
         "SELECT agent_id FROM threads WHERE thread_id = ?", (thread_id,)
     ).fetchone()
     quota_agent = str(agent_row[0]) if agent_row is not None and agent_row[0] else None
-    toolspecs = tuple(
-        spec for name, spec in GATEWAY_SPECS.items()
-        if cfg.workspace is not None
-        and tools_svc.effective_enabled(
-            conn, tenant_id=tenant_id, agent_id=quota_agent, tool_key=name
-        )
+    runtime_tools = _runtime_tools(
+        conn, tenant_id=tenant_id,
+        workspace=cfg.workspace, agent_id=quota_agent, session=session,
     )
+    toolspecs = tuple(tool.gateway for tool in runtime_tools.values())
+    wire_to_internal = {
+        tool.gateway.name: key for key, tool in runtime_tools.items()
+    }
     ticket_id = turn["ticket_id"]
     auto_tools, auto_max_risk = _auto_approve_of(conn, tenant_id, ticket_id)
     # Composer 审批策略「全允许」= 本会话内的 ask 自动升级为 allow；
     # 显式 deny（含 critical、未授权插件）仍然优先，策略引擎负责兜底。
     if str(session.get("approvalPolicy") or "ask") == "auto":
-        auto_tools = tuple(GATEWAY_SPECS.keys())
+        auto_tools = tuple(runtime_tools)
         auto_max_risk = "high"
     runtime = ToolRuntime(
         PolicyEngine(
@@ -621,14 +651,14 @@ async def run_turn(
         if not calls or tool_round >= cfg.max_tool_rounds:
             break
         tool_round += 1
-        assert cfg.workspace is not None  # tools were advertised
 
         messages.append(_tool_messages_parts(calls, tool_round, state.reasoning))
         paused = False
         for call in calls:
             call_id = call.id or f"tc_{tool_round}"
-            internal = internal_name(call.name)
-            spec = POLICY_SPECS.get(internal)
+            internal = wire_to_internal.get(call.name, internal_name(call.name))
+            runtime_tool = runtime_tools.get(internal)
+            spec = runtime_tool.policy if runtime_tool is not None else None
             args = _args_of(call.arguments_json)
             risk = spec.risk if spec else "critical"
             if spec is None:
@@ -655,8 +685,14 @@ async def run_turn(
                     decision = Decision("deny", decision.matched, "tool_disabled")
 
             if spec is not None and decision.effect == "allow":
-                gateway_spec = GATEWAY_SPECS.get(internal)
-                if gateway_spec is not None and gateway_spec.execution == "async":
+                gateway_spec = runtime_tool.gateway if runtime_tool else None
+                if (
+                    runtime_tool is not None
+                    and runtime_tool.connector is None
+                    and gateway_spec is not None
+                    and gateway_spec.execution == "async"
+                ):
+                    assert cfg.workspace is not None  # async builtin tools need it
                     output_json = json.dumps(
                         async_tools.start_async_call(
                             conn, store,
@@ -679,6 +715,7 @@ async def run_turn(
                         call_id=call_id, risk=risk, run_id=run_id, thread_id=thread_id,
                         turn_id=turn_id, tenant_id=tenant_id, tool_round=tool_round,
                         workspace=cfg.workspace,
+                        runtime_tool=runtime_tool,
                     )
             elif spec is not None and decision.effect == "ask":
                 # pipeline step 6: pause with the REAL tool and args
@@ -819,12 +856,21 @@ def resume_after_approval(
     workspace = cfg.workspace or _workspace_default()
     call_id = f"tc_ap_{approval['approval_id'][-6:]}"
     user_content = _user_content(conn, turn_id)
+    wire_name = internal
+    runtime_tools = _runtime_tools(
+        conn, tenant_id=tenant_id,
+        workspace=workspace, agent_id=_agent_of(conn, thread_id),
+        session=session,
+    )
 
     if decision in ("approved", "approved_session"):
         # execution-time re-evaluation (ADR-011); deny still wins over approval.
         # V05-12: the re-check runs against the CURRENT active bundle — an
         # approval granted minutes ago must not survive a stricter publish.
-        spec = POLICY_SPECS.get(internal)
+        runtime_tool = runtime_tools.get(internal)
+        spec = runtime_tool.policy if runtime_tool is not None else None
+        if runtime_tool is not None:
+            wire_name = runtime_tool.gateway.name
         from polyopus.domains.policy import service as policy_service
 
         policy = PolicyEngine(
@@ -846,8 +892,13 @@ def resume_after_approval(
                 arguments_json=arguments_json,
             )
         else:
-            gateway_spec = GATEWAY_SPECS.get(internal)
-            if gateway_spec is not None and gateway_spec.execution == "async":
+            gateway_spec = runtime_tool.gateway if runtime_tool else None
+            if (
+                runtime_tool is not None
+                and runtime_tool.connector is None
+                and gateway_spec is not None
+                and gateway_spec.execution == "async"
+            ):
                 output_json = json.dumps(
                     async_tools.start_async_call(
                         conn, store,
@@ -868,7 +919,7 @@ def resume_after_approval(
                     conn, store, internal=internal, arguments_json=arguments_json,
                     call_id=call_id, risk=risk, run_id=run_id, thread_id=thread_id,
                     turn_id=turn_id, tenant_id=tenant_id, tool_round=99,
-                    workspace=workspace,
+                    workspace=workspace, runtime_tool=runtime_tool,
                 )
     else:
         output_json = _refuse_call(
@@ -910,7 +961,7 @@ def resume_after_approval(
             reasoning_content=str(request_data.get("reasoning_content") or "") or None,
             tool_calls=(
                 gateway_types.ToolCallMessagePart(
-                    id=call_id, name=internal, arguments_json=arguments_json
+                    id=call_id, name=wire_name, arguments_json=arguments_json
                 ),
             ),
         ),
@@ -1078,6 +1129,66 @@ def _record_usage(
         tenant_id=tenant_id,
         turn_id=turn_id,
     )
+
+
+@dataclass(frozen=True)
+class _RuntimeTool:
+    key: str
+    gateway: gateway_types.ToolSpec
+    policy: ToolPolicySpec
+    connector: ConnectorToolBinding | None = None
+
+
+def _runtime_tools(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    workspace: Path | None,
+    agent_id: str | None,
+    session: dict[str, object],
+) -> dict[str, _RuntimeTool]:
+    """Builtin + enabled MCP tools for this turn.
+
+    MCP tools are risk=high / side_effects=True so the policy engine asks by
+    default; they are filtered by the session's connector selection or the
+    connector's default-open flag (tool_catalog.bindings)."""
+    from polyopus.domains.connectors import tool_catalog
+    from polyopus.domains.tools import service as tools_svc
+
+    out: dict[str, _RuntimeTool] = {}
+    if workspace is not None:
+        for key, spec in GATEWAY_SPECS.items():
+            if tools_svc.effective_enabled(
+                conn, tenant_id=tenant_id, agent_id=agent_id, tool_key=key
+            ):
+                out[key] = _RuntimeTool(key, spec, POLICY_SPECS[key])
+    selected = session.get("connectorIds")
+    try:
+        bindings = tool_catalog.bindings(
+            conn, tenant_id=tenant_id,
+            selected_instance_ids=[str(x) for x in selected]
+            if isinstance(selected, list) else None,
+        )
+    except Exception:  # noqa: BLE001 - a broken connector must not kill turns
+        bindings = []
+    for binding in bindings:
+        if not tools_svc.effective_enabled(
+            conn, tenant_id=tenant_id, agent_id=agent_id,
+            tool_key=binding.tool_key,
+        ):
+            continue
+        spec = gateway_types.ToolSpec(
+            name=binding.wire_name,
+            description=binding.description or f"MCP tool {binding.tool_name}",
+            parameters_json_schema=binding.input_schema,
+        )
+        policy = ToolPolicySpec(
+            binding.tool_key, "high", True, source="mcp",
+        )
+        out[binding.tool_key] = _RuntimeTool(
+            binding.tool_key, spec, policy, binding,
+        )
+    return out
 
 
 def _auto_approve_of(

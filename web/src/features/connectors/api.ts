@@ -6,6 +6,7 @@ import { connectors } from "@/lib/api/endpoints";
 export const connectorKeys = {
   catalog: ["connector-catalog"] as const,
   instances: ["connector-instances"] as const,
+  tools: (instanceId: string) => ["connector-tools", instanceId] as const,
 };
 
 export function useConnectorCatalog() {
@@ -42,6 +43,25 @@ export function useUpdateConnector() {
       status?: string;
     }) => connectors.update(instanceId, body),
     onSuccess: invalidate,
+  });
+}
+
+export function useConnectorTools(instanceId: string | null) {
+  return useQuery({
+    queryKey: connectorKeys.tools(instanceId ?? ""),
+    queryFn: () => connectors.tools(instanceId as string),
+    enabled: Boolean(instanceId),
+  });
+}
+
+export function useDiscoverConnector() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: connectors.discover,
+    onSuccess: (_result, instanceId) => {
+      void client.invalidateQueries({ queryKey: connectorKeys.tools(instanceId) });
+      void client.invalidateQueries({ queryKey: connectorKeys.instances });
+    },
   });
 }
 

@@ -173,6 +173,12 @@ def update_instance(
         params.append(secretbox.encrypt(
             json.dumps(config, ensure_ascii=False), secret_key
         ))
+        # discovered tools belong to the old config; force a rediscovery
+        conn.execute(
+            "DELETE FROM connector_tools WHERE tenant_id = ? AND instance_id = ?",
+            (tenant_id, instance_id),
+        )
+        updates.append("tools_count = 0")
     if shared is not None:
         updates.append("shared = ?")
         params.append(int(shared))
@@ -205,6 +211,10 @@ def delete_instance(
     conn.execute(
         "DELETE FROM connector_bindings WHERE tenant_id = ?"
         " AND connector_instance_id = ?", (tenant_id, instance_id),
+    )
+    conn.execute(
+        "DELETE FROM connector_tools WHERE tenant_id = ? AND instance_id = ?",
+        (tenant_id, instance_id),
     )
     conn.execute(
         "DELETE FROM connector_instances WHERE tenant_id = ? AND instance_id = ?",

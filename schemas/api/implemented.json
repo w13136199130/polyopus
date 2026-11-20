@@ -1,5 +1,5 @@
 {
-  "count": 139,
+  "count": 141,
   "ops": [
     {
       "method": "DELETE",
@@ -144,6 +144,10 @@
     {
       "method": "GET",
       "path": "/api/v1/connectors/instances"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/instances/{instance_id}/tools"
     },
     {
       "method": "GET",
@@ -408,6 +412,10 @@
     {
       "method": "POST",
       "path": "/api/v1/connectors/instances"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/connectors/instances/{instance_id}/discover"
     },
     {
       "method": "POST",

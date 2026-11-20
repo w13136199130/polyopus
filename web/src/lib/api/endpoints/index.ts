@@ -22,6 +22,7 @@ import type {
   AttentionListResponse,
   ConnectorCatalogRow,
   ConnectorInstanceRow,
+  ConnectorToolRow,
   CronJobListResponse,
   CronJobView,
   CronRunRow,
@@ -498,6 +499,18 @@ export const connectors = {
   probe: op("POST", "/connectors/instances/{instance_id}/probe", (instanceId: string) =>
     apiFetch<ConnectorInstanceRow & { ok: boolean; error?: string }>(
       `/connectors/instances/${encodeURIComponent(instanceId)}/probe`,
+      { method: "POST" },
+    )),
+  tools: op("GET", "/connectors/instances/{instance_id}/tools", (instanceId: string) =>
+    apiFetch<{ items: ConnectorToolRow[] }>(
+      `/connectors/instances/${encodeURIComponent(instanceId)}/tools`,
+    )),
+  discover: op("POST", "/connectors/instances/{instance_id}/discover", (instanceId: string) =>
+    apiFetch<{
+      items: ConnectorToolRow[];
+      errors: Array<{ server: string; error: string }>;
+    }>(
+      `/connectors/instances/${encodeURIComponent(instanceId)}/discover`,
       { method: "POST" },
     )),
   oauthStart: op("POST", "/connectors/oauth/start", (kind: string) =>

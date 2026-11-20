@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button, Dialog, Drawer } from "@/components/ui";
 import {
+  useConnectorTools,
   useCreateConnector,
   useDeleteConnector,
+  useDiscoverConnector,
   useProbeConnector,
   useStartOAuth,
   useUpdateConnector,
@@ -90,6 +92,10 @@ export function ConnectorDrawer({
   const remove = useDeleteConnector();
   const probe = useProbeConnector();
   const oauth = useStartOAuth();
+  const discover = useDiscoverConnector();
+  const toolsQuery = useConnectorTools(
+    instance?.kind === "mcp" ? instance.instanceId : null,
+  );
 
   const [kind, setKind] = useState(initialKind);
   const [displayName, setDisplayName] = useState("");
@@ -229,6 +235,21 @@ export function ConnectorDrawer({
     });
   }
 
+  function discoverTools() {
+    if (!instance) return;
+    setError(null);
+    discover.mutate(instance.instanceId, {
+      onSuccess: (result) => {
+        if (result.errors.length) {
+          onError(result.errors.map((item) => `${item.server}: ${item.error}`).join("；"));
+        } else {
+          onNotice(`发现 ${result.items.length} 个工具`);
+        }
+      },
+      onError: (err) => setError(messageOf(err)),
+    });
+  }
+
   function reauthorize() {
     if (!instance) return;
     oauth.mutate(instance.kind, {
@@ -323,6 +344,48 @@ export function ConnectorDrawer({
                 <b>{instance.toolsCount} 个</b>
               </div>
             </div>
+          ) : null}
+
+          {instance?.kind === "mcp" ? (
+            <section className={styles.discovered} data-testid="connector-tools">
+              <div className={styles.discoveredHead}>
+                <div>
+                  <b>可调用工具</b>
+                  <span>
+                    {toolsQuery.data?.items.length ?? instance.toolsCount} 个 · 调用前按策略审批
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="connector-discover"
+                  loading={discover.isPending}
+                  onClick={discoverTools}
+                >
+                  发现工具
+                </Button>
+              </div>
+              {toolsQuery.isLoading ? (
+                <p className={styles.hint}>读取已发现工具…</p>
+              ) : toolsQuery.data?.items.length ? (
+                <div className={styles.toolList}>
+                  {toolsQuery.data.items.map((tool) => (
+                    <div key={tool.toolKey} className={styles.toolRow} data-testid="connector-tool">
+                      <div className={styles.toolIdentity}>
+                        <b>{tool.toolName}</b>
+                        <span>{tool.server}</span>
+                      </div>
+                      <p>{tool.description || "无描述"}</p>
+                      <code>{tool.wireName}</code>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className={styles.hint}>
+                  还没有发现工具。保存连接后点击「发现工具」，会把 MCP 的 tools/list 注册到当前租户。
+                </p>
+              )}
+            </section>
           ) : null}
 
           {isMcp ? (

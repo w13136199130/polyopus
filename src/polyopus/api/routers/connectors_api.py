@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import AliasChoices, BaseModel, Field
 
 from polyopus.api.deps import get_db, require_permission
-from polyopus.domains.connectors import service
+from polyopus.domains.connectors import service, tool_catalog
 from polyopus.domains.identity.service import User
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
@@ -82,6 +82,32 @@ def create_instance(
         auth_kind=body.auth_kind, shared=body.shared,
         default_open=body.default_open, secret_key=_secret(request),
     )
+
+
+@router.post("/instances/{instance_id}/discover")
+def discover_instance_tools(
+    instance_id: str,
+    request: Request,
+    user: User = Depends(require_permission("connector:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return tool_catalog.discover_instance(
+        conn, tenant_id=user.tenant_id, instance_id=instance_id,
+        secret_key=_secret(request),
+    )
+
+
+@router.get("/instances/{instance_id}/tools")
+def instance_tools(
+    instance_id: str,
+    user: User = Depends(require_permission("connector:read")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return {
+        "items": tool_catalog.list_instance_tools(
+            conn, tenant_id=user.tenant_id, instance_id=instance_id
+        )
+    }
 
 
 @router.patch("/instances/{instance_id}")
