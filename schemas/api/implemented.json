@@ -1,9 +1,13 @@
 {
-  "count": 128,
+  "count": 138,
   "ops": [
     {
       "method": "DELETE",
       "path": "/api/v1/admin/backup/{backup_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/providers/{provider_id}"
     },
     {
       "method": "DELETE",
@@ -87,11 +91,27 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/admin/providers"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/admin/quotas"
     },
     {
       "method": "GET",
+      "path": "/api/v1/admin/security"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/security/policy/raw"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/admin/settings"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/storage"
     },
     {
       "method": "GET",
@@ -259,6 +279,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/v1/admin/providers/{provider_id}"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/v1/admin/quotas/{quota_id}"
     },
     {
@@ -319,7 +343,19 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/admin/providers"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{provider_id}/probe"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/admin/quotas"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/security/policy/rollback"
     },
     {
       "method": "POST",
@@ -512,6 +548,10 @@
     {
       "method": "PUT",
       "path": "/api/v1/admin/backup/auto"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/security/policy"
     }
   ]
 }

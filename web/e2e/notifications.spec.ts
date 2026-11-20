@@ -14,6 +14,8 @@ async function login(page: import("@playwright/test").Page) {
  * single/all read flows work. */
 test("notifications: unread badge, page list, mark read", async ({ page }) => {
   await login(page);
+  // deterministic baseline: earlier specs may have left unread/read rows
+  await page.request.post("/api/v1/notifications/read-all");
   await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
 
@@ -35,7 +37,7 @@ test("notifications: unread badge, page list, mark read", async ({ page }) => {
   const item = page.getByTestId("notification-page-item").first();
   await expect(item).toBeVisible();
   await item.getByTestId("notification-mark-read").click();
-  await expect(page.getByTestId("notification-mark-read")).toHaveCount(0, {
+  await expect(item.getByTestId("notification-mark-read")).toHaveCount(0, {
     timeout: 15_000,
   });
 

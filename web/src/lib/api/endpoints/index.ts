@@ -9,6 +9,7 @@ import { apiFetch } from "../client";
 import type {
   AdminSettings,
   AgentListResponse,
+  BackupAutoSettings,
   AgentRow,
   AgentToolBinding,
   AnswerResponse,
@@ -31,6 +32,10 @@ import type {
   NotificationRow,
   PluginRow,
   PostTurnResponse,
+  ProviderListResponse,
+  ProviderRow,
+  SecurityRule,
+  SecuritySnapshot,
   SessionUser,
   AdminUserListResponse,
   AdminUserRow,
@@ -42,6 +47,7 @@ import type {
   RoleRow,
   SourceListResponse,
   SourceView,
+  StorageSnapshot,
   ThreadListResponse,
   ThreadSettings,
   TicketCounts,
@@ -736,8 +742,67 @@ export const workspace = {
     )),
 };
 
+export const adminModels = {
+  list: op("GET", "/admin/providers", () =>
+    apiFetch<ProviderListResponse>("/admin/providers")),
+  create: op("POST", "/admin/providers", (body: {
+    name: string; baseUrl: string; apiKey: string; models: string[];
+  }) => apiFetch<ProviderRow>("/admin/providers", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  update: op("PATCH", "/admin/providers/{provider_id}", (
+    providerId: string,
+    body: { name?: string; baseUrl?: string; apiKey?: string; models?: string[] },
+  ) => apiFetch<ProviderRow>(`/admin/providers/${encodeURIComponent(providerId)}`, {
+    method: "PATCH", body: JSON.stringify(body),
+  })),
+  remove: op("DELETE", "/admin/providers/{provider_id}", (providerId: string) =>
+    apiFetch<{ ok: boolean; providerId: string }>(
+      `/admin/providers/${encodeURIComponent(providerId)}`, { method: "DELETE" },
+    )),
+  probe: op("POST", "/admin/providers/{provider_id}/probe", (providerId: string) =>
+    apiFetch<ProviderRow & { ok: boolean; detail: string }>(
+      `/admin/providers/${encodeURIComponent(providerId)}/probe`, { method: "POST" },
+    )),
+};
+
+export const adminStorage = {
+  get: op("GET", "/admin/storage", () =>
+    apiFetch<StorageSnapshot>("/admin/storage")),
+  backupAuto: op("GET", "/admin/backup/auto", () =>
+    apiFetch<BackupAutoSettings>("/admin/backup/auto")),
+  updateBackupAuto: op("PUT", "/admin/backup/auto", (body: {
+    autoEnabled?: boolean;
+    intervalHours?: number;
+    retentionCount?: number;
+    includes?: Record<string, boolean>;
+  }) => apiFetch<BackupAutoSettings>("/admin/backup/auto", {
+    method: "PUT", body: JSON.stringify(body),
+  })),
+  runBackupAuto: op("POST", "/admin/backup/auto/run", () =>
+    apiFetch<{ backupId: string; status: string }>("/admin/backup/auto/run", {
+      method: "POST",
+    })),
+};
+
+export const adminSecurity = {
+  get: op("GET", "/admin/security", () =>
+    apiFetch<SecuritySnapshot>("/admin/security")),
+  publish: op("PUT", "/admin/security/policy", (rules: SecurityRule[]) =>
+    apiFetch<SecuritySnapshot & { published: { version: number } }>(
+      "/admin/security/policy",
+      { method: "PUT", body: JSON.stringify({ rules }) },
+    )),
+  rollback: op("POST", "/admin/security/policy/rollback", (version: number) =>
+    apiFetch<SecuritySnapshot & { rolledBack: { version: number } }>(
+      "/admin/security/policy/rollback",
+      { method: "POST", body: JSON.stringify({ version }) },
+    )),
+};
+
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, tools, knowledge, connectors,
   plugins, settings, adminOps, models, workspace,
+  adminModels, adminStorage, adminSecurity,
 ];

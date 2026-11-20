@@ -77,10 +77,22 @@ class Registry:
                 (model_hint, model_hint, model_hint),
             ).fetchone()
             if row is not None:
+                api_key = str(row["api_key_enc"] or "")
+                if api_key:
+                    try:
+                        from polyopus.config import load_settings
+                        from polyopus.platform.security import secretbox
+
+                        api_key = secretbox.decrypt(
+                            api_key, load_settings().secret_key
+                        )
+                    except (ValueError, TypeError):
+                        # legacy plaintext row: keep as-is
+                        pass
                 provider = OpenAICompatProvider(
                     ProviderConfig(
                         base_url=str(row["base_url"] or ""),
-                        api_key=str(row["api_key_enc"] or ""),
+                        api_key=api_key,
                     )
                 )
                 caps = ModelCaps()

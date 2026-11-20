@@ -43,8 +43,21 @@ test("automation: create, pause, run now, edit and delete a job", async ({ page 
     (response) => response.url().includes("/run") && response.request().method() === "POST",
   );
   await row.getByTestId("cron-run").click();
-  expect((await runResponse).ok()).toBe(true);
+  const run = await runResponse;
+  expect(run.ok()).toBe(true);
+  const runBody = (await run.json()) as { ticketId: string | null };
   await expect(page.getByText(/已立即执行/)).toBeVisible({ timeout: 20_000 });
+  // do not delete the job/source while its ticket is still executing
+  if (runBody.ticketId) {
+    await expect
+      .poll(async () => {
+        const body = await (await page.request.get("/api/v1/tickets")).json();
+        return body.items.find(
+          (item: { ticketId: string }) => item.ticketId === runBody.ticketId,
+        )?.bucket;
+      }, { timeout: 30_000 })
+      .not.toMatch(/queued|running/);
+  }
   await row.getByTestId("cron-history").click();
   const history = page.getByRole("dialog", { name: "运行记录" });
   await expect(history).toContainText("成功", { timeout: 20_000 });

@@ -1,7 +1,15 @@
 /** Admin users/invites data hooks (V1-04). */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { invites, roles, users } from "@/lib/api/endpoints";
+import {
+  adminModels,
+  adminSecurity,
+  adminStorage,
+  invites,
+  roles,
+  users,
+} from "@/lib/api/endpoints";
+import type { SecurityRule } from "@/lib/api/wire";
 
 export const adminKeys = {
   users: ["admin-users"] as const,
@@ -148,6 +156,129 @@ export function useDataJobs() {
     queryKey: adminOpsKeys.dataJobs,
     queryFn: adminOps.dataJobs,
     refetchInterval: 5_000,
+  });
+}
+
+export const adminConfigKeys = {
+  providers: ["admin-providers"] as const,
+  storage: ["admin-storage"] as const,
+  backupAuto: ["admin-backup-auto"] as const,
+  security: ["admin-security"] as const,
+};
+
+export function useProviders() {
+  return useQuery({
+    queryKey: adminConfigKeys.providers,
+    queryFn: adminModels.list,
+  });
+}
+
+export function useCreateProvider() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: adminModels.create,
+    onSuccess: () => void client.invalidateQueries({
+      queryKey: adminConfigKeys.providers,
+    }),
+  });
+}
+
+export function useUpdateProvider() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ providerId, ...body }: {
+      providerId: string;
+      name?: string;
+      baseUrl?: string;
+      apiKey?: string;
+      models?: string[];
+    }) => adminModels.update(providerId, body),
+    onSuccess: () => void client.invalidateQueries({
+      queryKey: adminConfigKeys.providers,
+    }),
+  });
+}
+
+export function useDeleteProvider() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: adminModels.remove,
+    onSuccess: () => void client.invalidateQueries({
+      queryKey: adminConfigKeys.providers,
+    }),
+  });
+}
+
+export function useProbeProvider() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: adminModels.probe,
+    onSuccess: () => void client.invalidateQueries({
+      queryKey: adminConfigKeys.providers,
+    }),
+  });
+}
+
+export function useStorageSnapshot() {
+  return useQuery({
+    queryKey: adminConfigKeys.storage,
+    queryFn: adminStorage.get,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useBackupAuto() {
+  return useQuery({
+    queryKey: adminConfigKeys.backupAuto,
+    queryFn: adminStorage.backupAuto,
+  });
+}
+
+export function useUpdateBackupAuto() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: adminStorage.updateBackupAuto,
+    onSuccess: () => void client.invalidateQueries({
+      queryKey: adminConfigKeys.backupAuto,
+    }),
+  });
+}
+
+export function useRunBackupAuto() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: adminStorage.runBackupAuto,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: adminConfigKeys.storage });
+      void client.invalidateQueries({ queryKey: adminOpsKeys.backups });
+    },
+  });
+}
+
+export function useSecuritySnapshot() {
+  return useQuery({
+    queryKey: adminConfigKeys.security,
+    queryFn: adminSecurity.get,
+  });
+}
+
+export function usePublishPolicy() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (rules: SecurityRule[]) => adminSecurity.publish(rules),
+    onSuccess: () => void client.invalidateQueries({
+      queryKey: adminConfigKeys.security,
+    }),
+  });
+}
+
+export function useRollbackPolicy() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (version: number) => adminSecurity.rollback(version),
+    onSuccess: () => void client.invalidateQueries({
+      queryKey: adminConfigKeys.security,
+    }),
   });
 }
 

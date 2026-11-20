@@ -43,7 +43,7 @@ def list_models(
         """
         SELECT m.model_id, m.name, p.name AS provider, p.status
         FROM models m JOIN providers p ON p.provider_id = m.provider_id
-        WHERE m.enabled = 1
+        WHERE m.enabled = 1 AND p.status != 'error'
         ORDER BY p.name, m.name
         """
     ).fetchall()

@@ -306,6 +306,94 @@ export interface UsageSummaryResponse {
   totalCostMicros: number;
 }
 
+export interface ProviderModelRow {
+  modelId: string;
+  name: string;
+  enabled: boolean;
+  caps: Record<string, unknown>;
+}
+
+export interface ProviderRow {
+  providerId: string;
+  name: string;
+  kind: string;
+  baseUrl: string;
+  status: string;
+  configured: boolean;
+  models: ProviderModelRow[];
+  updatedAt: number;
+}
+
+export interface ProviderListResponse {
+  env: {
+    configured: boolean;
+    modelName: string | null;
+    baseUrl: string | null;
+    note: string;
+  };
+  items: ProviderRow[];
+}
+
+export interface StorageSnapshot {
+  db: { path: string; bytes: number };
+  data: { path: string; bytes: number; files: number };
+  workspace: { path: string; bytes: number; files: number };
+  backups: { path: string; bytes: number; files: number };
+  backend: string;
+  remoteBackends: Array<{ kind: string; label: string; status: string }>;
+  note: string;
+}
+
+export interface SecurityRule {
+  rid: string;
+  priority: number;
+  when: Record<string, unknown>;
+  effect: "allow" | "ask" | "deny";
+}
+
+export interface SecurityToolRow {
+  toolKey: string;
+  risk: string;
+  sideEffects: boolean;
+  scopes: string[];
+  enabledGlobal: boolean;
+  requiredScope: string | null;
+}
+
+export interface SecuritySnapshot {
+  policy: {
+    version: number | null;
+    source: string;
+    rules: SecurityRule[];
+    history: Array<{
+      version: number;
+      status: string;
+      createdBy: string | null;
+      createdAt: number;
+      activatedAt: number | null;
+    }>;
+  };
+  tools: SecurityToolRow[];
+  posture: {
+    workspaceDir: string;
+    workspaceJail: boolean;
+    fileWriteApproval: string;
+    auditRetentionDays: number;
+    pluginSignature: string;
+    mfa: string;
+    commandGuard: string;
+    sensitiveInfoScan: string;
+    skillScan: string;
+  };
+}
+
+export interface BackupAutoSettings {
+  autoEnabled: boolean;
+  intervalHours: number;
+  retentionCount: number;
+  includes: Record<string, boolean>;
+}
+
 export interface AdminUserRow {
   id: string;
   userId: string;

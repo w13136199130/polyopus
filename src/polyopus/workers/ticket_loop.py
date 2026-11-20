@@ -90,9 +90,16 @@ def process_next(
         except Exception as exc:  # noqa: BLE001 - park visibly, never spin
             tlog.log(logger, 30, "ticket.parked", ticket_id=ticket_id,
                      error=str(exc))
+            state = conn.execute(
+                "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,)
+            ).fetchone()
+            if state is None or str(state[0]) != "open":
+                # stopped while we were claiming it: nothing to park
+                return None
             conn.execute(
                 "UPDATE tickets SET bucket = 'attention', updated_at = ? "
-                "WHERE ticket_id = ? AND bucket IN ('queued', 'running')",
+                "WHERE ticket_id = ? AND state = 'open' "
+                "AND bucket IN ('queued', 'running')",
                 (int(time.time()), ticket_id),
             )
             conn.commit()

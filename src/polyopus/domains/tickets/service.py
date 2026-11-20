@@ -348,28 +348,47 @@ def assign(conn: sqlite3.Connection, store: EventStore, ticket_id: str) -> str:
     """
     ticket = _ticket(conn, ticket_id)
     tenant = str(ticket["tenant_id"] or TENANT)
+    if str(ticket["state"]) != "open":
+        # stop() may win the race after the loop claimed the ticket; never
+        # move an ended ticket back to running.
+        raise AppError("CONFLICT", details={
+            "reason": "ticket_ended", "ticketId": ticket_id,
+        })
     thread_id = thread_of_ticket(conn, ticket_id)
     assignment_id = "as_" + secrets.token_hex(8)
     now = _now()
-    attempt = int(
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        claimed = conn.execute(
+            "UPDATE tickets SET bucket = 'running', updated_at = ? "
+            "WHERE ticket_id = ? AND state = 'open'",
+            (now, ticket_id),
+        )
+        if claimed.rowcount != 1:
+            conn.execute("ROLLBACK")
+            raise AppError("CONFLICT", details={
+                "reason": "ticket_ended", "ticketId": ticket_id,
+            })
+        attempt = int(
+            conn.execute(
+                "SELECT COALESCE(MAX(attempt), 0) + 1 FROM assignments "
+                "WHERE ticket_id = ?", (ticket_id,),
+            ).fetchone()[0]
+        )
         conn.execute(
-            "SELECT COALESCE(MAX(attempt), 0) + 1 FROM assignments WHERE ticket_id = ?",
-            (ticket_id,),
-        ).fetchone()[0]
-    )
-    conn.execute(
-        """
-        INSERT INTO assignments
-          (tenant_id, assignment_id, ticket_id, executor, state, attempt, started_at)
-        VALUES (?, ?, ?, ?, 'pending', ?, ?)
-        """,
-        (tenant, assignment_id, ticket_id, EXECUTOR, attempt, now),
-    )
-    conn.execute(
-        "UPDATE tickets SET bucket = 'running', updated_at = ? WHERE ticket_id = ?",
-        (now, ticket_id),
-    )
-    conn.commit()
+            """
+            INSERT INTO assignments
+              (tenant_id, assignment_id, ticket_id, executor, state, attempt,
+               started_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (tenant, assignment_id, ticket_id, EXECUTOR, attempt, now),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
     store.append(
         thread_id,
         "assignment.started",

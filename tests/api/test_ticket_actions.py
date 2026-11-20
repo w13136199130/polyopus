@@ -119,3 +119,24 @@ def test_reassign_refuses_while_attention_pending(client: TestClient, tmp_path: 
     response = client.post(f"/api/v1/tickets/{ticket_id}/reassign")
     assert response.status_code == 409
     assert response.json()["error"]["details"]["reason"] == "pending_attention"
+
+
+def test_assign_refuses_ticket_ended_by_stop(client: TestClient, tmp_path: Path) -> None:
+    """Stop and the ticket worker can race; assign must never revive an ended
+    ticket into bucket=running."""
+    from polyopus.domains.tickets import service as tickets
+    from polyopus.platform.errors import AppError
+    from polyopus.platform.events.store import EventStore
+
+    ticket_id = _ticket(client)
+    client.post(f"/api/v1/tickets/{ticket_id}/stop")
+    conn = m.connect(tmp_path / "tasks.db")
+    try:
+        with pytest.raises(AppError):
+            tickets.assign(conn, EventStore(conn), ticket_id)
+        row = conn.execute(
+            "SELECT bucket, state FROM tickets WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert tuple(row) == ("done", "ended")

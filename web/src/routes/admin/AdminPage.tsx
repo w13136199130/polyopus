@@ -8,6 +8,9 @@ import { useState } from "react";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
+import { AdminModelsTab } from "./AdminModelsTab";
+import { AdminSecurityTab } from "./AdminSecurityTab";
+import { AdminStorageTab } from "./AdminStorageTab";
 import { AdminUsersPage } from "./AdminUsersPage";
 import {
   useAudit,
@@ -23,7 +26,7 @@ import {
 import type { BackupRow } from "@/lib/api/wire";
 import styles from "./AdminPage.module.css";
 
-type Tab = "users" | "quotas" | "audit" | "backup" | "jobs";
+type Tab = "users" | "quotas" | "models" | "storage" | "security" | "audit" | "backup" | "jobs";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
@@ -522,6 +525,9 @@ export function AdminPage() {
   const tabs: Array<[Tab, string, boolean]> = [
     ["users", "用户", true],
     ["quotas", "配额", canUsage],
+    ["models", "模型", canAdmin],
+    ["storage", "存储", canAdmin],
+    ["security", "安全", canAdmin],
     ["audit", "审计", canAudit],
     ["backup", "备份", canAdmin],
     ["jobs", "数据任务", canAdmin],
@@ -529,7 +535,7 @@ export function AdminPage() {
   const visible = tabs.filter(([, , allowed]) => allowed);
 
   return (
-    <PageShell title="管理" subtitle="用户、配额、审计、备份与数据任务；敏感操作均有确认。">
+    <PageShell title="管理" subtitle="用户、配额、模型、存储、安全、审计与备份；敏感操作均有确认。">
       <div className={styles.tabs} role="tablist" aria-label="管理视图">
         {visible.map(([key, label]) => (
           <button
@@ -552,6 +558,19 @@ export function AdminPage() {
         {tab === "users" ? <AdminUsersPage embedded onNotice={setNotice} /> : null}
         {tab === "quotas" ? (
           <QuotasTab onNotice={setNotice} onError={setError} />
+        ) : null}
+        {tab === "models" ? (
+          <AdminModelsTab onNotice={setNotice} onError={setError} />
+        ) : null}
+        {tab === "storage" ? (
+          <AdminStorageTab
+            onNotice={setNotice}
+            onError={setError}
+            onOpenBackups={() => setTab("backup")}
+          />
+        ) : null}
+        {tab === "security" ? (
+          <AdminSecurityTab onNotice={setNotice} onError={setError} />
         ) : null}
         {tab === "audit" ? (
           <AuditTab onNotice={setNotice} onError={setError} />
