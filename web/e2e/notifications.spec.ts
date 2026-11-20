@@ -10,8 +10,9 @@ async function login(page: import("@playwright/test").Page) {
   await page.waitForURL("**/chat");
 }
 
-/** V1-10: approval creates a notification; bell badge and read-all work. */
-test("notifications: unread badge and read-all", async ({ page }) => {
+/** V1-10: approval creates a notification; bell badge, page list and
+ * single/all read flows work. */
+test("notifications: unread badge, page list, mark read", async ({ page }) => {
   await login(page);
   await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
@@ -26,8 +27,20 @@ test("notifications: unread badge and read-all", async ({ page }) => {
   });
   await page.getByTestId("notification-bell").click();
   await expect(page.getByTestId("notification-item").first()).toBeVisible();
-  await page.getByTestId("notification-read-all").click();
-  await expect(page.getByTestId("notification-badge")).toHaveCount(0, {
+  await page.getByTestId("notification-open-page").click();
+  await page.waitForURL("**/notifications");
+  await expect(page.getByRole("heading", { name: "通知", level: 1 })).toBeVisible();
+  await expect(page.getByTestId("notification-perm")).toBeVisible();
+
+  const item = page.getByTestId("notification-page-item").first();
+  await expect(item).toBeVisible();
+  await item.getByTestId("notification-mark-read").click();
+  await expect(page.getByTestId("notification-mark-read")).toHaveCount(0, {
     timeout: 15_000,
   });
+
+  await page.getByTestId("notifications-unread-filter").click();
+  await expect(page.getByText("没有未读通知")).toBeVisible();
+  await page.getByRole("button", { name: "查看全部通知" }).click();
+  await expect(page.getByTestId("notification-page-item").first()).toBeVisible();
 });

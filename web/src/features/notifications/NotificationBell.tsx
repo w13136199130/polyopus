@@ -76,6 +76,17 @@ export function NotificationBell() {
               <span>{timeOf(row)}</span>
             </button>
           ))}
+          <button
+            type="button"
+            className={styles.allLink}
+            data-testid="notification-open-page"
+            onClick={() => {
+              setOpen(false);
+              navigate("/notifications");
+            }}
+          >
+            查看全部通知
+          </button>
         </div>
       ) : null}
     </div>

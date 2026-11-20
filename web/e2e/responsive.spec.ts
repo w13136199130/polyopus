@@ -10,6 +10,7 @@ const PASSWORD = "chat-e2e";
 const PAGES: Array<[string, string]> = [
   ["/tasks", "任务"],
   ["/automation", "自动化"],
+  ["/notifications", "通知"],
   ["/agents", "专家"],
   ["/knowledge", "知识"],
   ["/extensions", "扩展"],

@@ -10,6 +10,7 @@ import { AdminPage } from "@/routes/admin/AdminPage";
 import { ConnectionsPage } from "@/routes/connections/ConnectionsPage";
 import { ExtensionsPage } from "@/routes/extensions/ExtensionsPage";
 import { KnowledgePage } from "@/routes/knowledge/KnowledgePage";
+import { NotificationsPage } from "@/routes/notifications/NotificationsPage";
 import { SettingsPage } from "@/routes/settings/SettingsPage";
 import { KitPage } from "@/routes/kit/KitPage";
 import { TasksPage } from "@/routes/tasks/TasksPage";
@@ -45,6 +46,7 @@ export const appRoutes: RouteObject[] = [
       { path: "extensions", element: <RequirePermission permission="extension:read"><ExtensionsPage /></RequirePermission> },
       { path: "workbench", element: <ComingSoonPage title="工作台" milestone="v1.1" /> },
       { path: "settings", element: <RequirePermission permission="settings:read"><SettingsPage /></RequirePermission> },
+      { path: "notifications", element: <NotificationsPage /> },
       { path: "admin", element: <RequirePermission permission="user:read"><AdminPage /></RequirePermission> },
       { path: "*", element: <NotFoundPage /> },
     ],

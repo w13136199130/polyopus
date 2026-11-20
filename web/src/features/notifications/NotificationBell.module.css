@@ -80,3 +80,17 @@
 .item span { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); }
 .unread { background: rgba(74, 125, 255, .08); }
 .empty { padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; }
+
+.allLink {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.allLink:hover { border-color: var(--primary-border); color: var(--primary); }
