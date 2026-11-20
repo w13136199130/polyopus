@@ -22,6 +22,7 @@ import type {
   ConnectorInstanceRow,
   CronJobListResponse,
   CronJobView,
+  CronRunRow,
   LoginRequest,
   LoginResponse,
   MessageListResponse,
@@ -266,6 +267,23 @@ export const cronJobs = {
       method: "POST",
       body: JSON.stringify(body),
     })),
+  update: op(
+    "PATCH",
+    "/cron-jobs/{job_id}",
+    (
+      jobId: string,
+      body: {
+        enabled?: boolean;
+        name?: string;
+        schedule?: string;
+        timezone?: string;
+        text?: string;
+      },
+    ) => apiFetch<CronJobView>(`/cron-jobs/${encodeURIComponent(jobId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  ),
   setEnabled: op(
     "PATCH",
     "/cron-jobs/{job_id}",
@@ -275,6 +293,18 @@ export const cronJobs = {
         body: JSON.stringify({ enabled }),
       }),
   ),
+  run: op("POST", "/cron-jobs/{job_id}/run", (jobId: string) =>
+    apiFetch<{
+      runId: string;
+      status: string;
+      triggerId: string | null;
+      ticketId: string | null;
+      error: string | null;
+    }>(`/cron-jobs/${encodeURIComponent(jobId)}/run`, { method: "POST" })),
+  runs: op("GET", "/cron-jobs/{job_id}/runs", (jobId: string) =>
+    apiFetch<{ items: CronRunRow[] }>(
+      `/cron-jobs/${encodeURIComponent(jobId)}/runs`,
+    )),
   remove: op("DELETE", "/cron-jobs/{job_id}", (jobId: string) =>
     apiFetch<{ cronJobId: string; deleted: boolean }>(
       `/cron-jobs/${encodeURIComponent(jobId)}`,

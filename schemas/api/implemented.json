@@ -1,5 +1,5 @@
 {
-  "count": 126,
+  "count": 127,
   "ops": [
     {
       "method": "DELETE",
@@ -376,6 +376,10 @@
     {
       "method": "POST",
       "path": "/api/v1/cron-jobs"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cron-jobs/{job_id}/run"
     },
     {
       "method": "POST",

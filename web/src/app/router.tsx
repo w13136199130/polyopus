@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router";
 import { AppShell } from "@/layouts/AppShell";
 import { AgentsPage } from "@/routes/agents/AgentsPage";
+import { AutomationPage } from "@/routes/automation/AutomationPage";
 import { LoginPage } from "@/routes/auth/LoginPage";
 import { ComingSoonPage } from "@/routes/ComingSoonPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
@@ -36,6 +37,7 @@ export const appRoutes: RouteObject[] = [
       { index: true, element: <Navigate to="/chat" replace /> },
       { path: "chat", element: <RequirePermission permission="chat:read"><ChatPage /></RequirePermission> },
       { path: "tasks", element: <RequirePermission permission="ticket:read"><TasksPage /></RequirePermission> },
+      { path: "automation", element: <RequirePermission permission="cron:read"><AutomationPage /></RequirePermission> },
       { path: "usage", element: <RequirePermission permission="usage:read"><UsagePage /></RequirePermission> },
       { path: "agents", element: <RequirePermission permission="agent:read"><AgentsPage /></RequirePermission> },
       { path: "knowledge", element: <RequirePermission permission="knowledge:read"><KnowledgePage /></RequirePermission> },

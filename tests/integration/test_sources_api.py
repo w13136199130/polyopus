@@ -79,3 +79,41 @@ def test_cron_job_create_toggle_runs_delete(client: TestClient) -> None:
     assert client.delete(f"/api/v1/cron-jobs/{job['cronJobId']}").json()["deleted"] is True
     assert all(row["cronJobId"] != job["cronJobId"]
                for row in client.get("/api/v1/cron-jobs").json()["items"])
+
+
+def test_cron_job_edit_and_run_now(client: TestClient) -> None:
+    created = client.post("/api/v1/cron-jobs", json={
+        "name": f"edit-{time.time_ns()}",
+        "schedule": "interval:3600",
+        "timezone": "UTC",
+        "text": "/polyopus 原指令",
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["cronJobId"]
+
+    updated = client.patch(f"/api/v1/cron-jobs/{job_id}", json={
+        "name": "改过的任务",
+        "schedule": "cron:0 9 * * *",
+        "timezone": "Asia/Shanghai",
+        "text": "/polyopus 新指令",
+    })
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["name"] == "改过的任务"
+    assert body["schedule"] == "cron:0 9 * * *"
+    assert body["timezone"] == "Asia/Shanghai"
+    assert body["text"] == "/polyopus 新指令"
+    assert body["nextRunAt"] is not None
+
+    bad = client.patch(
+        f"/api/v1/cron-jobs/{job_id}", json={"schedule": "cron:not a cron"}
+    )
+    assert bad.status_code in (400, 422)
+
+    run = client.post(f"/api/v1/cron-jobs/{job_id}/run")
+    assert run.status_code == 200, run.text
+    assert run.json()["status"] == "succeeded"
+    runs = client.get(f"/api/v1/cron-jobs/{job_id}/runs").json()["items"]
+    assert any(item["runId"] == run.json()["runId"] for item in runs)
+    refreshed = client.get(f"/api/v1/cron-jobs/{job_id}").json()
+    assert refreshed["lastRunAt"] is not None

@@ -308,6 +308,126 @@ def delete_job(
     conn.commit()
 
 
+def update_job(
+    conn: sqlite3.Connection,
+    cron_job_id: str,
+    *,
+    name: str | None = None,
+    schedule: str | None = None,
+    timezone: str | None = None,
+    text: str | None = None,
+    tenant_id: str = TENANT,
+) -> dict[str, Any]:
+    """Edit a job in place. Re-arms `next_run_at` when the timing changes so
+    the scheduler never fires against a stale expression."""
+    row = conn.execute(
+        "SELECT * FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
+        (tenant_id, cron_job_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("NOT_FOUND")
+    new_schedule = str(row["schedule"]) if schedule is None else schedule
+    new_tz = str(row["timezone"]) if timezone is None else timezone
+    spec = parse_schedule(new_schedule)
+    tz = timezone_of(new_tz)
+    payload = json.loads(row["payload_json"] or "{}")
+    if text is not None:
+        payload["text"] = text
+    next_run = row["next_run_at"]
+    if schedule is not None or timezone is not None:
+        next_run = next_after(spec, tz, int(time.time())) if row["enabled"] else None
+    conn.execute(
+        "UPDATE cron_jobs SET name = ?, schedule = ?, timezone = ?,"
+        " payload_json = ?, next_run_at = ? WHERE cron_job_id = ?",
+        (
+            (name or str(row["name"])).strip() or str(row["name"]),
+            new_schedule, new_tz, json.dumps(payload, ensure_ascii=False),
+            next_run, cron_job_id,
+        ),
+    )
+    source_id = payload.get("source_id")
+    if source_id:
+        config = {"secret": "", "allow_actors": [SCHEDULER_ACTOR],
+                  "explicit_patterns": [], "timezone": new_tz}
+        conn.execute(
+            "UPDATE sources SET name = ?, config_json = ?, updated_at = ? "
+            "WHERE tenant_id = ? AND source_id = ?",
+            ((name or str(row["name"])).strip() or str(row["name"]),
+             json.dumps(config), int(time.time()), tenant_id, str(source_id)),
+        )
+    conn.commit()
+    view = job(conn, cron_job_id, tenant_id)
+    assert view is not None
+    return view
+
+
+def run_now(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    cron_job_id: str,
+    *,
+    tenant_id: str = TENANT,
+) -> dict[str, Any]:
+    """Manual "立即执行": same intake path as a scheduled fire, but with a
+    unique external id so it never collides with the scheduled run, and
+    without moving `next_run_at`."""
+    row = conn.execute(
+        "SELECT * FROM cron_jobs WHERE tenant_id = ? AND cron_job_id = ?",
+        (tenant_id, cron_job_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("NOT_FOUND")
+    payload = json.loads(row["payload_json"] or "{}")
+    source = conn.execute(
+        "SELECT * FROM sources WHERE tenant_id = ? AND source_id = ?",
+        (tenant_id, str(payload.get("source_id", ""))),
+    ).fetchone()
+    if source is None:
+        raise AppError("SOURCE_NOT_FOUND")
+    now = int(time.time())
+    run_id = "cr_" + secrets.token_hex(8)
+    conn.execute(
+        "INSERT INTO cron_runs (run_id, tenant_id, cron_job_id, status,"
+        " scheduled_at, started_at) VALUES (?, ?, ?, 'running', ?, ?)",
+        (run_id, tenant_id, cron_job_id, now, now),
+    )
+    conn.commit()
+    trigger_id = ""
+    ticket_id: str | None = None
+    error = ""
+    try:
+        body = {
+            "kind": "schedule.manual",
+            "external_id": f"manual:{cron_job_id}:{run_id}",
+            "thread_key": f"schedule:{cron_job_id}:manual:{run_id}",
+            "actor": {"id": SCHEDULER_ACTOR, "kind": "user"},
+            "text": str(payload.get("text", "")) or f"[定时任务] {row['name']}",
+        }
+        trigger_id, _, duplicate = intake.receive(conn, store, source, body, None)
+        if not duplicate:
+            ticket_id = intake.process(conn, store, source, trigger_id)
+    except Exception as exc:  # noqa: BLE001 - report the failure to the caller
+        error = str(exc)
+    status = "failed" if error else "succeeded"
+    conn.execute(
+        "UPDATE cron_runs SET status = ?, ended_at = ?, trigger_id = ?,"
+        " error = ? WHERE run_id = ?",
+        (status, int(time.time()), trigger_id, error or None, run_id),
+    )
+    conn.execute(
+        "UPDATE cron_jobs SET last_run_at = ? WHERE cron_job_id = ?",
+        (now, cron_job_id),
+    )
+    conn.commit()
+    return {
+        "runId": run_id,
+        "status": status,
+        "triggerId": trigger_id or None,
+        "ticketId": ticket_id,
+        "error": error or None,
+    }
+
+
 def runs(
     conn: sqlite3.Connection, cron_job_id: str, tenant_id: str = TENANT
 ) -> list[dict[str, Any]]:

@@ -182,6 +182,16 @@ export interface CronJobView {
   createdAt: number;
 }
 
+export interface CronRunRow {
+  runId: string;
+  status: string;
+  scheduledAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  error: string | null;
+  triggerId: string | null;
+}
+
 export interface SourceView {
   sourceId: string;
   kind: string;

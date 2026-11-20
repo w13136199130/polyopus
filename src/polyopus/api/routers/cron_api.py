@@ -11,10 +11,11 @@ from sqlite3 import Connection
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from polyopus.api.deps import get_db, require_permission
+from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.identity.service import User
 from polyopus.domains.intake import schedule as schedule_svc
 from polyopus.platform.errors import AppError
+from polyopus.platform.events.store import EventStore
 
 router = APIRouter(tags=["cron"])
 
@@ -30,6 +31,10 @@ class CreateCronBody(BaseModel):
 
 class PatchCronBody(BaseModel):
     enabled: bool | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    schedule: str | None = Field(default=None, min_length=1, max_length=100)
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    text: str | None = Field(default=None, max_length=500)
 
 
 @router.get("/cron-jobs")
@@ -91,10 +96,35 @@ def patch_cron_job(
     view = schedule_svc.job(conn, job_id, user.tenant_id)
     if view is None:
         raise AppError("NOT_FOUND", details={"cronJobId": job_id})
-    if body.enabled is None:
-        return view
-    return schedule_svc.set_enabled(
-        conn, job_id, body.enabled, tenant_id=user.tenant_id
+    if (
+        body.name is None and body.schedule is None and body.timezone is None
+        and body.text is None
+    ):
+        if body.enabled is None:
+            return view
+        return schedule_svc.set_enabled(
+            conn, job_id, body.enabled, tenant_id=user.tenant_id
+        )
+    updated = schedule_svc.update_job(
+        conn, job_id, name=body.name, schedule=body.schedule,
+        timezone=body.timezone, text=body.text, tenant_id=user.tenant_id,
+    )
+    if body.enabled is not None:
+        updated = schedule_svc.set_enabled(
+            conn, job_id, body.enabled, tenant_id=user.tenant_id
+        )
+    return updated
+
+
+@router.post("/cron-jobs/{job_id}/run")
+def run_cron_job(
+    job_id: str,
+    user: User = Depends(require_permission("cron:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    return schedule_svc.run_now(
+        conn, store, job_id, tenant_id=user.tenant_id
     )
 
 

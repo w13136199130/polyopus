@@ -206,7 +206,7 @@ export function TasksPage() {
             </p>
           </div>
           <div className={styles.actions}>
-            <Link to="/connections" className={styles.linkBtn}>
+            <Link to="/automation" className={styles.linkBtn}>
               ◷ 自动化
             </Link>
             <Button
