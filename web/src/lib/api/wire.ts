@@ -106,12 +106,20 @@ export interface ThreadListResponse {
   items: Thread[];
 }
 
+export interface MessageBlock {
+  type: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
 export interface Message {
   messageId: string;
   threadId: string;
   turnId: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  /** Structured blocks (text + reasoning); older rows only have content. */
+  blocks?: MessageBlock[];
   status: string;
   seq: number;
   createdAt: number;

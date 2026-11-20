@@ -65,17 +65,23 @@ export function connectEvents(options: ConnectEventsOptions): EventsConnection {
   });
 
   const state = (s: TransportState) => onState?.(s);
-  const stop = (s: TransportState) => {
+  /**
+   * `notify=false` marks an intentional shutdown (transport.connect closing
+   * the previous stream, unmount, caller abort). Emitting "closed" there
+   * makes the reconnect hook start a second stream while the new one is
+   * being created — the same deltas then arrive twice.
+   */
+  const stop = (s: TransportState, notify = true) => {
     if (closed) return;
     closed = true;
     controller?.abort();
-    state(s);
+    if (notify) state(s);
     settle(s);
   };
 
   signal.addEventListener(
     "abort",
-    () => stop("closed"),
+    () => stop("closed", false),
     { once: true },
   );
 
@@ -187,7 +193,7 @@ export function connectEvents(options: ConnectEventsOptions): EventsConnection {
     void attempt(0).catch(() => stop("error"));
 
   return {
-    close: () => stop("closed"),
+    close: () => stop("closed", false),
     lastSeq: () => lastSeq,
     done,
   };

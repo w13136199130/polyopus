@@ -609,19 +609,29 @@ def list_messages(
     conn: sqlite3.Connection, *, thread_id: str, limit: int = 100
 ) -> list[dict[str, object]]:
     rows = conn.execute(
-        "SELECT message_id, turn_id, role, content, status, seq, created_at FROM messages "
+        "SELECT message_id, turn_id, role, content, content_json, status, seq,"
+        " created_at FROM messages "
         "WHERE thread_id = ? AND deleted_at IS NULL ORDER BY seq LIMIT ?",
         (thread_id, limit),
     ).fetchall()
-    return [
-        {
-            "messageId": r["message_id"],
-            "turnId": r["turn_id"],
-            "role": r["role"],
-            "content": r["content"],
-            "status": r["status"],
-            "seq": r["seq"],
-            "createdAt": r["created_at"],
-        }
-        for r in rows
-    ]
+    out: list[dict[str, object]] = []
+    for row in rows:
+        blocks: list[object] = []
+        if row["content_json"]:
+            try:
+                parsed = json.loads(str(row["content_json"]))
+            except ValueError:
+                parsed = []
+            if isinstance(parsed, list):
+                blocks = parsed
+        out.append({
+            "messageId": row["message_id"],
+            "turnId": row["turn_id"],
+            "role": row["role"],
+            "content": row["content"],
+            "blocks": blocks,
+            "status": row["status"],
+            "seq": row["seq"],
+            "createdAt": row["created_at"],
+        })
+    return out

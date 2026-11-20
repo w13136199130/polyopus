@@ -21,6 +21,8 @@ export interface ChatStreamSnapshot {
   status: TurnStatus;
   /** Assistant text accumulated for the active turn (may be ""). */
   text: string;
+  /** Thinking-model reasoning, rendered separately and collapsed at rest. */
+  reasoning: string;
   /** Server user-message id; the inflight cache merges on this. */
   userMessageId: string | null;
   /** Connection health, surfaced by StreamConnectingIndicator. */
@@ -38,6 +40,7 @@ export class ChatStreamStore {
     turnId: null,
     status: "idle",
     text: "",
+    reasoning: "",
     userMessageId: null,
     connection: "closed",
     pendingUser: null,
@@ -95,6 +98,7 @@ export class ChatStreamStore {
       turnId: null,
       status: "optimistic",
       text: "",
+      reasoning: "",
       userMessageId: null,
       pendingUser: { id: pendingId, content },
       lastEventSeq: 0,
@@ -124,6 +128,7 @@ export class ChatStreamStore {
       turnId: input.turnId,
       userMessageId: input.userMessageId || null,
       text: input.text,
+      reasoning: "",
       lastEventSeq: input.seq,
       status: input.status,
       pendingUser: null,
@@ -135,7 +140,7 @@ export class ChatStreamStore {
   rollback(): string | null {
     const content = this.snapshot.pendingUser?.content ?? null;
     this.commit({
-      turnId: null, status: "idle", text: "", userMessageId: null,
+      turnId: null, status: "idle", text: "", reasoning: "", userMessageId: null,
       pendingUser: null,
     });
     return content;
@@ -162,6 +167,11 @@ export class ChatStreamStore {
         if (text) this.commitText(this.snapshot.text + text);
         break;
       }
+      case "message.reasoning": {
+        const text = String((frame.payload as { text?: string })?.text ?? "");
+        if (text) this.commit({ reasoning: this.snapshot.reasoning + text });
+        break;
+      }
       case "message.completed": {
         // blocks are authoritative: overwrite the accumulated deltas
         const blocks = (frame.payload as { blocks?: Array<{ type?: string; text?: string }> })
@@ -170,6 +180,11 @@ export class ChatStreamStore {
           .filter((block) => block.type === "text")
           .map((block) => block.text ?? "")
           .join("\n");
+        const reasoning = (blocks ?? [])
+          .filter((block) => block.type === "reasoning")
+          .map((block) => block.text ?? "")
+          .join("");
+        this.commit({ reasoning });
         this.commitText(text);
         break;
       }
@@ -182,7 +197,7 @@ export class ChatStreamStore {
         break;
       case "turn.finished":
         this.flush();
-        this.commit({ status: "finished", text: "" });
+        this.commit({ status: "finished", text: "", reasoning: "" });
         break;
       default:
         break;
@@ -204,6 +219,7 @@ export class ChatStreamStore {
       turnId,
       status: "streaming",
       text: "",
+      reasoning: "",
       userMessageId: null,
       pendingUser: null,
     });
@@ -213,7 +229,7 @@ export class ChatStreamStore {
   resetToIdle(): void {
     this.flush();
     this.commit({
-      turnId: null, status: "idle", text: "", userMessageId: null,
+      turnId: null, status: "idle", text: "", reasoning: "", userMessageId: null,
       pendingUser: null,
     });
   }

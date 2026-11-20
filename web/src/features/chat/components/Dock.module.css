@@ -156,44 +156,135 @@
   font-size: 11.5px;
 }
 
-/* timeline (轨迹) */
-.timeline { display: flex; flex-direction: column; }
-
-.tl {
+/* trace (轨迹): filterable, expandable event records */
+.traceTools {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
-  padding: 6px 8px 6px 10px;
-  border-left: 2px solid var(--line);
-  margin-left: 5px;
-  font-size: 11.5px;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 2px 2px 8px;
 }
 
-.tl.info { border-color: var(--primary); }
-.tl.ok { border-color: var(--green); }
-.tl.warn { border-color: var(--amber); }
-.tl.bad { border-color: var(--red); }
+.traceChip {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 10.5px;
+  cursor: pointer;
+}
 
-.time { flex: none; color: var(--text-4); font-size: 10px; font-variant-numeric: tabular-nums; }
+.traceChip:hover { border-color: var(--primary-border); color: var(--primary); }
 
-.kind {
+.traceChipOn {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.traceList { display: flex; flex-direction: column; gap: 4px; }
+
+.traceRow {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.traceHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.traceHead::-webkit-details-marker { display: none; }
+
+.traceBadge {
   flex: none;
-  max-width: 90px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.traceBadge.info { background: var(--primary-soft); color: var(--primary); }
+.traceBadge.ok { background: var(--green-soft); color: var(--green); }
+.traceBadge.warn { background: var(--amber-soft); color: var(--amber); }
+.traceBadge.bad { background: var(--red-soft); color: var(--red); }
+.traceBadge.neutral { background: var(--surface-3); color: var(--text-3); }
+
+.traceType {
+  flex: none;
+  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 9.5px;
+  color: var(--text-4);
 }
 
-.txt {
+.traceSummary {
   flex: 1;
   min-width: 0;
-  color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-2);
+}
+
+.traceDetail {
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  padding: 8px 10px 10px;
+}
+
+.traceMeta {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 3px 8px;
+  margin: 0 0 8px;
+  font-size: 10px;
+}
+
+.traceMeta dt { color: var(--text-4); }
+.traceMeta dd {
+  margin: 0;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tracePayloadHead {
+  margin-bottom: 4px;
+  color: var(--text-4);
+  font-size: 10px;
+}
+
+.tracePayload {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* terminal (终端) */

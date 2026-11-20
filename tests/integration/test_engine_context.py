@@ -34,6 +34,16 @@ class Recorder:
         yield gt.FinishDelta(reason="stop")
 
 
+class ThinkingRecorder(Recorder):
+    """Adds a reasoning phase before the answer (DeepSeek-style)."""
+
+    async def stream(self, req: gt.ModelRequest) -> AsyncIterator[gt.ModelDelta]:
+        self.requests.append(req)
+        yield gt.ReasoningDelta(text="先确认问题指向，再给出结论。")
+        yield gt.TextDelta(text="最终答案")
+        yield gt.FinishDelta(reason="stop")
+
+
 def _env(tmp_path: Path):
     conn = m.connect(tmp_path / "engine.db")
     m.apply(conn, m.discover(MIGRATIONS))
@@ -131,4 +141,34 @@ def test_plain_thread_has_no_expert_prefix(tmp_path: Path) -> None:
     messages = recorder.requests[0].messages
     assert messages[0].role == "user"
     assert messages[0].content == "你好"
+    conn.close()
+
+
+def test_reasoning_is_persisted_separately_from_text(tmp_path: Path) -> None:
+    conn = _env(tmp_path)
+    thread = conversations.create_thread(
+        conn, tenant_id="default", owner_id="u", title="思考"
+    )
+    turn_id, _ = conversations.post_turn(
+        conn, EventStore(conn), tenant_id="default", owner_id="u",
+        thread_id=thread.thread_id, content="解释一下",
+    )
+    asyncio.run(
+        engine.run_turn(
+            conn, EventStore(conn), turn_id, owner="test",
+            model=ThinkingRecorder(),
+        )
+    )
+    message = conversations.list_messages(
+        conn, thread_id=thread.thread_id
+    )[-1]
+    assert message["content"] == "最终答案"
+    blocks = message["blocks"]
+    assert isinstance(blocks, list)
+    assert any(
+        block.get("type") == "reasoning" and "先确认问题" in str(block.get("text"))
+        for block in blocks
+    )
+    trace = conversations.list_trace(conn, thread_id=thread.thread_id)
+    assert any(item["type"] == "message.reasoning" for item in trace)
     conn.close()

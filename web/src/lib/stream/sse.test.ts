@@ -135,16 +135,21 @@ describe("connectEvents", () => {
     expect(states.filter((s) => s === "reconnecting")).toHaveLength(2);
   });
 
-  it("close() settles immediately as closed", async () => {
+  it("close() settles immediately and does not emit a reconnectable closed state", async () => {
+    const states: string[] = [];
     const connection = connectEvents({
       threadId: "t1",
       afterSeq: 0,
       signal: new AbortController().signal,
       fetchImpl: vi.fn(() => Promise.resolve(sseResponse([], { keepOpen: true }))),
       onEvent: () => undefined,
+      onState: (s) => states.push(s),
     });
     connection.close();
     await expect(connection.done).resolves.toBe("closed");
+    // an intentional close must not trigger the caller's "reconnect while
+    // active" hook; otherwise two streams duplicate every delta
+    expect(states).not.toContain("closed");
   });
 
   it("ignores unknown event types and malformed frames", async () => {

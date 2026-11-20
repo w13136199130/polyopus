@@ -39,6 +39,7 @@ interface Bubble {
   streaming?: boolean;
   turnId?: string | null;
   createdAt?: number;
+  reasoning?: string;
 }
 
 function buildBubbles(
@@ -62,6 +63,10 @@ function buildBubbles(
       content: message.content,
       turnId: message.turnId,
       createdAt: message.createdAt,
+      reasoning: message.blocks
+        ?.filter((block) => block.type === "reasoning")
+        .map((block) => block.text ?? "")
+        .join(""),
     }))
     // a paused first round can leave an empty assistant projection; the
     // final row carries the text, so hide the placeholder instead of showing
@@ -87,6 +92,7 @@ function buildBubbles(
       content: merged.liveText,
       streaming: true,
       turnId: snapshot.turnId,
+      reasoning: snapshot.reasoning,
     });
   } else if (
     snapshot.status === "waiting_approval" &&
@@ -227,6 +233,19 @@ function Citations({ trace }: { trace: TurnTrace }) {
   );
 }
 
+function Thinking({ text, streaming }: { text?: string; streaming?: boolean }) {
+  if (!text?.trim()) return null;
+  return (
+    <details className={styles.thinking} open={streaming || undefined}>
+      <summary>
+        <span className={styles.thinkingDot} aria-hidden="true" />
+        {streaming ? "思考中…" : "思考过程"}
+      </summary>
+      <pre className={styles.thinkingBody}>{text}</pre>
+    </details>
+  );
+}
+
 const UserRow = memo(function UserRow({
   bubble, onNotice, onEditMessage, turnActive, latestTurnId,
 }: {
@@ -347,6 +366,7 @@ const AssistantRow = memo(function AssistantRow({
           <span className={styles.name}>{agentName || "助手"}</span>
           <span className={styles.time}>{clock(bubble.createdAt)}</span>
         </div>
+        <Thinking text={bubble.reasoning} streaming={bubble.streaming} />
         <Steps trace={trace} />
         <div className={`${styles.assistantText} ${bubble.streaming ? styles.streaming : ""}`}>
           {bubble.content}

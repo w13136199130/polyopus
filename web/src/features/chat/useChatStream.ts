@@ -166,6 +166,9 @@ export function useChatStream(
         signal: new AbortController().signal,
       });
       store.ack(result.turnId, result.messageId);
+      // pendingUser is cleared on ack; refetch the projection now so the
+      // sent bubble does not vanish while the model is still streaming.
+      void client.invalidateQueries({ queryKey: chatKeys.messages(threadId) });
       return true;
     } catch {
       if (ackTimer.current) clearTimeout(ackTimer.current);

@@ -108,6 +108,51 @@
 
 @keyframes blink { 50% { opacity: 0; } }
 
+/* thinking (reasoning) block */
+.thinking {
+  max-width: 700px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.thinking summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  color: var(--text-3);
+  font-size: 11px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.thinking summary::-webkit-details-marker { display: none; }
+
+.thinkingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+.thinkingBody {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px dashed var(--line);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+
 /* process steps */
 .process {
   display: flex;

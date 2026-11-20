@@ -32,6 +32,8 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
   const assistant = page.getByTestId("bubble-assistant");
   await expect(assistant.first()).toContainText("echo[", { timeout: 20_000 });
   await expect(page.getByTestId("bubble-user").first()).toContainText("hello e2e chat");
+  // duplicate SSE connections used to double every delta ("echo[echo[")
+  expect(await assistant.first().textContent()).not.toContain("echo[echo[");
 
   // streaming really streamed: >=2 deltas + terminal event in the log.
   // The projection can lag the live bubble for a beat -> poll, don't race.

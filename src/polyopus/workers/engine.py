@@ -193,6 +193,15 @@ class _StreamState:
     started: float = field(default_factory=time.monotonic)
 
 
+def _message_blocks(state: _StreamState) -> list[dict[str, object]]:
+    """Persist thinking separately from the answer (UI renders it collapsed)."""
+    blocks: list[dict[str, object]] = []
+    if state.reasoning.strip():
+        blocks.append({"type": "reasoning", "text": state.reasoning})
+    blocks.append({"type": "text", "text": state.text})
+    return blocks
+
+
 async def _stream_round(
     store: EventStore,
     gateway: gateway_types.ModelGateway,
@@ -229,8 +238,15 @@ async def _stream_round(
             )
             state.index += 1
         elif isinstance(delta, gateway_types.ReasoningDelta):
-            # thinking-model output: kept for the next round, not user-visible
+            # thinking models: stream it to the UI as a separate block, and
+            # keep it for the next model round (DeepSeek requires it back).
             state.reasoning += delta.text
+            store.append(
+                thread_id,
+                "message.reasoning",
+                {"message_id": message_id, "text": delta.text},
+                tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+            )
         elif isinstance(delta, gateway_types.ToolCallDelta):
             calls.append(delta)
         elif isinstance(delta, gateway_types.UsageDelta):
@@ -583,7 +599,7 @@ async def run_turn(
                     "message.failed",
                     {
                         "message_id": message_id,
-                        "blocks": [{"type": "text", "text": state.text}],
+                        "blocks": _message_blocks(state),
                         "reason": "cancelled",
                     },
                     tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
@@ -718,7 +734,7 @@ async def run_turn(
             "message.completed",
             {
                 "message_id": message_id,
-                "blocks": [{"type": "text", "text": state.text}],
+                "blocks": _message_blocks(state),
                 "finish_reason": "stop",
             },
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
@@ -927,7 +943,7 @@ def resume_after_approval(
                 "message.failed",
                 {
                     "message_id": message_id,
-                    "blocks": [{"type": "text", "text": state.text}],
+                    "blocks": _message_blocks(state),
                     "reason": "cancelled",
                 },
                 tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
@@ -953,7 +969,7 @@ def resume_after_approval(
             "message.completed",
             {
                 "message_id": message_id,
-                "blocks": [{"type": "text", "text": state.text}],
+                "blocks": _message_blocks(state),
                 "finish_reason": "stop",
             },
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,

@@ -84,34 +84,96 @@ function formatSize(size: number): string {
   return `${Math.round(size / 1024 / 102.4) / 10}MB`;
 }
 
-function traceRow(event: TraceEvent): { kind: string; text: string; tone: string } | null {
+type TraceCategory = "turn" | "message" | "tool" | "approval" | "context";
+
+interface TraceRowView {
+  category: TraceCategory;
+  label: string;
+  summary: string;
+  tone: "info" | "ok" | "warn" | "bad" | "neutral";
+}
+
+function preview(value: unknown, max = 90): string {
+  if (value == null) return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function traceRow(event: TraceEvent): TraceRowView | null {
   const payload = event.payload as Record<string, unknown>;
   switch (event.type) {
     case "turn.started":
-      return { kind: "turn", text: `模型 ${String(payload.model ?? "")} 开始`, tone: "info" };
-    case "turn.finished":
-      return { kind: "turn", text: String(payload.status ?? "完成"), tone: "ok" };
-    case "tool.started":
       return {
-        kind: String(payload.name ?? "tool"),
-        text: String(payload.args_preview ?? "调用工具"),
-        tone: "info",
+        category: "turn", label: "回合", tone: "info",
+        summary: `模型 ${String(payload.model ?? "")} 开始`,
       };
-    case "tool.completed":
-      return { kind: "完成", text: "工具输出已返回", tone: "ok" };
-    case "tool.failed":
-      return { kind: "失败", text: String(payload.message ?? payload.code ?? ""), tone: "bad" };
-    case "approval.requested":
+    case "turn.finished":
       return {
-        kind: "审批",
-        text: `等待确认 · ${String(payload.tool ?? "")}`,
-        tone: "warn",
+        category: "turn", label: "回合", tone: "ok",
+        summary: `结束 · ${String(payload.status ?? "")}`,
+      };
+    case "turn.cancel_requested":
+      return { category: "turn", label: "回合", tone: "warn", summary: "收到停止请求" };
+    case "turn.requeued":
+      return {
+        category: "turn", label: "回合", tone: "warn",
+        summary: payload.reason === "edit" ? "编辑后重跑" : "重新生成",
       };
     case "message.started":
-      return { kind: "回复", text: "开始生成", tone: "info" };
+      return { category: "message", label: "回复", tone: "info", summary: "开始生成" };
+    case "message.completed": {
+      const blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
+      const text = blocks
+        .filter((block) => (block as { type?: string }).type === "text")
+        .map((block) => String((block as { text?: string }).text ?? ""))
+        .join("");
+      return {
+        category: "message", label: "回复", tone: "ok",
+        summary: preview(text) || "回复完成",
+      };
+    }
+    case "tool.started":
+      return {
+        category: "tool", label: "工具", tone: "info",
+        summary: `${String(payload.name ?? "tool")} ${preview(payload.args_preview, 70)}`,
+      };
+    case "tool.completed":
+      return {
+        category: "tool", label: "工具", tone: "ok",
+        summary: preview(payload.output, 90) || "工具输出已返回",
+      };
+    case "tool.failed":
+      return {
+        category: "tool", label: "工具", tone: "bad",
+        summary: `${String(payload.code ?? "失败")} ${preview(payload.message, 70)}`,
+      };
+    case "approval.requested":
+      return {
+        category: "approval", label: "审批", tone: "warn",
+        summary: `等待确认 · ${String(payload.tool ?? "")}`,
+      };
+    case "approval.resolved":
+      return {
+        category: "approval", label: "审批", tone: "ok",
+        summary: `已处理 · ${String(payload.decision ?? "")}`,
+      };
+    case "context.knowledge": {
+      const citations = Array.isArray(payload.citations) ? payload.citations : [];
+      return {
+        category: "context", label: "上下文", tone: "neutral",
+        summary: `知识库命中 ${citations.length} 条`,
+      };
+    }
     default:
+      // message.delta / message.reasoning are high-volume; the final text and
+      // reasoning are already in the message card.
       return null;
   }
+}
+
+function payloadText(event: TraceEvent): string {
+  const text = JSON.stringify(event.payload, null, 2) ?? "";
+  return text.length > 8_000 ? `${text.slice(0, 8_000)}…` : text;
 }
 
 /**
@@ -123,10 +185,12 @@ export function Dock({
   threadId, tab, onTab, onClose, trace, traceLoading, tree, treeLoading,
 }: Props) {
   const [preview, setPreview] = useState<string | null>(null);
+  const [traceFilter, setTraceFilter] = useState<"all" | TraceCategory>("all");
   const rows = (trace ?? [])
     .map((event) => ({ event, row: traceRow(event) }))
     .filter((item) => item.row !== null)
-    .slice(-60);
+    .filter((item) => traceFilter === "all" || item.row!.category === traceFilter)
+    .slice(-200);
 
   const toolEvents = (trace ?? []).filter((event) =>
     event.type === "tool.started"
@@ -187,15 +251,61 @@ export function Dock({
           ) : rows.length === 0 ? (
             <Empty title="还没有运行记录" hint="发送消息后，模型、工具与审批步骤会出现在这里。" />
           ) : (
-            <div className={styles.timeline}>
-              {rows.map(({ event, row }) => (
-                <div key={`${event.seq}-${event.type}`} className={`${styles.tl} ${styles[row!.tone]}`}>
-                  <span className={styles.time}>{new Date(event.ts * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
-                  <span className={styles.kind}>{row!.kind}</span>
-                  <span className={styles.txt}>{row!.text}</span>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className={styles.traceTools} role="tablist" aria-label="轨迹筛选">
+                {([
+                  ["all", "全部"], ["turn", "回合"], ["message", "回复"],
+                  ["tool", "工具"], ["approval", "审批"], ["context", "上下文"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="tab"
+                    aria-selected={traceFilter === value}
+                    className={`${styles.traceChip} ${
+                      traceFilter === value ? styles.traceChipOn : ""
+                    }`}
+                    onClick={() => setTraceFilter(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className={styles.spacer} />
+                <span className={styles.hint}>{rows.length} 条</span>
+              </div>
+              <div className={styles.traceList}>
+                {rows.map(({ event, row }) => (
+                  <details
+                    key={`${event.seq}-${event.type}`}
+                    className={styles.traceRow}
+                    data-testid="trace-row"
+                  >
+                    <summary className={styles.traceHead}>
+                      <span className={styles.time}>
+                        {new Date(event.ts * 1000).toLocaleTimeString("zh-CN", {
+                          hour: "2-digit", minute: "2-digit", second: "2-digit",
+                        })}
+                      </span>
+                      <span className={`${styles.traceBadge} ${styles[row!.tone]}`}>
+                        {row!.label}
+                      </span>
+                      <span className={styles.traceType}>{event.type}</span>
+                      <span className={styles.traceSummary}>{row!.summary}</span>
+                    </summary>
+                    <div className={styles.traceDetail}>
+                      <dl className={styles.traceMeta}>
+                        <dt>seq</dt><dd>{event.seq}</dd>
+                        <dt>turn</dt><dd>{event.turnId ?? "—"}</dd>
+                        <dt>run</dt><dd>{event.runId ?? "—"}</dd>
+                        <dt>时间</dt><dd>{new Date(event.ts * 1000).toLocaleString("zh-CN")}</dd>
+                      </dl>
+                      <div className={styles.tracePayloadHead}>输入 / 输出 / 原始载荷</div>
+                      <pre className={styles.tracePayload}>{payloadText(event)}</pre>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </>
           )
         ) : null}
 

@@ -6,6 +6,7 @@ blocks on `message.completed`.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from typing import Any
@@ -36,14 +37,19 @@ def apply(conn: sqlite3.Connection, event: Event) -> bool:
         return False
 
     role = payload.get("role")
+    blocks = payload.get("blocks")
+    content_json = (
+        json.dumps(blocks, ensure_ascii=False)
+        if isinstance(blocks, list) else None
+    )
     if event.type == "message.completed":
-        content = _text_of(payload.get("blocks"))
+        content = _text_of(blocks)
         status = "completed"
     elif event.type == "message.started":
         content = ""
         status = "streaming"
     else:
-        content = _text_of(payload.get("blocks"))
+        content = _text_of(blocks)
         status = "failed"
     now = int(time.time())
     # messages.seq is unique per thread; the event seq already guarantees that.
@@ -52,11 +58,12 @@ def apply(conn: sqlite3.Connection, event: Event) -> bool:
     conn.execute(
         """
         INSERT INTO messages
-          (tenant_id, message_id, thread_id, turn_id, role, content, status, seq,
-           created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (tenant_id, message_id, thread_id, turn_id, role, content, content_json,
+           status, seq, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(message_id) DO UPDATE SET
           content = excluded.content,
+          content_json = excluded.content_json,
           status = excluded.status,
           role = COALESCE(excluded.role, messages.role),
           updated_at = excluded.updated_at
@@ -68,6 +75,7 @@ def apply(conn: sqlite3.Connection, event: Event) -> bool:
             event.turn_id,
             role or "assistant",
             content,
+            content_json,
             status,
             seq,
             now,

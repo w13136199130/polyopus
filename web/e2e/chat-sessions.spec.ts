@@ -152,7 +152,9 @@ test("chat: Dock opens files/trace/terminal and persists its state", async ({ pa
   await expect(page.getByTestId("dock-files")).toHaveAttribute("aria-selected", "true");
   await page.getByTestId("dock-trace").click();
   await expect(page.getByTestId("dock-trace")).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByText("turn").first()).toBeVisible();
+  await expect(page.getByTestId("trace-row").first()).toBeVisible();
+  await page.getByTestId("trace-row").first().locator("summary").click();
+  await expect(page.getByTestId("trace-row").first()).toContainText("seq");
 
   await page.getByTestId("dock-terminal").click();
   await expect(

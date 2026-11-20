@@ -58,6 +58,31 @@ describe("ChatStreamStore", () => {
     expect(store.getSnapshot().text).toBe("最终全文");
   });
 
+  it("reasoning streams separately and ends up folded into the answer turn", () => {
+    store = new ChatStreamStore();
+    store.beginOptimistic("p", "hi");
+    store.ack("tu_1");
+    store.ingest(frame(1, "message.reasoning", { payload: { text: "先看" } }));
+    store.ingest(frame(2, "message.reasoning", { payload: { text: "再答" } }));
+    expect(store.getSnapshot().reasoning).toBe("先看再答");
+    store.ingest(delta(3, "答案"));
+    store.ingest(
+      frame(4, "message.completed", {
+        payload: {
+          blocks: [
+            { type: "reasoning", text: "先确认" },
+            { type: "text", text: "最终答案" },
+          ],
+        },
+      }),
+    );
+    store.flush();
+    expect(store.getSnapshot().text).toBe("最终答案");
+    expect(store.getSnapshot().reasoning).toBe("先确认");
+    store.ingest(frame(5, "turn.finished"));
+    expect(store.getSnapshot().reasoning).toBe("");
+  });
+
   it("approval.requested pauses; approval.resumed returns to streaming", () => {
     store = new ChatStreamStore();
     store.beginOptimistic("p", "写文件");
