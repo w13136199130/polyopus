@@ -9,6 +9,7 @@ import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
 import { AdminModelsTab } from "./AdminModelsTab";
+import { AdminOverviewTab } from "./AdminOverviewTab";
 import { AdminSecurityTab } from "./AdminSecurityTab";
 import { AdminStorageTab } from "./AdminStorageTab";
 import { AdminUsersPage } from "./AdminUsersPage";
@@ -26,7 +27,7 @@ import {
 import type { BackupRow } from "@/lib/api/wire";
 import styles from "./AdminPage.module.css";
 
-type Tab = "users" | "quotas" | "models" | "storage" | "security" | "audit" | "backup" | "jobs";
+type Tab = "overview" | "users" | "quotas" | "models" | "storage" | "security" | "audit" | "backup" | "jobs";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
@@ -518,11 +519,12 @@ export function AdminPage() {
   const canAudit = useCan("audit:read");
   const canAdmin = useCan("admin:write");
   const canUsage = useCan("usage:read");
-  const [tab, setTab] = useState<Tab>("users");
+  const [tab, setTab] = useState<Tab>(canAdmin ? "overview" : "users");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const tabs: Array<[Tab, string, boolean]> = [
+    ["overview", "概览", canAdmin],
     ["users", "用户", true],
     ["quotas", "配额", canUsage],
     ["models", "模型", canAdmin],
@@ -555,6 +557,9 @@ export function AdminPage() {
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
 
+        {tab === "overview" ? (
+          <AdminOverviewTab onOpenTab={(next) => setTab(next as Tab)} />
+        ) : null}
         {tab === "users" ? <AdminUsersPage embedded onNotice={setNotice} /> : null}
         {tab === "quotas" ? (
           <QuotasTab onNotice={setNotice} onError={setError} />

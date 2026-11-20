@@ -306,6 +306,42 @@ export interface UsageSummaryResponse {
   totalCostMicros: number;
 }
 
+export interface AdminOverview {
+  generatedAt: number;
+  health: {
+    activeSessions: number;
+    queueDepth: number;
+    runningTurns: number;
+    openAttentions: number;
+    runs24h: number;
+    failedRuns24h: number;
+    errorRate: number;
+    p95LatencyMs: number | null;
+  };
+  tickets: { attention: number; running: number; queued: number; done: number };
+  usage: { todayTokens: number; todayCostMicros: number };
+  backup: {
+    backupId: string;
+    status: string;
+    createdAt: number;
+    sizeBytes: number;
+  } | null;
+  recentAudit: Array<{
+    action: string;
+    actorId: string | null;
+    result: string;
+    resourceType: string | null;
+    resourceId: string | null;
+    createdAt: number;
+  }>;
+  recentTickets: Array<{
+    ticketId: string;
+    title: string;
+    bucket: string;
+    createdAt: number;
+  }>;
+}
+
 export interface ProviderModelRow {
   modelId: string;
   name: string;

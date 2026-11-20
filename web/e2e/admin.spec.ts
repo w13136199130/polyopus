@@ -15,6 +15,7 @@ async function login(page: import("@playwright/test").Page) {
 test("admin: create user, change role, delete", async ({ page }) => {
   await login(page);
   await page.goto("/admin");
+  await page.getByTestId("admin-tab-users").click();
   await expect(page.getByTestId("admin-user-row").first()).toBeVisible();
 
   const name = `e2e-user-${Date.now()}`;
@@ -36,6 +37,7 @@ test("admin: create user, change role, delete", async ({ page }) => {
 test("admin: create and revoke an invite", async ({ page }) => {
   await login(page);
   await page.goto("/admin");
+  await page.getByTestId("admin-tab-users").click();
 
   const email = `e2e-${Date.now()}@example.com`;
   await page.getByTestId("admin-invite-email").fill(email);
@@ -88,6 +90,7 @@ test("admin: quota create/edit, audit filter, backup create", async ({ page }) =
 test("admin: bulk disable and CSV dry-run preview", async ({ page }) => {
   await login(page);
   await page.goto("/admin");
+  await page.getByTestId("admin-tab-users").click();
 
   // create two throwaway users
   const stamp = Date.now();
@@ -98,6 +101,7 @@ test("admin: bulk disable and CSV dry-run preview", async ({ page }) => {
     expect(created.ok()).toBe(true);
   }
   await page.reload();
+  await page.getByTestId("admin-tab-users").click();
 
   // select ONLY the throwaway users — disabling the session owner would
   // revoke our own session (correct behavior, but it ends the test)

@@ -7,6 +7,7 @@
 
 import { apiFetch } from "../client";
 import type {
+  AdminOverview,
   AdminSettings,
   AgentListResponse,
   BackupAutoSettings,
@@ -742,6 +743,11 @@ export const workspace = {
     )),
 };
 
+export const adminOverview = {
+  get: op("GET", "/admin/overview", () =>
+    apiFetch<AdminOverview>("/admin/overview")),
+};
+
 export const adminModels = {
   list: op("GET", "/admin/providers", () =>
     apiFetch<ProviderListResponse>("/admin/providers")),
@@ -804,5 +810,5 @@ export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, tools, knowledge, connectors,
   plugins, settings, adminOps, models, workspace,
-  adminModels, adminStorage, adminSecurity,
+  adminModels, adminStorage, adminSecurity, adminOverview,
 ];

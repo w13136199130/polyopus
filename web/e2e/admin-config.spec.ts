@@ -73,3 +73,17 @@ test("admin: security posture and policy editor are visible", async ({ page }) =
   await expect(dialog.locator("textarea")).toHaveValue(/r-deny-rm|r-ask-write/);
   await page.keyboard.press("Escape");
 });
+
+test("admin: overview aggregates health, tickets and shortcuts", async ({ page }) => {
+  await login(page);
+  await page.goto("/admin");
+  await expect(page.getByText("实例概览")).toBeVisible();
+  await expect(page.getByText("活跃会话")).toBeVisible();
+  await expect(page.getByText("待决 Attention")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "数据地图" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "最近审计" })).toBeVisible();
+  await page.getByRole("button", { name: /模型配置/ }).click();
+  await expect(page.getByTestId("admin-tab-models")).toHaveAttribute(
+    "aria-selected", "true",
+  );
+});

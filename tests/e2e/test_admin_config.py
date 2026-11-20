@@ -140,3 +140,21 @@ def test_security_policy_publish_and_rollback(env: tuple[Path, TestClient]) -> N
         "rules": [{"rid": "x", "priority": 1, "when": {}, "effect": "nope"}],
     })
     assert bad.status_code in (400, 422)
+
+
+def test_overview_aggregates_queue_and_usage(env: tuple[Path, TestClient]) -> None:
+    _db, client = env
+    created = client.post("/api/v1/tickets", json={"title": "总览测试任务"})
+    assert created.status_code == 201, created.text
+
+    body = client.get("/api/v1/admin/overview")
+    assert body.status_code == 200, body.text
+    data = body.json()
+    assert set(data["health"]) >= {
+        "activeSessions", "queueDepth", "runningTurns", "openAttentions",
+        "runs24h", "failedRuns24h", "errorRate", "p95LatencyMs",
+    }
+    assert data["tickets"]["queued"] >= 1
+    assert data["usage"]["todayTokens"] >= 0
+    assert isinstance(data["recentAudit"], list)
+    assert any(item["title"] == "总览测试任务" for item in data["recentTickets"])

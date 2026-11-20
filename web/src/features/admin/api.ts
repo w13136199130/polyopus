@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   adminModels,
+  adminOverview,
   adminSecurity,
   adminStorage,
   invites,
@@ -160,11 +161,20 @@ export function useDataJobs() {
 }
 
 export const adminConfigKeys = {
+  overview: ["admin-overview"] as const,
   providers: ["admin-providers"] as const,
   storage: ["admin-storage"] as const,
   backupAuto: ["admin-backup-auto"] as const,
   security: ["admin-security"] as const,
 };
+
+export function useAdminOverview() {
+  return useQuery({
+    queryKey: adminConfigKeys.overview,
+    queryFn: adminOverview.get,
+    refetchInterval: 15_000,
+  });
+}
 
 export function useProviders() {
   return useQuery({
