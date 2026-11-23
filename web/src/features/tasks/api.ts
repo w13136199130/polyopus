@@ -79,6 +79,46 @@ export function useReassignTicket() {
   });
 }
 
+export function useUpdateTicket() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { ticketId: string; title?: string; content?: string }) =>
+      tickets.update(input.ticketId, {
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.content !== undefined ? { content: input.content } : {}),
+      }),
+    onSuccess: (_result, input) => {
+      void client.invalidateQueries({ queryKey: taskKeys.tickets });
+      void client.invalidateQueries({ queryKey: taskKeys.ticket(input.ticketId) });
+      void client.invalidateQueries({ queryKey: taskKeys.timeline(input.ticketId) });
+    },
+  });
+}
+
+export function useRerunTicket() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: string) => tickets.rerun(ticketId),
+    onSuccess: (_result, ticketId) => {
+      void client.invalidateQueries({ queryKey: taskKeys.tickets });
+      void client.invalidateQueries({ queryKey: taskKeys.counts });
+      void client.invalidateQueries({ queryKey: taskKeys.ticket(ticketId) });
+      void client.invalidateQueries({ queryKey: taskKeys.timeline(ticketId) });
+    },
+  });
+}
+
+export function useDeleteTicket() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (ticketId: string) => tickets.remove(ticketId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: taskKeys.tickets });
+      void client.invalidateQueries({ queryKey: taskKeys.counts });
+    },
+  });
+}
+
 /** 追加预算: raise the ticket ceiling by an increment (yuan -> micros). */
 export function useAddBudget() {
   const client = useQueryClient();

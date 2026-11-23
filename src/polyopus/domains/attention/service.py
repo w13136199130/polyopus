@@ -237,11 +237,25 @@ def resolve(
             "WHERE approval_id = ? AND status = 'pending'",
             (decision, ts, json.dumps({"by": by, "decision": decision}), approval_id),
         )
+        attention = conn.execute(
+            "SELECT ticket_id FROM attentions WHERE source_type = 'approval'"
+            " AND source_id = ? AND status = 'pending' LIMIT 1",
+            (approval_id,),
+        ).fetchone()
         conn.execute(
             "UPDATE attentions SET status = 'answered', resolved_at = ? "
             "WHERE source_type = 'approval' AND source_id = ? AND status = 'pending'",
             (ts, approval_id),
         )
+        if attention is not None and attention["ticket_id"]:
+            # The task is no longer waiting for a human decision; resume runs
+            # behind the scenes, so flip the task card immediately.
+            conn.execute(
+                "UPDATE tickets SET bucket = 'running', updated_at = ?"
+                " WHERE tenant_id = ? AND ticket_id = ? AND state = 'open'"
+                " AND bucket = 'attention'",
+                (ts, tenant_id, str(attention["ticket_id"])),
+            )
         if decision == "approved_session":
             _remember_session_approval(
                 conn, tenant_id=tenant_id, thread_id=thread_id,

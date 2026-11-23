@@ -62,7 +62,7 @@ def test_list_and_detail_expose_task_card_fields(client: TestClient) -> None:
     assert detail["ticketId"] == ticket_id
     assert detail["strength"] == "explicit"
     assert detail["createdAt"] > 0
-    assert detail["scope"] == ["workspace:default"]
+    assert detail["scope"] == ["workspace:default", "fs:write"]
     assert detail["artifacts"] == []
 
 
@@ -140,3 +140,51 @@ def test_assign_refuses_ticket_ended_by_stop(client: TestClient, tmp_path: Path)
     finally:
         conn.close()
     assert tuple(row) == ("done", "ended")
+
+
+def test_rerun_reopens_ended_ticket_and_delete_hides_it(
+    client: TestClient,
+) -> None:
+    ticket_id = _ticket(client)
+    # running ticket cannot be re-run or deleted
+    assert client.post(f"/api/v1/tickets/{ticket_id}/rerun").status_code == 409
+    assert client.delete(f"/api/v1/tickets/{ticket_id}").status_code == 409
+
+    client.post(f"/api/v1/tickets/{ticket_id}/stop")
+    rerun = client.post(f"/api/v1/tickets/{ticket_id}/rerun")
+    assert rerun.status_code == 200, rerun.text
+    assert rerun.json()["bucket"] == "queued"
+    detail = client.get(f"/api/v1/tickets/{ticket_id}").json()
+    assert detail["state"] == "open" and detail["bucket"] == "queued"
+    timeline = client.get(f"/api/v1/tickets/{ticket_id}/timeline").json()["items"]
+    assert any(item["title"] == "再次运行" for item in timeline)
+
+    client.post(f"/api/v1/tickets/{ticket_id}/stop")
+    deleted = client.delete(f"/api/v1/tickets/{ticket_id}")
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] is True
+    rows = client.get("/api/v1/tickets").json()["items"]
+    assert all(item["ticketId"] != ticket_id for item in rows)
+    assert client.get(f"/api/v1/tickets/{ticket_id}").status_code == 404
+
+
+def test_ticket_instruction_and_edit_only_after_stop(client: TestClient) -> None:
+    ticket_id = _ticket(client, "初始标题")
+    detail = client.get(f"/api/v1/tickets/{ticket_id}").json()
+    assert detail["instruction"] == "初始标题"
+
+    active = client.patch(
+        f"/api/v1/tickets/{ticket_id}",
+        json={"title": "运行中标题", "content": "不应生效"},
+    )
+    assert active.status_code == 409
+
+    client.post(f"/api/v1/tickets/{ticket_id}/stop")
+    edited = client.patch(
+        f"/api/v1/tickets/{ticket_id}",
+        json={"title": "编辑后的标题", "content": "请分析天气并写入 weather.md"},
+    )
+    assert edited.status_code == 200, edited.text
+    detail = client.get(f"/api/v1/tickets/{ticket_id}").json()
+    assert detail["title"] == "编辑后的标题"
+    assert detail["instruction"] == "请分析天气并写入 weather.md"

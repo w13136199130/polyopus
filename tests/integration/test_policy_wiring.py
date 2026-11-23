@@ -134,6 +134,12 @@ def test_write_pauses_and_approval_executes_file(env) -> None:
     )
     assert result == "completed"
     assert (ws / "out.txt").read_text(encoding="utf-8") == "hello policy"
+    artifact = conn.execute(
+        "SELECT ref, kind, size FROM artifacts WHERE thread_id='th_1'"
+    ).fetchone()
+    assert artifact is not None
+    assert artifact["ref"] == "out.txt" and artifact["kind"] == "file"
+    assert artifact["size"] > 0
 
     types = [r[0] for r in conn.execute(
         "SELECT type FROM events WHERE thread_id='th_1' ORDER BY seq"

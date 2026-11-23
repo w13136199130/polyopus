@@ -90,7 +90,8 @@ function TicketCard({
         <span className={styles.source}>
           <span className={styles.sourceTag}>{sourceTag(row.sourceKind)}</span>
           <span className={styles.ref} title={row.ticketId}>
-            {shortRef(row.ticketId)} · {row.sourceName ?? "手动"}
+            {shortRef(row.ticketId)}
+            {row.sourceName ? ` · ${row.sourceName}` : ""}
           </span>
         </span>
         <span className={styles.spacer} />
@@ -139,6 +140,16 @@ function TicketCard({
                 查看详情
               </Button>
             )}
+          </span>
+        </div>
+      ) : null}
+
+      {!attention && row.bucket === "attention" ? (
+        <div className={styles.question} onClick={(event) => event.stopPropagation()}>
+          <span className={styles.warn} aria-hidden="true">⚠</span>
+          <span className={styles.questionText}>等待你处理决定</span>
+          <span className={styles.acts}>
+            <Button size="sm" onClick={() => onOpen(row.ticketId)}>处理</Button>
           </span>
         </div>
       ) : null}

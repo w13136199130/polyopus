@@ -144,13 +144,15 @@
   grid-template-columns: 38px 14px 1fr;
   gap: 8px;
   padding: 5px 0;
+  min-height: 40px;
+  align-content: start;
   font-size: 11.5px;
 }
 
 .tlItem:not(:last-child)::before {
   content: "";
   position: absolute;
-  left: 44px;
+  left: 50px;
   top: 22px;
   bottom: -4px;
   width: 1px;
@@ -332,4 +334,38 @@
   }
 
   .actions { flex-wrap: wrap; }
+}
+
+.artifactPreview {
+  margin: 0;
+  max-height: 62vh;
+  overflow: auto;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.attentionBlock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--amber-border);
+  border-radius: 8px;
+  background: var(--amber-soft);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.attentionBlock b { color: var(--amber); white-space: nowrap; }
+
+.instruction {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
 }

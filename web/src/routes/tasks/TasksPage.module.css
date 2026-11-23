@@ -66,11 +66,12 @@
 }
 
 .tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: 5px 5px 0 0;
   background: transparent;
   color: var(--text-3);
   padding: 8px 10px 10px;
@@ -79,12 +80,28 @@
   white-space: nowrap;
 }
 
+/* Underline the label itself, not the label+count pair, so the line stays
+   optically centered under the text. */
+.tabLabel {
+  position: relative;
+}
+
 .tab:hover { color: var(--text); }
 
 .tabActive {
   color: var(--primary);
-  border-color: var(--primary);
   font-weight: 600;
+}
+
+.tabActive .tabLabel::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -10px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--primary);
 }
 
 .count {

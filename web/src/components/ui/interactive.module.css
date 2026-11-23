@@ -84,6 +84,7 @@
 .overlay {
   position: fixed;
   inset: 0;
+  z-index: 80;
   background: rgb(0 0 0 / 0.45);
   animation: ui-fade 0.12s ease;
 }
@@ -96,6 +97,7 @@
 
 .dialog,
 .drawer {
+  z-index: 81;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--line);

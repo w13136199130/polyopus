@@ -10,7 +10,9 @@ in workers/ and only talks to domains via services; it never imports api.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import mimetypes
 import secrets
 import sqlite3
 import time
@@ -299,6 +301,47 @@ def _tool_messages_parts(
     )
 
 
+def _record_file_artifact(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    turn_id: str,
+    run_id: str,
+    workspace: Path,
+    rel_path: str,
+) -> None:
+    """Register a file written by fs.write as a task/chat artifact."""
+    try:
+        root = workspace.resolve()
+        target = (workspace / rel_path).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            return
+        exists = conn.execute(
+            "SELECT artifact_id FROM artifacts WHERE tenant_id = ? AND thread_id = ?"
+            " AND turn_id = ? AND ref = ? LIMIT 1",
+            (tenant_id, thread_id, turn_id, rel_path),
+        ).fetchone()
+        if exists is not None:
+            return
+        data = target.read_bytes()
+        conn.execute(
+            "INSERT INTO artifacts (artifact_id, tenant_id, thread_id, turn_id,"
+            " run_id, kind, ref, mime, size, sha256, created_at)"
+            " VALUES (?, ?, ?, ?, ?, 'file', ?, ?, ?, ?, ?)",
+            (
+                "ar_" + secrets.token_hex(8), tenant_id, thread_id, turn_id,
+                run_id, rel_path,
+                mimetypes.guess_type(rel_path)[0] or "application/octet-stream",
+                len(data), hashlib.sha256(data).hexdigest(), _now(),
+            ),
+        )
+        conn.commit()
+    except (OSError, sqlite3.Error):
+        # Artifact registration is advisory; the tool itself already succeeded.
+        return
+
+
 def _execute_call(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -359,6 +402,14 @@ def _execute_call(
                 raise ToolError("TOOL_WORKSPACE", "工作区未配置，无法执行内置工具")
             result = dispatch(internal, workspace, arguments_json)
             output = result.output
+            if internal == "fs.write":
+                rel_path = str(output.get("path") or "")
+                if rel_path:
+                    _record_file_artifact(
+                        conn, tenant_id=tenant_id, thread_id=thread_id,
+                        turn_id=turn_id, run_id=run_id, workspace=workspace,
+                        rel_path=rel_path,
+                    )
         output_json = json.dumps(output, ensure_ascii=False)
         store.append(
             thread_id,

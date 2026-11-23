@@ -777,6 +777,140 @@ def stop(
     )
 
 
+def update_ticket(
+    conn: sqlite3.Connection,
+    *,
+    ticket_id: str,
+    title: str | None,
+    content: str | None,
+    by: str,
+    tenant_id: str | None = None,
+) -> None:
+    """Edit a stopped/failed ticket's title and instruction.
+
+    Running/open tickets must be cancelled first. The edited instruction is
+    appended as a human_message so a later rerun uses it.
+    """
+    ticket = _ticket(conn, ticket_id, tenant_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
+    if str(ticket["state"]) != "ended":
+        raise AppError(
+            "CONFLICT", details={"reason": "ticket_active", "ticketId": ticket_id}
+        )
+    now = _now()
+    clean_title = title.strip() if title is not None else None
+    if title is not None and not clean_title:
+        raise AppError("VALIDATION_FAILED", details={"field": "title"})
+    if clean_title:
+        conn.execute(
+            "UPDATE tickets SET title = ?, updated_at = ? WHERE tenant_id = ?"
+            " AND ticket_id = ?",
+            (clean_title[:200], now, tenant, ticket_id),
+        )
+    if content is not None and content.strip():
+        conn.execute(
+            """
+            INSERT INTO timeline_events
+              (event_id, tenant_id, ticket_id, kind, title, actor, payload_json,
+               created_at)
+            VALUES (?, ?, ?, 'human_message', '任务说明已更新', ?, ?, ?)
+            """,
+            ("tl_" + secrets.token_hex(8), tenant, ticket_id, by,
+             json.dumps({"content": content[:4000]}, ensure_ascii=False), now),
+        )
+    conn.commit()
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn, tenant_id=tenant, action="ticket.update", result="ok",
+        actor_id=by, resource_type="ticket", resource_id=ticket_id,
+        detail={"title": clean_title, "contentChanged": content is not None},
+    )
+
+
+def rerun(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    ticket_id: str,
+    *,
+    by: str,
+    tenant_id: str | None = None,
+) -> None:
+    """Reopen an ended ticket and put it back in the executor queue."""
+    ticket = _ticket(conn, ticket_id, tenant_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
+    if str(ticket["state"]) != "ended":
+        raise AppError(
+            "CONFLICT", details={"reason": "ticket_not_ended", "ticketId": ticket_id}
+        )
+    pending = conn.execute(
+        "SELECT 1 FROM attentions WHERE tenant_id = ? AND ticket_id = ? "
+        "AND status = 'pending' LIMIT 1",
+        (tenant, ticket_id),
+    ).fetchone()
+    if pending is not None:
+        raise AppError(
+            "CONFLICT",
+            details={"reason": "pending_attention", "ticketId": ticket_id},
+        )
+    now = _now()
+    conn.execute(
+        "UPDATE tickets SET state = 'open', bucket = 'queued', ended_at = NULL,"
+        " summary = ?, updated_at = ? WHERE tenant_id = ? AND ticket_id = ?",
+        ("等待重新执行", now, tenant, ticket_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO timeline_events
+          (event_id, tenant_id, ticket_id, kind, title, actor, payload_json,
+           created_at)
+        VALUES (?, ?, ?, 'rerun', '再次运行', ?, ?, ?)
+        """,
+        ("tl_" + secrets.token_hex(8), tenant, ticket_id, by,
+         json.dumps({"by": by}, ensure_ascii=False), now),
+    )
+    conn.commit()
+
+
+def delete_ticket(
+    conn: sqlite3.Connection,
+    *,
+    ticket_id: str,
+    by: str,
+    tenant_id: str | None = None,
+) -> None:
+    """Delete an ended ticket and its execution bookkeeping.
+
+    Events/usage/artifacts stay in the thread for audit and exports; the
+    ticket row, assignments, reports, attentions and timeline are removed.
+    """
+    ticket = _ticket(conn, ticket_id, tenant_id)
+    tenant = str(ticket["tenant_id"] or TENANT)
+    if str(ticket["state"]) != "ended":
+        raise AppError(
+            "CONFLICT", details={"reason": "ticket_not_ended", "ticketId": ticket_id}
+        )
+    conn.execute("DELETE FROM attentions WHERE tenant_id = ? AND ticket_id = ?",
+                 (tenant, ticket_id))
+    conn.execute("DELETE FROM assignments WHERE ticket_id = ?", (ticket_id,))
+    conn.execute("DELETE FROM reports WHERE ticket_id = ?", (ticket_id,))
+    conn.execute("DELETE FROM timeline_events WHERE ticket_id = ?", (ticket_id,))
+    deleted = conn.execute(
+        "DELETE FROM tickets WHERE tenant_id = ? AND ticket_id = ?",
+        (tenant, ticket_id),
+    )
+    if deleted.rowcount != 1:
+        conn.rollback()
+        raise AppError("TICKET_NOT_FOUND")
+    conn.commit()
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn, tenant_id=tenant, action="ticket.delete", result="ok",
+        actor_id=by, resource_type="ticket", resource_id=ticket_id,
+    )
+
+
 def reassign(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -952,7 +1086,9 @@ def create_manual(
     mandate_id = "md_" + secrets.token_hex(8)
     thread_id = "th_" + secrets.token_hex(12)
     policy_version = policy.active_version_or_bootstrap(conn, tenant)
-    scope = list(scope) if scope else ["workspace:default"]
+    # Manual tickets are explicit user requests; allow the write tool so the
+    # policy gate can ask, instead of denying at the mandate scope layer.
+    scope = list(scope) if scope else ["workspace:default", "fs:write"]
 
     conn.execute(
         """

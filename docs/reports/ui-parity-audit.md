@@ -331,3 +331,23 @@ Ask/Plan、技能包、渠道、云端协同、ACP、远程桌面、团队、云
 | `/plan` 命令 | DONE | 不再只插文案，直接切换 Plan 模式 |
 
 验证：后端 **449**、web 119、Playwright **58/58**、ruff/mypy/eslint/build 通过。
+
+### 任务产物与时间线修正（2026-11-23）
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 任务产物 | DONE | 引擎在 `fs.write` 成功后登记 `artifacts`（ref/mime/size/sha256），租户+thread+turn 去重 |
+| 产物预览 | DONE | 任务详情“产物”行新增预览；走 `/workspace/file`，Dialog 显示文件内容 |
+| 时间线阶段 | DONE | 所有 ticket 都补 Trigger/Gate/Eval：手动任务显示“手动创建”，webhook 显示触发文本；原有 Ticket/Assign/Report 保留 |
+| 任务卡来源 | DONE | 手动任务不再重复显示“手动 · #ID · 手动”，只显示短号；有来源时显示 `#ID · source` |
+| 再次运行/删除 | DONE | 结束任务可 `POST /tickets/{id}/rerun` 重新排队（写 timeline）；`DELETE /tickets/{id}` 删除任务记录/报告/时间线，保留审计/用量/事件；详情页有按钮与二次确认 |
+| 空产说明 | DONE | 无产物时说明“仅文本任务不产生文件；需要文件请在指令中要求写入工作区” |
+| 手动任务写权限 | DONE | 手动 ticket 默认 scope 补 `fs:write`，写操作进入审批而非 scope 拒绝；`0035_manual_ticket_write_scope.sql` 修复历史手动任务 |
+| 审批入口 | DONE | 任务详情直接渲染 ApprovalCard（拒绝/仅本次/本会话），列表无 attention 但 bucket=attention 时给「处理」兜底；attention 查询 2s 刷新 |
+| 任务内容 | DONE | 详情新增「任务内容」面板：最新人工说明 > 触发文本 > 标题；不再只能看授权/报告 |
+| 编辑任务 | DONE | `PATCH /tickets/{id}` 仅允许 ended（停止/失败/完成）；编辑标题与说明，说明写入 human_message，再次运行使用新说明 |
+| 取消任务 | DONE | 运行/排队中显示「取消任务」，确认后走 stop 收尾；结束态显示再次运行/编辑/删除 |
+| 产物预览排版 | DONE | 预览不再用 `<pre>` 展示源码；轻量安全 Markdown 渲染器支持标题/列表/引用/表格/粗体/行内代码/代码块/链接，禁用 `javascript:` 链接；Dialog overlay/content 显式 z-index，时间线圆点不再穿透遮罩 |
+| 审批即时反馈 | DONE | 审批回答后 ticket bucket 立即从 attention 改为 running；前端同时 invalidate attentions/tickets/counts/detail/timeline，任务卡不再延迟显示“待决” |
+
+验证：后端 451、web **122**、Playwright **62/62** 通过。

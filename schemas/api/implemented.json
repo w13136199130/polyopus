@@ -1,5 +1,5 @@
 {
-  "count": 143,
+  "count": 146,
   "ops": [
     {
       "method": "DELETE",
@@ -56,6 +56,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/threads/{thread_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tickets/{ticket_id}"
     },
     {
       "method": "DELETE",
@@ -335,6 +339,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/v1/tickets/{ticket_id}"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/v1/tools/{tool_key}"
     },
     {
@@ -552,6 +560,10 @@
     {
       "method": "POST",
       "path": "/api/v1/tickets/{ticket_id}/reassign"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tickets/{ticket_id}/rerun"
     },
     {
       "method": "POST",

@@ -21,7 +21,12 @@ test("extensions: install example plugins", async ({ page }) => {
   // enable toggle on one row round-trips the status badge (click + result
   // assertion: uncheck()'s instant-state check races the optimistic update)
   const row = page.getByTestId("plugin-row").first();
-  await row.getByTestId("plugin-enabled").click();
+  const toggle = row.getByTestId("plugin-enabled");
+  if (!(await toggle.isChecked())) {
+    await toggle.click();
+    await expect(toggle).toBeChecked({ timeout: 10_000 });
+  }
+  await toggle.click();
   await expect(row.getByText("disabled")).toBeVisible({ timeout: 10_000 });
   await expect(row.getByTestId("plugin-enabled")).not.toBeChecked();
   await row.getByTestId("plugin-enabled").click();

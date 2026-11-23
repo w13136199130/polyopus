@@ -351,10 +351,26 @@ export const tickets = {
       `/tickets/${encodeURIComponent(ticketId)}/stop`,
       { method: "POST" },
     )),
+  update: op("PATCH", "/tickets/{ticket_id}", (
+    ticketId: string, body: { title?: string; content?: string },
+  ) => apiFetch<{ ticketId: string; updated: boolean }>(
+    `/tickets/${encodeURIComponent(ticketId)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )),
   reassign: op("POST", "/tickets/{ticket_id}/reassign", (ticketId: string) =>
     apiFetch<{ ticketId: string; bucket: string; state: string }>(
       `/tickets/${encodeURIComponent(ticketId)}/reassign`,
       { method: "POST" },
+    )),
+  rerun: op("POST", "/tickets/{ticket_id}/rerun", (ticketId: string) =>
+    apiFetch<{ ticketId: string; bucket: string; state: string }>(
+      `/tickets/${encodeURIComponent(ticketId)}/rerun`,
+      { method: "POST" },
+    )),
+  remove: op("DELETE", "/tickets/{ticket_id}", (ticketId: string) =>
+    apiFetch<{ ticketId: string; deleted: boolean }>(
+      `/tickets/${encodeURIComponent(ticketId)}`,
+      { method: "DELETE" },
     )),
   addBudget: op(
     "POST",

@@ -244,7 +244,7 @@ export function TasksPage() {
               data-testid={bucket === "all" ? undefined : `bucket-${bucket}`}
               onClick={() => setParam("bucket", bucket === "all" ? null : bucket)}
             >
-              {label}
+              <span className={styles.tabLabel}>{label}</span>
               <span
                 className={`${styles.count} ${
                   bucket === "attention" ? styles.countRed : ""
@@ -277,6 +277,11 @@ export function TasksPage() {
             <TicketDetailPanel
               ticketId={selectedId}
               onBack={() => {
+                const next = new URLSearchParams(params);
+                next.delete("ticketId");
+                setParams(next, { replace: true });
+              }}
+              onDeleted={() => {
                 const next = new URLSearchParams(params);
                 next.delete("ticketId");
                 setParams(next, { replace: true });

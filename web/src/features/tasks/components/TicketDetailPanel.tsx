@@ -1,20 +1,29 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
+import { workspace } from "@/lib/api/endpoints";
+import { pendingInbox, useAnswerAttention, useAttentions } from "@/lib/api/hooks";
+import { ApprovalCard } from "@/components/attention/ApprovalCard";
+import { MarkdownView } from "@/components/markdown/MarkdownView";
 import { useCan } from "@/lib/auth/permissions";
 import {
   useAddBudget,
+  useDeleteTicket,
   useReassignTicket,
+  useRerunTicket,
   useStopTicket,
   useTicketDetail,
   useTicketTimeline,
+  useUpdateTicket,
 } from "../api";
-import type { TicketTimelineItem } from "@/lib/api/wire";
+import type { TicketArtifact, TicketTimelineItem } from "@/lib/api/wire";
 import { fmtCost, timeAgo } from "./TicketList";
 import styles from "./TicketDetailPanel.module.css";
 
 interface Props {
   ticketId: string | null;
   onBack?: () => void;
+  onDeleted?: () => void;
 }
 
 const BUCKET_META: Record<string, [string, string]> = {
@@ -70,19 +79,34 @@ function errorText(error: unknown): string {
  * The three actions are real: 重新派工 requeues, 追加预算 raises the ceiling,
  * 停止 ends the ticket (confirm required).
  */
-export function TicketDetailPanel({ ticketId, onBack }: Props) {
+export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
   const detail = useTicketDetail(ticketId);
   const timeline = useTicketTimeline(ticketId);
   const stop = useStopTicket();
   const reassign = useReassignTicket();
+  const rerun = useRerunTicket();
+  const editTicket = useUpdateTicket();
+  const remove = useDeleteTicket();
   const addBudget = useAddBudget();
+  const attentions = useAttentions();
+  const answer = useAnswerAttention();
   const canTicket = useCan("ticket:write");
   const canAttention = useCan("attention:write");
   const canWrite = canTicket && canAttention;
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editInstruction, setEditInstruction] = useState("");
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [yuan, setYuan] = useState("1");
+  const [previewArtifact, setPreviewArtifact] = useState<TicketArtifact | null>(null);
+  const previewQuery = useQuery({
+    queryKey: ["workspace-file", previewArtifact?.ref ?? ""],
+    queryFn: () => workspace.file(previewArtifact?.ref ?? ""),
+    enabled: previewArtifact !== null && previewArtifact.kind === "file",
+  });
 
   if (!ticketId) {
     return (
@@ -113,6 +137,9 @@ export function TicketDetailPanel({ ticketId, onBack }: Props) {
   const executor = data.executor === "builtin" || !data.executor
     ? "内置执行器"
     : `${data.executor} 执行器`;
+  const pendingAttention = pendingInbox(attentions.data?.items).find(
+    (item) => item.ticketId === ticketId,
+  );
   const budgetCap = data.budget?.maxCostMicros;
   const budgetPct = budgetCap
     ? Math.min(100, Math.round(((data.costMicros ?? 0) / budgetCap) * 100))
@@ -221,12 +248,50 @@ export function TicketDetailPanel({ ticketId, onBack }: Props) {
           </Button>
           <Button
             size="sm"
+            variant="secondary"
+            data-testid="detail-rerun"
+            loading={rerun.isPending}
+            disabled={!canWrite || !ended}
+            title={ended ? "重新排队并执行此任务" : "任务结束后可再次运行"}
+            onClick={() => rerun.mutate(data.ticketId, {
+              onSuccess: () => setNotice("已重新排队，执行器会再次领取该任务。"),
+              onError: (error) => setNotice(`再次运行失败：${errorText(error)}`),
+            })}
+          >
+            再次运行
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="detail-edit"
+            disabled={!canWrite || !ended}
+            title={ended ? "编辑标题与任务说明；再次运行会使用新说明" : "运行中不可编辑，请先取消任务"}
+            onClick={() => {
+              setEditTitle(data.title);
+              setEditInstruction(data.instruction ?? "");
+              setEditOpen(true);
+            }}
+          >
+            编辑
+          </Button>
+          <Button
+            size="sm"
             variant="danger"
             data-testid="drawer-stop"
             disabled={!canWrite || ended}
             onClick={() => setConfirmStop(true)}
           >
-            停止
+            取消任务
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="detail-delete"
+            disabled={!canWrite || !ended}
+            title={ended ? "删除此任务记录" : "先停止任务，再删除"}
+            onClick={() => setConfirmDelete(true)}
+          >
+            删除
           </Button>
         </div>
       </div>
@@ -236,6 +301,56 @@ export function TicketDetailPanel({ ticketId, onBack }: Props) {
           {notice}
         </button>
       ) : null}
+
+      {pendingAttention?.kind === "approval" ? (
+        <ApprovalCard
+          attention={pendingAttention}
+          busy={answer.isPending}
+          onAnswer={(attentionId, decision) =>
+            answer.mutate(
+              { attentionId, decision },
+              {
+                onSuccess: () => {
+                  void detail.refetch();
+                  void timeline.refetch();
+                },
+              },
+            )}
+        />
+      ) : pendingAttention ? (
+        <div className={styles.attentionBlock} data-testid="ticket-attention">
+          <b>需要处理</b>
+          <span>
+            {String((pendingAttention.payload as { summary?: string }).summary
+              ?? pendingAttention.kind)}
+          </span>
+        </div>
+      ) : null}
+
+      <section className={styles.panelCard} data-testid="task-instruction">
+        <div className={styles.panelHead}>
+          <b>任务内容</b>
+          <span className={styles.panelSub}>执行器收到的指令</span>
+          <span className={styles.spacer} />
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="instruction-edit"
+            disabled={!canWrite || !ended}
+            title={ended ? "编辑任务说明" : "运行中不可编辑"}
+            onClick={() => {
+              setEditTitle(data.title);
+              setEditInstruction(data.instruction ?? "");
+              setEditOpen(true);
+            }}
+          >
+            编辑
+          </Button>
+        </div>
+        <p className={styles.instruction}>
+          {data.instruction || "无任务说明"}
+        </p>
+      </section>
 
       <section className={styles.panelCard}>
         <div className={styles.panelHead}>
@@ -358,19 +473,125 @@ export function TicketDetailPanel({ ticketId, onBack }: Props) {
                 <span className={styles.artifactName}>{item.kind} · {item.ref}</span>
                 <span className={styles.spacer} />
                 <span className={styles.muted}>{sizeLabel(item.size)}</span>
+                {item.kind === "file" ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid="artifact-preview"
+                    onClick={() => setPreviewArtifact(item)}
+                  >
+                    预览
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p className={styles.muted}>还没有产物。</p>
+          <p className={styles.muted}>
+            还没有产物。若任务只返回文本，报告内容见上方；需要文件时请在指令中明确要求写入工作区。
+          </p>
         )}
       </section>
 
       <Dialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title="编辑任务"
+        description="仅已结束/失败的任务可编辑；保存后再次运行会使用新说明。"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditOpen(false)}>取消</Button>
+            <Button
+              data-testid="ticket-edit-save"
+              loading={editTicket.isPending}
+              disabled={!editTitle.trim()}
+              onClick={() => editTicket.mutate({
+                ticketId: data.ticketId,
+                title: editTitle.trim(),
+                content: editInstruction.trim(),
+              }, {
+                onSuccess: () => {
+                  setEditOpen(false);
+                  setNotice("任务已更新；再次运行会使用新说明。");
+                },
+                onError: (error) => setNotice(`保存失败：${errorText(error)}`),
+              })}
+            >
+              保存
+            </Button>
+          </>
+        }
+      >
+        <label className={styles.budgetLabel}>
+          标题
+          <input
+            data-testid="ticket-edit-title"
+            value={editTitle}
+            maxLength={200}
+            onChange={(event) => setEditTitle(event.target.value)}
+          />
+        </label>
+        <label className={styles.budgetLabel}>
+          任务说明
+          <textarea
+            data-testid="ticket-edit-instruction"
+            rows={7}
+            maxLength={4000}
+            value={editInstruction}
+            onChange={(event) => setEditInstruction(event.target.value)}
+          />
+        </label>
+      </Dialog>
+
+      <Dialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="删除任务"
+        description="删除任务记录、报告与时间线；审计、用量与执行事件保留。"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDelete(false)}>取消</Button>
+            <Button
+              variant="danger"
+              data-testid="confirm-delete"
+              loading={remove.isPending}
+              onClick={() => remove.mutate(data.ticketId, {
+                onSuccess: () => {
+                  setConfirmDelete(false);
+                  onDeleted?.();
+                },
+                onError: (error) => setNotice(`删除失败：${errorText(error)}`),
+              })}
+            >
+              确认删除
+            </Button>
+          </>
+        }
+      >
+        <p>确定删除「{data.title}」？此操作不可撤销。</p>
+      </Dialog>
+
+      <Dialog
+        open={previewArtifact !== null}
+        onOpenChange={(open) => { if (!open) setPreviewArtifact(null); }}
+        title={previewArtifact ? `产物 · ${previewArtifact.ref}` : "产物预览"}
+        description="只读预览工作区文件；大小与 sha256 已登记。"
+        width={760}
+      >
+        {previewQuery.isLoading ? <Loading label="读取文件…" /> : previewQuery.isError ? (
+          <ErrorState message="文件读取失败" onRetry={() => void previewQuery.refetch()} />
+        ) : previewQuery.data ? (
+          <div className={styles.artifactPreview}>
+            <MarkdownView content={previewQuery.data.content} />
+          </div>
+        ) : null}
+      </Dialog>
+
+      <Dialog
         open={confirmStop}
         onOpenChange={setConfirmStop}
-        title="确认停止"
-        description="停止只结束当前执行并收尾工单；已产生的消耗与产物保留。"
+        title="取消任务"
+        description="取消会结束当前执行并收尾工单；已产生的消耗与产物保留。"
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmStop(false)}>取消</Button>
@@ -382,13 +603,13 @@ export function TicketDetailPanel({ ticketId, onBack }: Props) {
                 stop.mutate(data.ticketId, {
                   onSuccess: () => {
                     setConfirmStop(false);
-                    setNotice("任务已停止并进入已完成。");
+                    setNotice("任务已取消并进入已完成。");
                   },
-                  onError: (error) => setNotice(`停止失败：${errorText(error)}`),
+                  onError: (error) => setNotice(`取消失败：${errorText(error)}`),
                 })
               }
             >
-              确认停止
+              确认取消
             </Button>
           </>
         }

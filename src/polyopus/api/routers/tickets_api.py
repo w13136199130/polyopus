@@ -18,6 +18,11 @@ from polyopus.platform.events.store import EventStore
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
+class UpdateTicketBody(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    content: str | None = Field(default=None, max_length=4000)
+
+
 class CreateTicketBody(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str | None = Field(default=None, max_length=4000)
@@ -170,6 +175,7 @@ _TIMELINE_KIND = {
     "trigger_fanned_out": "trigger",
     "reassigned": "assignment",
     "budget_adjusted": "report",
+    "rerun": "ticket",
 }
 
 
@@ -210,6 +216,16 @@ def ticket_timeline(
             "SELECT * FROM triggers WHERE trigger_id = ? LIMIT 1",
             (str(ticket["trigger_id"]),),
         ).fetchone()
+    rerun_row = conn.execute(
+        "SELECT MAX(created_at) FROM timeline_events WHERE ticket_id = ?"
+        " AND kind = 'rerun'",
+        (ticket_id,),
+    ).fetchone()
+    cutoff = int(rerun_row[0]) if rerun_row is not None and rerun_row[0] else 0
+
+    actor = json.loads(ticket["actor_json"] or "{}")
+    actor_id = str(actor.get("id") or "system")
+    actor_name = str(actor.get("name") or "手动创建")
     if trigger is not None:
         payload = json.loads(trigger["payload_json"] or "{}")
         text = str(payload.get("text", ""))[:120]
@@ -222,6 +238,36 @@ def ticket_timeline(
             "actor": {"id": str(trigger["actor_id"] or "system"), "name": "actor"},
             "tone": "neutral",
         })
+    else:
+        items.append({
+            "id": "trigger:manual",
+            "at": _iso(int(ticket["created_at"])),
+            "kind": "trigger",
+            "title": "手动创建",
+            "description": str(ticket["title"]),
+            "actor": {"id": actor_id, "name": actor_name},
+            "tone": "neutral",
+        })
+    # Deterministic Gate/Eval stages for both manual and source tickets; the
+    # detailed timeline rows below start at Ticket/Assignment/Report.
+    items.append({
+        "id": "gate:synthetic",
+        "at": _iso(int(ticket["created_at"])),
+        "kind": "gate",
+        "title": "准入通过",
+        "description": f"actor allowed · strength={ticket['strength']}",
+        "actor": {"id": "system", "name": "gate"},
+        "tone": "success",
+    })
+    items.append({
+        "id": "eval:synthetic",
+        "at": _iso(int(ticket["created_at"])),
+        "kind": "eval",
+        "title": "显式请求",
+        "description": f"accept · strength={ticket['strength']} · confidence 1.00",
+        "actor": {"id": "system", "name": "eval"},
+        "tone": "info",
+    })
 
     for row in conn.execute(
         "SELECT * FROM timeline_events WHERE ticket_id = ? ORDER BY id",
@@ -229,6 +275,8 @@ def ticket_timeline(
     ).fetchall():
         kind = _TIMELINE_KIND.get(str(row["kind"]))
         if kind is None:
+            continue
+        if cutoff and int(row["created_at"]) < cutoff and str(row["kind"]) != "rerun":
             continue
         items.append({
             "id": str(row["event_id"]),
@@ -254,6 +302,8 @@ def ticket_timeline(
             kind = _EVENT_KIND.get(str(row["type"]))
             if kind is None:
                 continue
+            if cutoff and int(row["ts"]) < cutoff:
+                continue
             items.append({
                 "id": f"ev_{row['id']}",
                 "at": _iso(int(row["ts"])),
@@ -265,6 +315,22 @@ def ticket_timeline(
                     {"turnId": row["turn_id"]} if row["turn_id"] else {}
                 ),
             })
+
+    # Duplicate producers (approval resume + assignment tail) can emit the
+    # same report/assignment event twice in one second. Collapse exact
+    # same-time duplicates while keeping genuine reruns (different times).
+    deduped: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for item in items:
+        key = (
+            str(item.get("at", "")), str(item.get("kind", "")),
+            str(item.get("title", "")), str(item.get("description", "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    items = deduped
 
     # Same-second rows: keep the stage order the prototype teaches
     # (Trigger → Ticket → Assignment → Report → Attention), not id strings.
@@ -284,6 +350,40 @@ def ticket_timeline(
     for item in items:
         item.pop("_seq", None)
     return {"items": items[:limit]}
+
+
+def _instruction_of(conn: Connection, ticket: Row) -> str:
+    meta = conn.execute(
+        "SELECT trigger_id, title FROM tickets WHERE ticket_id = ?",
+        (str(ticket["ticket_id"]),),
+    ).fetchone()
+    if meta is None:
+        return ""
+    row = conn.execute(
+        "SELECT payload_json FROM timeline_events WHERE ticket_id = ?"
+        " AND kind = 'human_message' ORDER BY id DESC LIMIT 1",
+        (str(ticket["ticket_id"]),),
+    ).fetchone()
+    if row is not None:
+        try:
+            text = str(json.loads(str(row[0])).get("content") or "").strip()
+            if text:
+                return text
+        except ValueError:
+            pass
+    if meta["trigger_id"]:
+        trigger = conn.execute(
+            "SELECT payload_json FROM triggers WHERE trigger_id = ? LIMIT 1",
+            (str(meta["trigger_id"]),),
+        ).fetchone()
+        if trigger is not None:
+            try:
+                text = str(json.loads(str(trigger[0])).get("text") or "").strip()
+                if text:
+                    return text
+            except ValueError:
+                pass
+    return str(meta["title"])
 
 
 @router.get("/{ticket_id}")
@@ -358,6 +458,7 @@ def get_ticket(
             else None
         ),
         "artifacts": artifacts,
+        "instruction": _instruction_of(conn, row),
     }
 
 
@@ -384,6 +485,45 @@ def reassign_ticket(
         conn, store, ticket_id, by=user.user_id, tenant_id=user.tenant_id
     )
     return {"ticketId": ticket_id, "bucket": "queued", "state": "open"}
+
+
+@router.patch("/{ticket_id}")
+def update_ticket(
+    ticket_id: str,
+    body: UpdateTicketBody,
+    user: User = Depends(require_permission("ticket:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    service.update_ticket(
+        conn, ticket_id=ticket_id, title=body.title, content=body.content,
+        by=user.user_id, tenant_id=user.tenant_id,
+    )
+    return {"ticketId": ticket_id, "updated": True}
+
+
+@router.post("/{ticket_id}/rerun")
+def rerun_ticket(
+    ticket_id: str,
+    user: User = Depends(require_permission("ticket:write")),
+    conn: Connection = Depends(get_db),
+    store: EventStore = Depends(get_store),
+) -> dict[str, object]:
+    service.rerun(
+        conn, store, ticket_id, by=user.user_id, tenant_id=user.tenant_id
+    )
+    return {"ticketId": ticket_id, "bucket": "queued", "state": "open"}
+
+
+@router.delete("/{ticket_id}")
+def delete_ticket(
+    ticket_id: str,
+    user: User = Depends(require_permission("ticket:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    service.delete_ticket(
+        conn, ticket_id=ticket_id, by=user.user_id, tenant_id=user.tenant_id
+    )
+    return {"ticketId": ticket_id, "deleted": True}
 
 
 @router.post("/{ticket_id}/budget")

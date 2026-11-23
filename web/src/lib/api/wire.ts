@@ -285,6 +285,7 @@ export interface TicketArtifact {
 }
 
 export interface TicketDetail extends TicketRow {
+  instruction: string;
   scope: string[];
   budget: { maxTotalTokens?: number; maxCostMicros?: number } | null;
   costMicros?: number;

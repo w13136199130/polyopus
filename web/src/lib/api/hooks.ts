@@ -15,7 +15,7 @@ export function useAttentions() {
   return useQuery({
     queryKey: attentionKeys.all,
     queryFn: attentions.list,
-    refetchInterval: 5_000,
+    refetchInterval: 2_000,
   });
 }
 
@@ -28,6 +28,10 @@ export function useAnswerAttention() {
     }) => attentions.answer(input.attentionId, input.decision),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: attentionKeys.all });
+      void client.invalidateQueries({
+        predicate: (query) => ["tickets", "ticket-counts", "ticket", "ticket-timeline"]
+          .includes(String(query.queryKey[0])),
+      });
     },
   });
 }

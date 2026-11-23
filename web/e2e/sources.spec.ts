@@ -43,7 +43,7 @@ test("sources: create webhook -> test event -> task -> stop", async ({ page }) =
   // The test event carries write intent and the source scope allows fs:write,
   // so the ticket parks at the policy gate -- deterministic stop target.
   await page.getByTestId("drawer-stop").click();
-  await page.getByRole("button", { name: "确认停止" }).click();
+  await page.getByRole("button", { name: "确认取消" }).click();
 
   await page.getByTestId("bucket-done").click();
   await expect(page.getByTestId("ticket-row").filter({ hasText: "保存结果" })).toBeVisible({
