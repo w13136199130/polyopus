@@ -1,5 +1,5 @@
 {
-  "count": 141,
+  "count": 142,
   "ops": [
     {
       "method": "DELETE",
@@ -308,6 +308,10 @@
     {
       "method": "PATCH",
       "path": "/api/v1/connectors/instances/{instance_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/connectors/instances/{instance_id}/tools"
     },
     {
       "method": "PATCH",

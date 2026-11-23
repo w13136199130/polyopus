@@ -172,7 +172,7 @@
 
 .toolRow {
   display: grid;
-  grid-template-columns: minmax(120px, .9fr) minmax(0, 1.6fr) auto;
+  grid-template-columns: minmax(120px, .9fr) minmax(0, 1.6fr) auto auto;
   align-items: center;
   gap: 10px;
   padding: 7px 8px;
@@ -192,4 +192,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.toolRow code { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-4); }
+.toolRow code {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-4);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolToggle input { width: 13px; height: 13px; accent-color: var(--primary); }

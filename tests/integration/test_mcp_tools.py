@@ -209,6 +209,48 @@ def test_discover_registers_tenant_scoped_tools(
         )
 
 
+def test_tool_switch_hides_binding_and_blocks_direct_call(
+    env: tuple[sqlite3.Connection, str, Path],
+) -> None:
+    conn, instance_id, _ws = env
+    discovered = tool_catalog.discover_instance(
+        conn, tenant_id="default", instance_id=instance_id, secret_key=SECRET,
+    )
+    tool = discovered["items"][0]
+    assert len(tool_catalog.bindings(conn, tenant_id="default")) == 1
+
+    toggled = tool_catalog.set_tool_enabled(
+        conn, tenant_id="default", instance_id=instance_id,
+        tool_key=tool["toolKey"], enabled=False,
+    )
+    assert toggled["enabled"] is False
+    assert tool_catalog.bindings(conn, tenant_id="default") == []
+    listed = tool_catalog.list_instance_tools(
+        conn, tenant_id="default", instance_id=instance_id,
+    )
+    assert listed[0]["enabled"] is False
+
+    from polyopus.platform.errors import AppError
+
+    with pytest.raises(AppError) as exc:
+        tool_catalog.call_tool(
+            conn, tenant_id="default", instance_id=instance_id,
+            server="fake", tool_name="weather", arguments={"city": "Hangzhou"},
+            secret_key=SECRET,
+        )
+    assert exc.value.code == "TOOL_DISABLED"
+
+    # rediscovery keeps the user's choice instead of silently re-enabling it
+    tool_catalog.discover_instance(
+        conn, tenant_id="default", instance_id=instance_id, secret_key=SECRET,
+    )
+    listed = tool_catalog.list_instance_tools(
+        conn, tenant_id="default", instance_id=instance_id,
+    )
+    assert listed[0]["enabled"] is False
+    assert FakeMcpHandler.calls == []
+
+
 def test_engine_executes_mcp_tool_after_approval(
     env: tuple[sqlite3.Connection, str, Path],
 ) -> None:
@@ -233,6 +275,8 @@ def test_engine_executes_mcp_tool_after_approval(
         "SELECT request_json FROM approvals ORDER BY id DESC LIMIT 1"
     ).fetchone()[0])["actions"][0]
     assert action["tool"].startswith("mcp.")
+    assert action["tool_label"] == "weather · Fake MCP"
+    assert action["source"] == "mcp"
     approval_id = conn.execute(
         "SELECT approval_id FROM approvals ORDER BY id DESC LIMIT 1"
     ).fetchone()[0]

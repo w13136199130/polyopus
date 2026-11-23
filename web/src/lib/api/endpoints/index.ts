@@ -505,6 +505,12 @@ export const connectors = {
     apiFetch<{ items: ConnectorToolRow[] }>(
       `/connectors/instances/${encodeURIComponent(instanceId)}/tools`,
     )),
+  toggleTool: op("PATCH", "/connectors/instances/{instance_id}/tools", (
+    instanceId: string, body: { toolKey: string; enabled: boolean },
+  ) => apiFetch<ConnectorToolRow>(
+    `/connectors/instances/${encodeURIComponent(instanceId)}/tools`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )),
   discover: op("POST", "/connectors/instances/{instance_id}/discover", (instanceId: string) =>
     apiFetch<{
       items: ConnectorToolRow[];

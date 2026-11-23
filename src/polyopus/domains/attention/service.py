@@ -26,6 +26,10 @@ class ApprovalRequest:
     args_preview: str
     risk: str = "high"
     summary: str = ""
+    # Human-readable name for the approval card (MCP tools are stored under a
+    # machine key like `mcp.ci_x.server.weather`; the label is `天气 · Fake MCP`).
+    tool_label: str = ""
+    source: str = "builtin"
     args_json: str = ""  # full arguments; resume executes from these
     # thinking-model reasoning for this tool call; must be replayed on resume
     reasoning: str = ""
@@ -55,6 +59,8 @@ def request(
             "actions": [
                 {
                     "tool": req.tool,
+                    "tool_label": req.tool_label or req.tool,
+                    "source": req.source,
                     "args_preview": req.args_preview[:500],
                     "risk": req.risk,
                     "args_json": req.args_json,
@@ -94,6 +100,8 @@ def request(
                      "actions": [
                          {
                              "tool": req.tool,
+                             "tool_label": req.tool_label or req.tool,
+                             "source": req.source,
                              "args_preview": req.args_preview[:200],
                              "risk": req.risk,
                          }
@@ -120,7 +128,13 @@ def request(
         {
             "approval_id": approval_id,
             "actions": [
-                {"tool": req.tool, "args_preview": req.args_preview[:500], "risk": req.risk}
+                {
+                    "tool": req.tool,
+                    "tool_label": req.tool_label or req.tool,
+                    "source": req.source,
+                    "args_preview": req.args_preview[:500],
+                    "risk": req.risk,
+                }
             ],
             "allowed_decisions": list(req.allowed_decisions),
             "expires_at": ts + ttl_seconds,
@@ -134,8 +148,8 @@ def request(
 
     notifications.notify_thread(
         conn, tenant_id=tenant_id, thread_id=thread_id, kind="task",
-        title=f"需要审批：{req.summary or req.tool}",
-        body=f"{req.tool} · 风险 {req.risk}",
+        title=f"需要审批：{req.summary or req.tool_label or req.tool}",
+        body=f"{req.tool_label or req.tool} · 风险 {req.risk}",
         link="/chat", dedupe_key=f"approval:{approval_id}",
     )
     return approval_id, attention_id

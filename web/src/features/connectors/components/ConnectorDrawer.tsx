@@ -8,6 +8,7 @@ import {
   useProbeConnector,
   useStartOAuth,
   useUpdateConnector,
+  useUpdateConnectorTool,
 } from "@/features/connectors/api";
 import type { ConnectorCatalogRow, ConnectorInstanceRow } from "@/lib/api/wire";
 import styles from "./ConnectorDrawer.module.css";
@@ -93,6 +94,7 @@ export function ConnectorDrawer({
   const probe = useProbeConnector();
   const oauth = useStartOAuth();
   const discover = useDiscoverConnector();
+  const toggleTool = useUpdateConnectorTool();
   const toolsQuery = useConnectorTools(
     instance?.kind === "mcp" ? instance.instanceId : null,
   );
@@ -250,6 +252,15 @@ export function ConnectorDrawer({
     });
   }
 
+  function setToolEnabled(toolKey: string, enabled: boolean) {
+    if (!instance) return;
+    setError(null);
+    toggleTool.mutate(
+      { instanceId: instance.instanceId, toolKey, enabled },
+      { onError: (err) => setError(messageOf(err)) },
+    );
+  }
+
   function reauthorize() {
     if (!instance) return;
     oauth.mutate(instance.kind, {
@@ -352,7 +363,11 @@ export function ConnectorDrawer({
                 <div>
                   <b>可调用工具</b>
                   <span>
-                    {toolsQuery.data?.items.length ?? instance.toolsCount} 个 · 调用前按策略审批
+                    {toolsQuery.data
+                      ? `${toolsQuery.data.items.length} 个 · ${
+                        toolsQuery.data.items.filter((tool) => tool.enabled !== false).length
+                      } 启用 · 调用前按策略审批`
+                      : `${instance.toolsCount} 个 · 调用前按策略审批`}
                   </span>
                 </div>
                 <Button
@@ -376,7 +391,20 @@ export function ConnectorDrawer({
                         <span>{tool.server}</span>
                       </div>
                       <p>{tool.description || "无描述"}</p>
-                      <code>{tool.wireName}</code>
+                      <label
+                        className={styles.toolToggle}
+                        title={tool.enabled === false ? "已停用：模型看不到该工具" : "启用：模型可调用该工具"}
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid="connector-tool-toggle"
+                          checked={tool.enabled !== false}
+                          disabled={toggleTool.isPending}
+                          onChange={(event) =>
+                            setToolEnabled(tool.toolKey, event.target.checked)}
+                        />
+                        {tool.enabled === false ? "停用" : "启用"}
+                      </label>
                     </div>
                   ))}
                 </div>

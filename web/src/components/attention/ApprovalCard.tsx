@@ -11,19 +11,30 @@ interface Props {
 
 interface Action {
   tool?: string;
+  tool_label?: string;
+  source?: string;
   args_preview?: string;
   risk?: string;
 }
 
-function summarize(attention: AttentionItem): { tool: string; preview: string; risk: string } {
+function summarize(attention: AttentionItem): {
+  tool: string;
+  toolKey: string;
+  source: string;
+  preview: string;
+  risk: string;
+} {
   const payload = attention.payload as {
     summary?: string;
     actions?: Action[];
   };
   const first = payload.actions?.[0];
+  const toolKey = first?.tool ?? "";
   // older rows may only carry a summary; never render "unknown tool" noise
   return {
-    tool: first?.tool ?? payload.summary ?? "审批请求",
+    tool: first?.tool_label || toolKey || payload.summary || "审批请求",
+    toolKey,
+    source: first?.source ?? "builtin",
     preview: first?.args_preview ?? "",
     risk: first?.risk ?? "high",
   };
@@ -39,7 +50,7 @@ function minutesLeft(expiresAt: number): number {
  */
 export function ApprovalCard({ attention, busy, onAnswer }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const { tool, preview, risk } = summarize(attention);
+  const { tool, toolKey, source, preview, risk } = summarize(attention);
   const minutes = minutesLeft(attention.expiresAt);
 
   return (
@@ -47,14 +58,18 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
       <div className={styles.card} data-testid="approval-card">
         <div className={styles.top}>
           <span className={styles.icon} aria-hidden="true">⚑</span>
-          <span className={styles.title}>等待你批准：{tool}</span>
+          <span className={styles.title} data-testid="approval-tool-label">
+            等待你批准：{tool}
+          </span>
           <span className={styles.pill}>待审批</span>
         </div>
 
         <div className={styles.line}>
           <b>待批准</b>
           <span>
-            <code>{tool}</code> · 风险 {risk}
+            <code>{toolKey || tool}</code>
+            {tool !== toolKey ? <> · {tool}</> : null}
+            {" "}· 风险 {risk}
           </span>
         </div>
         <div className={styles.line}>
@@ -83,6 +98,7 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
           <span className={`${styles.chip} ${styles.chipAmber}`}>
             {minutes > 0 ? `${minutes} 分钟后自动拒绝` : "即将自动拒绝"}
           </span>
+          {source === "mcp" ? <span className={styles.chip}>MCP 外部工具</span> : null}
           <span className={styles.chip}>审计已记录</span>
         </div>
 

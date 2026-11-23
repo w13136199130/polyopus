@@ -54,6 +54,23 @@ export function useConnectorTools(instanceId: string | null) {
   });
 }
 
+export function useUpdateConnectorTool() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ instanceId, toolKey, enabled }: {
+      instanceId: string;
+      toolKey: string;
+      enabled: boolean;
+    }) => connectors.toggleTool(instanceId, { toolKey, enabled }),
+    onSuccess: (_result, variables) => {
+      void client.invalidateQueries({
+        queryKey: connectorKeys.tools(variables.instanceId),
+      });
+      void client.invalidateQueries({ queryKey: connectorKeys.instances });
+    },
+  });
+}
+
 export function useDiscoverConnector() {
   const client = useQueryClient();
   return useMutation({

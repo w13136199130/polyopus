@@ -38,6 +38,27 @@ describe("ApprovalCard", () => {
     expect(onAnswer).toHaveBeenCalledWith("at_1", "deny");
   });
 
+  it("shows a readable MCP label while keeping the machine key visible", () => {
+    render(
+      <ApprovalCard
+        attention={attentionFixture({
+          actions: [{
+            tool: "mcp.ci_1.fake.weather",
+            tool_label: "weather · Fake MCP",
+            source: "mcp",
+            args_preview: '{"city":"Hangzhou"}',
+          }],
+        })}
+        busy={false}
+        onAnswer={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("approval-tool-label").textContent)
+      .toContain("weather · Fake MCP");
+    expect(screen.getByText("mcp.ci_1.fake.weather")).toBeInTheDocument();
+    expect(screen.getByText("MCP 外部工具")).toBeInTheDocument();
+  });
+
   it("expands the arguments preview", async () => {
     render(
       <ApprovalCard

@@ -293,11 +293,16 @@ def _execute_call(
     tool_round: int,
     workspace: Path | None,
     runtime_tool: _RuntimeTool | None = None,
+    display_name: str | None = None,
 ) -> tuple[str, bool]:
     """Run one allowed builtin or MCP tool; returns (output_json, ok)."""
     connector = runtime_tool.connector if runtime_tool is not None else None
     source = "mcp" if connector is not None else "builtin"
-    display_name = connector.tool_name if connector is not None else internal
+    if display_name is None:
+        display_name = (
+            f"{connector.tool_name} · {connector.instance_name}"
+            if connector is not None else internal
+        )
     store.append(
         thread_id,
         "tool.started",
@@ -385,12 +390,15 @@ def _refuse_call(
     tenant_id: str,
     tool_round: int,
     arguments_json: str,
+    display_name: str | None = None,
+    source: str = "builtin",
 ) -> str:
     store.append(
         thread_id,
         "tool.started",
         {
-            "tool_call_id": call_id, "name": internal, "source": "builtin",
+            "tool_call_id": call_id, "name": display_name or internal,
+            "tool_key": internal, "source": source,
             "risk": risk, "args_digest": str(len(arguments_json)),
             "args_preview": arguments_json[:200],
         },
@@ -400,7 +408,7 @@ def _refuse_call(
         thread_id,
         "tool.failed",
         {"tool_call_id": call_id, "code": code, "message": message,
-         "retryable": False},
+         "retryable": False, "source": source},
         tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
     )
     output_json = json.dumps({"denied": message}, ensure_ascii=False)
@@ -661,6 +669,12 @@ async def run_turn(
             spec = runtime_tool.policy if runtime_tool is not None else None
             args = _args_of(call.arguments_json)
             risk = spec.risk if spec else "critical"
+            connector = runtime_tool.connector if runtime_tool else None
+            tool_label = (
+                f"{connector.tool_name} · {connector.instance_name}"
+                if connector is not None else internal
+            )
+            tool_source = "mcp" if connector is not None else "builtin"
             if spec is None:
                 decision = Decision("deny", (), "unknown tool")
             else:
@@ -716,6 +730,7 @@ async def run_turn(
                         turn_id=turn_id, tenant_id=tenant_id, tool_round=tool_round,
                         workspace=cfg.workspace,
                         runtime_tool=runtime_tool,
+                        display_name=tool_label,
                     )
             elif spec is not None and decision.effect == "ask":
                 # pipeline step 6: pause with the REAL tool and args
@@ -726,9 +741,11 @@ async def run_turn(
                     ticket_id=str(ticket_id) if ticket_id else None,
                     req=attention.ApprovalRequest(
                         tool=internal,
+                        tool_label=tool_label,
+                        source=tool_source,
                         args_preview=call.arguments_json[:200],
                         risk=risk,
-                        summary=f"策略要求审批（{decision.reason}）",
+                        summary=f"策略要求审批：{tool_label}",
                         args_json=call.arguments_json,
                         reasoning=state.reasoning,
                     ),
@@ -755,6 +772,7 @@ async def run_turn(
                     message=decision.reason, risk=risk, run_id=run_id,
                     thread_id=thread_id, turn_id=turn_id, tenant_id=tenant_id,
                     tool_round=tool_round, arguments_json=call.arguments_json,
+                    display_name=tool_label, source=tool_source,
                 )
             messages.append(
                 gateway_types.ChatMessage(

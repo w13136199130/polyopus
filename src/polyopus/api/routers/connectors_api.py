@@ -43,6 +43,14 @@ class InstancePatchBody(BaseModel):
     status: str | None = None
 
 
+class ToolToggleBody(BaseModel):
+    tool_key: str = Field(
+        min_length=1, max_length=300,
+        validation_alias=AliasChoices("toolKey", "tool_key"),
+    )
+    enabled: bool
+
+
 class OAuthStartBody(BaseModel):
     kind: str = Field(min_length=1)
 
@@ -108,6 +116,19 @@ def instance_tools(
             conn, tenant_id=user.tenant_id, instance_id=instance_id
         )
     }
+
+
+@router.patch("/instances/{instance_id}/tools")
+def toggle_instance_tool(
+    instance_id: str,
+    body: ToolToggleBody,
+    user: User = Depends(require_permission("connector:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return tool_catalog.set_tool_enabled(
+        conn, tenant_id=user.tenant_id, instance_id=instance_id,
+        tool_key=body.tool_key, enabled=body.enabled,
+    )
 
 
 @router.patch("/instances/{instance_id}")

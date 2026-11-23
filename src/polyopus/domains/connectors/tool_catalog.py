@@ -18,6 +18,7 @@ class ConnectorToolBinding:
     tool_key: str
     wire_name: str
     instance_id: str
+    instance_name: str
     server: str
     tool_name: str
     description: str
@@ -85,7 +86,9 @@ def discover_instance(
                   tool_key = excluded.tool_key,
                   description = excluded.description,
                   input_schema_json = excluded.input_schema_json,
-                  enabled = 1,
+                  -- rediscovery must not silently re-enable a tool the user
+                  -- switched off; a removed-and-readded tool is a new row.
+                  enabled = connector_tools.enabled,
                   updated_at = excluded.updated_at
                 """,
                 (
@@ -168,20 +171,59 @@ def bindings(
     placeholders = ",".join("?" for _ in ids)
     out: list[ConnectorToolBinding] = []
     for row in conn.execute(
-        "SELECT * FROM connector_tools WHERE tenant_id = ? AND enabled = 1 "
-        f"AND instance_id IN ({placeholders}) ORDER BY id",
+        "SELECT ct.*, ci.display_name AS instance_name "
+        "FROM connector_tools ct "
+        "JOIN connector_instances ci "
+        "  ON ci.tenant_id = ct.tenant_id AND ci.instance_id = ct.instance_id "
+        "WHERE ct.tenant_id = ? AND ct.enabled = 1 "
+        f"AND ct.instance_id IN ({placeholders}) ORDER BY ct.id",
         (tenant_id, *ids),
     ).fetchall():
         out.append(ConnectorToolBinding(
             tool_key=str(row["tool_key"]),
             wire_name=str(row["wire_name"]),
             instance_id=str(row["instance_id"]),
+            instance_name=str(row["instance_name"]),
             server=str(row["server"]),
             tool_name=str(row["tool_name"]),
             description=str(row["description"] or ""),
             input_schema=json.loads(row["input_schema_json"] or "{}"),
         ))
     return out
+
+
+def set_tool_enabled(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    instance_id: str,
+    tool_key: str,
+    enabled: bool,
+) -> dict[str, Any]:
+    _instance(conn, tenant_id, instance_id)
+    updated = conn.execute(
+        "UPDATE connector_tools SET enabled = ?, updated_at = ? "
+        "WHERE tenant_id = ? AND instance_id = ? AND tool_key = ?",
+        (int(enabled), int(time.time()), tenant_id, instance_id, tool_key),
+    )
+    if updated.rowcount != 1:
+        raise AppError("NOT_FOUND", details={"toolKey": tool_key})
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM connector_tools WHERE tenant_id = ? "
+        "AND instance_id = ? AND tool_key = ?",
+        (tenant_id, instance_id, tool_key),
+    ).fetchone()
+    assert row is not None
+    return {
+        "toolKey": str(row["tool_key"]),
+        "wireName": str(row["wire_name"]),
+        "server": str(row["server"]),
+        "toolName": str(row["tool_name"]),
+        "description": str(row["description"] or ""),
+        "inputSchema": json.loads(row["input_schema_json"] or "{}"),
+        "enabled": bool(row["enabled"]),
+    }
 
 
 def call_tool(
@@ -194,6 +236,15 @@ def call_tool(
     arguments: dict[str, Any],
     secret_key: str,
 ) -> dict[str, Any]:
+    tool = conn.execute(
+        "SELECT enabled FROM connector_tools WHERE tenant_id = ? "
+        "AND instance_id = ? AND server = ? AND tool_name = ?",
+        (tenant_id, instance_id, server, tool_name),
+    ).fetchone()
+    if tool is None or not int(tool["enabled"]):
+        raise AppError("TOOL_DISABLED", details={
+            "server": server, "tool": tool_name,
+        })
     _row, config = _config(conn, tenant_id, instance_id, secret_key)
     servers = {item.name: item for item in mcp.parse_servers(config)}
     target = servers.get(server)
