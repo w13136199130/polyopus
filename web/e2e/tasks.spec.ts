@@ -137,13 +137,16 @@ test("tasks: policy-gated ticket parks in 待决, stop moves it to done", async 
 
   // the card carries the matching approval actions inline
   await page.getByTestId("bucket-attention").click();
-  const card = page.getByTestId("ticket-row").filter({ hasText: ticket!.slice(0, 11) });
+  const card = page.locator(
+    `[data-testid="ticket-row"][data-ticket-id="${ticket}"]`,
+  );
   await expect(card.getByTestId("card-approve")).toBeVisible({ timeout: 15_000 });
 
   // stop via the inline detail's confirm dialog -> done +1, attention back
   await card.click();
   const detail = page.getByTestId("ticket-detail");
   await expect(detail).toContainText(ticket!);
+  await expect(detail.getByTestId("budget-bar")).toBeVisible();
   await page.getByTestId("drawer-stop").click();
   const confirm = page.getByRole("dialog", { name: "确认停止" });
   await confirm.getByRole("button", { name: "确认停止" }).click();
@@ -201,8 +204,9 @@ test("tasks: inline approval on the attention card", async ({ page }) => {
   });
 
   await page.getByTestId("bucket-attention").click();
-  // the card shows the ticket id truncated to 11 chars (tk_ + 6 hex)
-  const card = page.getByTestId("ticket-row").filter({ hasText: ticket!.slice(0, 11) });
+  const card = page.locator(
+    `[data-testid="ticket-row"][data-ticket-id="${ticket}"]`,
+  );
   await expect(card).toBeVisible({ timeout: 15_000 });
   const deny = card.getByTestId("card-deny");
   await expect(deny).toBeVisible({ timeout: 15_000 });
@@ -233,7 +237,9 @@ test("tasks: add budget from inline detail", async ({ page }) => {
     timeout: 30_000,
   });
   await page.getByTestId("bucket-attention").click();
-  const card = page.getByTestId("ticket-row").filter({ hasText: ticket!.slice(0, 11) });
+  const card = page.locator(
+    `[data-testid="ticket-row"][data-ticket-id="${ticket}"]`,
+  );
   await card.click();
   const detail = page.getByTestId("ticket-detail");
   await expect(detail).toContainText(ticket!);

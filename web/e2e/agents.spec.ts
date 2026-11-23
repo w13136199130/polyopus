@@ -106,3 +106,43 @@ test("agents: edit drawer saves draft and publishes v2", async ({ page }) => {
     .getByRole("button", { name: "确认发布" }).click();
   await expect(card.getByTestId("agent-status")).toHaveText("已发布 v2");
 });
+
+test("agents: dirty drawer asks before discarding edits", async ({ page }) => {
+  await login(page);
+  await page.goto("/agents");
+  const name = `脏关闭专家 ${Date.now()}`;
+  await page.getByTestId("agent-name").fill(name);
+  await page.getByTestId("agent-create").click();
+  const card = page.getByTestId("agent-row").filter({ hasText: name });
+  await expect(card).toBeVisible();
+
+  await card.click();
+  const drawer = page.getByRole("dialog", { name: /编辑专家/ });
+  await expect(drawer).toBeVisible();
+  await drawer.getByTestId("agent-drawer-desc").fill("未保存的描述");
+  await expect(drawer.getByTestId("agent-dirty")).toBeVisible();
+
+  await drawer.getByRole("button", { name: "关闭" }).click();
+  const confirm = page.getByRole("dialog", { name: "放弃未保存的修改？" });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "继续编辑" }).click();
+  await expect(drawer).toBeVisible();
+
+  await drawer.getByRole("button", { name: "关闭" }).click();
+  await page.getByRole("dialog", { name: "放弃未保存的修改？" })
+    .getByTestId("agent-discard").click();
+  await expect(drawer).toBeHidden();
+});
+
+test("agents: card 试运行 opens the drawer on the test section", async ({ page }) => {
+  await login(page);
+  await page.goto("/agents");
+  const name = `试运行专家 ${Date.now()}`;
+  await page.getByTestId("agent-name").fill(name);
+  await page.getByTestId("agent-create").click();
+  const card = page.getByTestId("agent-row").filter({ hasText: name });
+  await expect(card).toBeVisible();
+  await card.getByTestId("agent-try").click();
+  const drawer = page.getByRole("dialog", { name: /编辑专家/ });
+  await expect(drawer.getByTestId("agent-drawer-test-message")).toBeVisible();
+});

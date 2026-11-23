@@ -111,3 +111,15 @@
   .whoSub, .modeTag { display: none; }
   .title { max-width: 110px; }
 }
+
+.mobileSessions { display: none; }
+
+@media (max-width: 720px) {
+  .bar { padding: 0 10px; gap: 6px; }
+  .mobileSessions { display: inline-flex; flex: none; }
+  .who { max-width: 122px; }
+  .modeTag { display: none; }
+  .titleBlock { border-left: 0; padding-left: 0; }
+  .titleBlock .stateTag { display: none; }
+  [data-testid="dock-toggle"] { display: none; }
+}

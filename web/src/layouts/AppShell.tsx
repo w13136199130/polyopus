@@ -1,6 +1,8 @@
 import { Navigate, Outlet, useLocation } from "react-router";
 import { useSession } from "@/lib/auth/session";
 import { Sidebar } from "./Sidebar";
+import { MobileNav } from "./MobileNav";
+import { CommandPalette } from "./CommandPalette";
 import styles from "./AppShell.module.css";
 
 /**
@@ -23,6 +25,8 @@ export function AppShell() {
       <main className={styles.main}>
         <Outlet />
       </main>
+      <MobileNav />
+      <CommandPalette />
     </div>
   );
 }

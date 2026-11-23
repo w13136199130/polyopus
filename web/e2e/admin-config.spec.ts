@@ -87,3 +87,14 @@ test("admin: overview aggregates health, tickets and shortcuts", async ({ page }
     "aria-selected", "true",
   );
 });
+
+test("admin: plugins tab installs and toggles instance plugins", async ({ page }) => {
+  await login(page);
+  await page.goto("/admin");
+  await page.getByTestId("admin-tab-plugins").click();
+  await page.getByTestId("admin-plugin-examples").click();
+  const row = page.getByTestId("admin-plugin-row").first();
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByTestId("admin-plugin-toggle").click();
+  await expect(row).toContainText(/已启用|disabled|installed/);
+});

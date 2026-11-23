@@ -14,11 +14,12 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useSearchParams } from "react-router";
-import { Button, Dialog, ErrorState, PageLoading, StreamConnectingIndicator } from "@/components/ui";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { Button, Dialog, Drawer, ErrorState, PageLoading, StreamConnectingIndicator } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import { useAgents } from "@/features/agents/api";
 import { useAdminSettings } from "@/features/settings/api";
+import { useCreateTicket } from "@/features/tasks/api";
 import { useKnowledgeBases } from "@/features/knowledge/api";
 import { useConnectorInstances } from "@/features/connectors/api";
 import {
@@ -43,7 +44,6 @@ import {
 } from "@/lib/api/hooks";
 import type { Message, Thread, ThreadSettings } from "@/lib/api/wire";
 import { useChatStream } from "@/features/chat/useChatStream";
-import { ApprovalCard } from "@/components/attention/ApprovalCard";
 import { ChatHeader } from "@/features/chat/components/ChatHeader";
 import { Composer } from "@/features/chat/components/Composer";
 import { Dock, type DockTab } from "@/features/chat/components/Dock";
@@ -81,9 +81,15 @@ function readTab(): DockTab {
 
 export function ChatPage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const createTicket = useCreateTicket();
   const threadId = params.get("threadId");
 
   const threadsQuery = useThreads();
+  const activeMode = threadsQuery.data?.items.find(
+    (thread) => thread.threadId === threadId,
+  )?.settings?.mode;
+  const mode: "act" | "ask" | "plan" = activeMode ?? "act";
   const agentsQuery = useAgents();
   const createThread = useCreateThread();
   const updateThread = useUpdateThread();
@@ -102,11 +108,13 @@ export function ChatPage() {
 
   const [restored, setRestored] = useState<string | null>(null);
   const [pendingSend, setPendingSend] = useState<string | null>(null);
+  const [pendingMode, setPendingMode] = useState<"act" | "ask" | "plan">("act");
   const [notice, setNotice] = useState<string | null>(null);
   const [showScroll, setShowScroll] = useState(false);
   const [queued, setQueued] = useState<string[]>([]);
   const [dockOpen, setDockOpen] = useState(() => readBool(DOCK_KEY, false));
   const [traceOpen, setTraceOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [dockTab, setDockTab] = useState<DockTab>(readTab);
   const [renameTarget, setRenameTarget] = useState<Thread | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -117,11 +125,28 @@ export function ChatPage() {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canWrite = useCan("chat:write");
+  const newRequested = params.get("new") === "1";
   const canReadSettings = useCan("settings:read");
   const settingsQuery = useAdminSettings();
+
+  useEffect(() => {
+    if (!newRequested || !canWrite) return;
+    const next = new URLSearchParams(params);
+    next.delete("new");
+    setParams(next, { replace: true });
+    createThread.mutate(
+      { title: "新对话", agentId: null },
+      { onSuccess: (thread) => setParams({ threadId: thread.threadId }) },
+    );
+  }, [newRequested, canWrite, params, setParams, createThread]);
   const modelLabel = canReadSettings && settingsQuery.data
     ? (settingsQuery.data.modelName ?? "FakeModel")
     : "";
+  // FakeModel is intentional for demos/e2e. Only an env provider with a
+  // missing key is genuinely unusable; registry models are already filtered.
+  const modelUnavailable =
+    modelsQuery.data?.source === "env"
+    && !modelsQuery.data.items.some((model) => model.configured);
 
   // The transcript decorates messages with tool steps/citations, and the
   // Dock reuses the same tail; one poller for both.
@@ -153,14 +178,14 @@ export function ChatPage() {
 
   // flush the queue one message at a time once the active turn ends
   useEffect(() => {
-    if (!threadId || queued.length === 0) return;
+    if (!threadId || queued.length === 0 || modelUnavailable) return;
     if (snapshot.status !== "finished" && snapshot.status !== "idle") return;
     const [next, ...rest] = queued;
     setQueued(rest);
-    void send(next).then((ok) => {
+    void send(next, mode).then((ok) => {
       if (!ok) setRestored(next);
     });
-  }, [threadId, queued, snapshot.status, send]);
+  }, [threadId, queued, snapshot.status, send, modelUnavailable, mode]);
 
   // autoscroll while streaming (follow when near the bottom)
   useEffect(() => {
@@ -189,10 +214,10 @@ export function ChatPage() {
     if (!threadId || !pendingSend) return;
     const content = pendingSend;
     setPendingSend(null);
-    void send(content).then((ok) => {
+    void send(content, pendingMode).then((ok) => {
       if (!ok) setRestored(content);
     });
-  }, [threadId, pendingSend, send]);
+  }, [threadId, pendingSend, send, pendingMode]);
 
   const activeThread = (threadsQuery.data?.items ?? []).find(
     (thread) => thread.threadId === threadId,
@@ -213,7 +238,14 @@ export function ChatPage() {
     );
   }
 
-  async function handleSend(content: string) {
+  async function handleSend(
+    content: string,
+    overrideMode?: "act" | "ask" | "plan",
+  ) {
+    if (modelUnavailable) {
+      setNotice("尚未配置可用模型，请先在管理端配置 provider 或环境变量。");
+      return;
+    }
     if (threadId && composerBusy) {
       // prototype: sending while a turn runs queues the text instead of
       // racing a second turn; the next send flushes after turn.finished.
@@ -222,6 +254,7 @@ export function ChatPage() {
     }
     if (!threadId) {
       setPendingSend(content);
+      setPendingMode(overrideMode ?? mode);
       createThread.mutate(
         { title: content.slice(0, 24) || "新对话", agentId: null },
         {
@@ -235,7 +268,7 @@ export function ChatPage() {
       );
       return;
     }
-    const ok = await send(content);
+    const ok = await send(content, overrideMode ?? mode);
     if (!ok) setRestored(content); // withdrawn: restore the input
   }
 
@@ -458,6 +491,7 @@ export function ChatPage() {
           thread={activeThread}
           agent={activeAgent}
           modelLabel={session.model || modelLabel}
+          mode={mode === "ask" ? "Ask" : mode === "plan" ? "Plan" : "Act"}
           dockOpen={dockOpen}
           onToggleDock={() => setDockOpen((open) => !open)}
           onShare={handleShare}
@@ -465,6 +499,7 @@ export function ChatPage() {
           onPin={togglePin}
           onBranch={handleBranch}
           onDelete={setDeleteTarget}
+          onOpenSessions={() => setSessionsOpen(true)}
         />
 
         <div className={styles.bodyRow}>
@@ -481,10 +516,15 @@ export function ChatPage() {
             {threadId && messagesQuery.isLoading ? (
               <PageLoading label="载入消息…" />
             ) : threadId && messagesQuery.isError ? (
-              <ErrorState
-                message="消息加载失败"
-                onRetry={() => void messagesQuery.refetch()}
-              />
+              <div className={styles.chatError}>
+                <ErrorState
+                  message="消息加载失败；重试不会丢失当前草稿"
+                  onRetry={() => void messagesQuery.refetch()}
+                />
+                <Button size="sm" variant="secondary" onClick={() => handleCreate(null)}>
+                  新建对话
+                </Button>
+              </div>
             ) : (
               <MessageList
                 messages={threadId ? messagesQuery.data?.items : undefined}
@@ -506,6 +546,33 @@ export function ChatPage() {
                 onEditMessage={handleEditMessage}
                 turnActive={composerBusy || snapshot.status === "waiting_approval"}
                 latestTurnId={latestTurnId}
+                approvals={approvals}
+                approvalBusy={answerMutation.isPending}
+                onModeAction={(action, payload) => {
+                  if (action === "execute_plan") {
+                    patchSession({ mode: "act" });
+                    void handleSend("请执行上面的计划。", "act");
+                  } else if (action === "skip_ask") {
+                    patchSession({ mode: "act" });
+                    void handleSend("跳过澄清，按你的理解直接执行。", "act");
+                  } else if (action === "answer_ask") {
+                    if (payload?.trim()) void handleSend(payload, "ask");
+                  } else if (action === "create_ticket") {
+                    const plan = payload?.trim() ?? "";
+                    const title = plan.split("\n").map((line) => line.trim())
+                      .find(Boolean)?.replace(/^#+\s*/, "").slice(0, 80)
+                      || "执行计划";
+                    createTicket.mutate({ title, content: plan }, {
+                      onSuccess: (ticket) => {
+                        setNotice(`已创建任务 ${ticket.ticketId}`);
+                        navigate(`/tasks?ticketId=${encodeURIComponent(ticket.ticketId)}`);
+                      },
+                      onError: () => setNotice("创建任务失败，请重试。"),
+                    });
+                  }
+                }}
+                onApprovalAnswer={(attentionId, decision) =>
+                  answerMutation.mutate({ attentionId, decision })}
               />
             )}
 
@@ -527,19 +594,18 @@ export function ChatPage() {
               </button>
             ) : null}
 
-            {approvals.map((attention) => (
-              <ApprovalCard
-                key={attention.attentionId}
-                attention={attention}
-                busy={answerMutation.isPending}
-                onAnswer={(attentionId, decision) =>
-                  answerMutation.mutate({ attentionId, decision })
-                }
-              />
-            ))}
+            {modelUnavailable ? (
+              <div className={styles.modelAlert} role="alert" data-testid="model-missing">
+                <span>
+                  <b>尚未配置可用模型</b>
+                  <span>环境变量缺少 API Key；当前无法发送消息。</span>
+                </span>
+                <Link to="/admin?tab=models">配置模型</Link>
+              </div>
+            ) : null}
 
             <Composer
-              disabled={!canWrite}
+              disabled={!canWrite || modelUnavailable || messagesQuery.isError}
               status={snapshot.status}
               restoredInput={restored}
               onConsumedRestore={() => setRestored(null)}
@@ -561,6 +627,8 @@ export function ChatPage() {
               onApprovalPolicyChange={(policy) =>
                 patchSession({ approvalPolicy: policy })
               }
+              mode={mode}
+              onModeChange={(next) => patchSession({ mode: next })}
               mentionFiles={workspaceQuery.data?.items ?? []}
               onNewThread={newThreadFromComposer}
               onExport={exportTranscript}
@@ -589,6 +657,36 @@ export function ChatPage() {
           ) : null}
         </div>
       </section>
+
+      <Drawer
+        open={sessionsOpen}
+        onOpenChange={setSessionsOpen}
+        title="会话"
+        description="选择或新建一个对话"
+        width={340}
+      >
+        <ThreadRail
+          embedded
+          threads={threadsQuery.data?.items}
+          loading={threadsQuery.isLoading}
+          activeId={threadId}
+          error={threadsQuery.isError}
+          agents={agentsQuery.data?.items ?? []}
+          onSelect={(id) => {
+            setParams({ threadId: id });
+            setSessionsOpen(false);
+          }}
+          onCreate={(agentId) => {
+            handleCreate(agentId);
+            setSessionsOpen(false);
+          }}
+          onRetry={() => void threadsQuery.refetch()}
+          onRename={openRename}
+          onPin={togglePin}
+          onBranch={handleBranch}
+          onDelete={setDeleteTarget}
+        />
+      </Drawer>
 
       <TraceExplorer
         open={traceOpen}

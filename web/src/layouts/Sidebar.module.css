@@ -262,6 +262,190 @@
   padding: 6px 0;
 }
 
+.collapsed .userTrigger {
+  justify-content: center;
+}
+
 .collapsed .mini {
   display: none;
+}
+
+/* pending-attention count on 任务 */
+.badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* account popover (prototype user-menu.png) */
+.user {
+  position: relative;
+}
+
+.userTrigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.chev {
+  margin-left: auto;
+  flex: none;
+  font-size: 10px;
+  color: var(--text-4);
+  transform: rotate(180deg);
+  transition: transform 0.12s ease;
+}
+
+.chevOpen {
+  transform: rotate(0deg);
+}
+
+.accountMenu {
+  position: absolute;
+  left: 2px;
+  bottom: calc(100% + 8px);
+  width: 214px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.accountHead {
+  padding: 8px 9px 7px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.accountHead b {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.accountHead span {
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+.accountMenu a,
+.accountMenu button {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  text-align: left;
+}
+
+.accountMenu a:hover,
+.accountMenu button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.accountDanger {
+  color: var(--red) !important;
+}
+
+.accountDanger:hover {
+  background: var(--red-soft) !important;
+}
+
+.collapsed .item {
+  position: relative;
+}
+
+.collapsed .badge {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  font-size: 0;
+}
+
+.collapsed .chev {
+  display: none;
+}
+
+.collapsed .accountMenu {
+  left: calc(100% + 8px);
+  bottom: 8px;
+}
+
+/* Tablet: keep only the 56px rail; mobile: bottom nav takes over. */
+@media (max-width: 960px) and (min-width: 721px) {
+  .rail {
+    width: var(--rail-collapsed);
+    flex-basis: var(--rail-collapsed);
+  }
+  .brandText,
+  .label,
+  .groupLabel,
+  .userMeta,
+  .chev {
+    display: none;
+  }
+  .brand {
+    flex-direction: column;
+    justify-content: center;
+    padding: 2px 0 8px;
+    gap: 4px;
+  }
+  .collapse {
+    width: 34px;
+    height: 22px;
+    margin: 0;
+    background: var(--surface-2);
+  }
+  .collapseIcon { transform: rotate(0deg); }
+  .item { justify-content: center; padding: 0; position: relative; }
+  .item .badge {
+    position: absolute;
+    top: 7px;
+    right: 8px;
+    min-width: 8px;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    font-size: 0;
+  }
+  .userTrigger { justify-content: center; }
+  .accountMenu {
+    left: calc(100% + 8px);
+    bottom: 8px;
+  }
+}
+
+@media (max-width: 720px) {
+  .rail { display: none; }
 }

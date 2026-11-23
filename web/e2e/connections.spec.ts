@@ -28,7 +28,7 @@ test("connections: connector create and probe", async ({ page }) => {
   const row = page.getByTestId("connector-row").filter({ hasText: name });
   await expect(row).toBeVisible();
   await row.getByTestId("connector-probe").click();
-  await expect(page.getByText(`${name} 连接正常`)).toBeVisible();
+  await expect(page.getByText(`${name} 配置有效（仅本地校验）`)).toBeVisible();
 
   // instance drawer: default-open switch persists through save
   await row.getByTestId("connector-open").click();
@@ -37,6 +37,17 @@ test("connections: connector create and probe", async ({ page }) => {
   await config.getByTestId("connector-save").click();
   await expect(page.getByText(`已保存连接 ${name}`)).toBeVisible();
   await expect(row).toContainText("默认打开");
+
+  // three sub-tabs, then delete through the row action
+  await page.getByTestId("connector-subtab-builtin").click();
+  await expect(page.getByText("内置目录")).toBeVisible();
+  await page.getByTestId("connector-subtab-custom").click();
+  await expect(page.getByRole("heading", { name: "自定义 MCP" })).toBeVisible();
+  await page.getByTestId("connector-subtab-enabled").click();
+  await row.getByTestId("connector-delete").click();
+  await page.getByRole("dialog", { name: "删除连接器" })
+    .getByRole("button", { name: "确认删除" }).click();
+  await expect(page.getByText(`已删除 ${name}`)).toBeVisible();
 });
 
 
@@ -62,5 +73,5 @@ test("connections: custom MCP visual/JSON drawer", async ({ page }) => {
 
   const row = page.getByTestId("connector-row").filter({ hasText: name });
   await row.getByTestId("connector-probe").click();
-  await expect(page.getByText(`${name} 连接正常`)).toBeVisible();
+  await expect(page.getByText(`${name} 配置有效（仅本地校验）`)).toBeVisible();
 });

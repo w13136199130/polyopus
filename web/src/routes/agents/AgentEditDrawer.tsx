@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Button, Drawer } from "@/components/ui";
+import { Button, Dialog, Drawer } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import type { AgentRow, AgentToolBinding } from "@/lib/api/wire";
 import {
@@ -26,13 +26,15 @@ type Section =
 interface Props {
   agent: AgentRow | null;
   open: boolean;
+  /** Card "试运行" opens directly on the test section. */
+  initialSection?: "basic" | "test";
   onOpenChange: (open: boolean) => void;
   onNotice: (message: string) => void;
   onError: (message: string) => void;
 }
 
 export function AgentEditDrawer({
-  agent, open, onOpenChange, onNotice, onError,
+  agent, open, initialSection, onOpenChange, onNotice, onError,
 }: Props) {
   const canWrite = useCan("agent:write");
   const update = useUpdateAgent();
@@ -47,14 +49,38 @@ export function AgentEditDrawer({
   const [prompt, setPrompt] = useState("");
   const [draftTools, setDraftTools] = useState<AgentToolBinding[]>([]);
   const [testMessage, setTestMessage] = useState("你好，介绍一下你自己");
+  const [baseline, setBaseline] = useState("");
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   useEffect(() => {
     if (!agent) return;
-    setName(agent.name);
-    setDescription(agent.description ?? "");
-    setModel(agent.draftModel || agent.model || "");
-    setPrompt(agent.draftSystemPrompt ?? agent.systemPrompt);
+    const next = {
+      name: agent.name,
+      description: agent.description ?? "",
+      model: agent.draftModel || agent.model || "",
+      prompt: agent.draftSystemPrompt ?? agent.systemPrompt,
+    };
+    setName(next.name);
+    setDescription(next.description);
+    setModel(next.model);
+    setPrompt(next.prompt);
+    setBaseline(JSON.stringify(next));
   }, [agent]);
+
+  useEffect(() => {
+    if (open) setSection(initialSection ?? "basic");
+  }, [open, initialSection, agent?.agentId]);
+
+  const draft = JSON.stringify({ name, description, model, prompt });
+  const dirty = baseline !== "" && draft !== baseline;
+
+  function handleOpenChange(next: boolean) {
+    if (!next && dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onOpenChange(next);
+  }
 
   useEffect(() => {
     if (toolsQuery.data?.items) setDraftTools(toolsQuery.data.items);
@@ -69,6 +95,7 @@ export function AgentEditDrawer({
         agentId: agent.agentId,
         body: { name, description, model, systemPrompt: prompt },
       });
+      setBaseline(JSON.stringify({ name, description, model, prompt }));
       onNotice(`已保存 ${name} 草稿`);
     } catch (err) {
       onError(err instanceof Error ? err.message : "保存失败");
@@ -117,9 +144,10 @@ export function AgentEditDrawer({
   ];
 
   return (
+    <>
     <Drawer
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={handleOpenChange}
       title={`编辑专家 · ${agent.name}`}
       description="草稿可改；发布生成不可变新版本，旧会话继续锁定旧版本。"
       width={720}
@@ -174,6 +202,11 @@ export function AgentEditDrawer({
         </nav>
 
         <div className={styles.sectionBody}>
+          {dirty ? (
+            <div className={styles.dirtyBar} data-testid="agent-dirty">
+              未保存的修改 · 关闭前会确认
+            </div>
+          ) : null}
           {section === "basic" ? (
             <>
               <label className={styles.field}>
@@ -292,5 +325,34 @@ export function AgentEditDrawer({
         </div>
       </div>
     </Drawer>
+
+      <Dialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="放弃未保存的修改？"
+        description="当前草稿的修改尚未保存；关闭抽屉会丢失这些修改。"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDiscard(false)}>
+              继续编辑
+            </Button>
+            <Button
+              variant="danger"
+              data-testid="agent-discard"
+              onClick={() => {
+                setConfirmDiscard(false);
+                onOpenChange(false);
+              }}
+            >
+              放弃修改
+            </Button>
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>
+          已保存的版本不受影响；只丢弃当前未保存的草稿。
+        </p>
+      </Dialog>
+    </>
   );
 }

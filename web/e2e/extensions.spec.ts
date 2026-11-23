@@ -16,7 +16,7 @@ test("extensions: install example plugins", async ({ page }) => {
   await page.goto("/extensions");
   await page.getByTestId("plugin-install-examples").click();
   await expect(page.getByTestId("plugin-row")).toHaveCount(3, { timeout: 15_000 });
-  await expect(page.getByTestId("plugin-row").first()).toContainText("plugin.");
+  await expect(page.getByTestId("plugin-row").first()).toContainText("example.");
 
   // enable toggle on one row round-trips the status badge (click + result
   // assertion: uncheck()'s instant-state check races the optimistic update)
@@ -28,6 +28,16 @@ test("extensions: install example plugins", async ({ page }) => {
   await expect(row.getByTestId("plugin-enabled")).toBeChecked({
     timeout: 10_000,
   });
+
+  await row.getByTestId("plugin-detail").click();
+  const detail = page.getByRole("dialog", { name: /插件详情/ });
+  await expect(detail).toContainText("权限");
+  await detail.getByRole("button", { name: "关闭" }).click();
+
+  await page.getByTestId("plugin-view-market").click();
+  await expect(page.getByText("插件市场随 v1.1 接入")).toBeVisible();
+  await page.getByTestId("ext-tab-skills").click();
+  await expect(page.getByText("技能包运行时尚未开放")).toBeVisible();
 });
 
 /** P1-6: signed install dialog rejects a bad signature server-side (403). */

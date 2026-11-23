@@ -158,6 +158,56 @@ def _window_start(window: str, now: int) -> int:
     raise ValueError(f"unknown window {window}")
 
 
+GROUP_EXPR = {
+    "model": "model",
+    "agent": "COALESCE(agent_id, 'builtin')",
+    "day": "strftime('%Y-%m-%d', created_at, 'unixepoch')",
+}
+
+
+def _group_rows(
+    conn: sqlite3.Connection,
+    *,
+    where: str,
+    args: list[object],
+    group_by: str,
+    bucket: str,
+) -> list[dict[str, object]]:
+    expr = GROUP_EXPR[group_by]
+    rows = conn.execute(
+        f"""
+        SELECT {expr} AS group_key,
+               count(DISTINCT turn_id) AS turns,
+               SUM(input_tokens) AS input_tokens,
+               SUM(output_tokens) AS output_tokens,
+               SUM(cache_read) AS cached_tokens,
+               SUM(cost_micros) AS cost_micros,
+               MAX(currency) AS currency
+        FROM usage_ledger WHERE {where}
+        GROUP BY group_key ORDER BY cost_micros DESC
+        """,
+        args,
+    ).fetchall()
+    out: list[dict[str, object]] = []
+    for row in rows:
+        key = str(row["group_key"] or "unknown")
+        out.append({
+            "bucket": bucket,
+            "group": key,
+            "key": key,
+            "model": key if group_by == "model" else None,
+            "agentId": key if group_by == "agent" else None,
+            "day": key if group_by == "day" else None,
+            "turns": int(row["turns"] or 0),
+            "inputTokens": int(row["input_tokens"] or 0),
+            "outputTokens": int(row["output_tokens"] or 0),
+            "cachedTokens": int(row["cached_tokens"] or 0),
+            "costMicros": int(row["cost_micros"] or 0),
+            "currency": row["currency"] or "CNY",
+        })
+    return out
+
+
 def summary(
     conn: sqlite3.Connection,
     *,
@@ -166,9 +216,20 @@ def summary(
     agent_id: str | None = None,
     tenant_id: str = TENANT,
     now: int | None = None,
+    group_by: str = "model",
+    range_days: int | None = None,
 ) -> dict[str, object]:
     ts = now or int(time.time())
-    start = _window_start(window, ts)
+    if group_by not in GROUP_EXPR:
+        raise ValueError(f"unknown groupBy {group_by}")
+    if range_days is not None:
+        if range_days < 1 or range_days > 365:
+            raise ValueError("range must be 1..365")
+        start = ts - range_days * 86400
+        bucket = f"{range_days}d"
+    else:
+        start = _window_start(window, ts)
+        bucket = window
     where = "tenant_id = ? AND created_at >= ? AND created_at < ?"
     args: list[object] = [tenant_id, start, ts + 86400]
     if as_user:
@@ -178,46 +239,57 @@ def summary(
         where += " AND agent_id = ?"
         args.append(agent_id)
 
-    rows = conn.execute(
+    items = _group_rows(
+        conn, where=where, args=args, group_by=group_by, bucket=bucket,
+    )
+    by_day = _group_rows(conn, where=where, args=args, group_by="day", bucket=bucket)
+    by_agent = _group_rows(conn, where=where, args=args, group_by="agent", bucket=bucket)
+    by_model = _group_rows(conn, where=where, args=args, group_by="model", bucket=bucket)
+    totals = conn.execute(
         f"""
-        SELECT model,
-               count(DISTINCT turn_id) AS turns,
-               SUM(input_tokens) AS input_tokens,
-               SUM(output_tokens) AS output_tokens,
-               SUM(cache_read) AS cached_tokens,
-               SUM(cost_micros) AS cost_micros,
-               MAX(currency) AS currency
+        SELECT count(DISTINCT turn_id) AS turns,
+               COALESCE(SUM(input_tokens), 0) AS input_tokens,
+               COALESCE(SUM(output_tokens), 0) AS output_tokens,
+               COALESCE(SUM(cache_read), 0) AS cached_tokens,
+               COALESCE(SUM(cost_micros), 0) AS cost_micros
         FROM usage_ledger WHERE {where}
-        GROUP BY model ORDER BY cost_micros DESC
         """,
         args,
-    ).fetchall()
-    items = [
-        {
-            "bucket": window,
-            "model": r["model"],
-            "turns": int(r["turns"] or 0),
-            "inputTokens": int(r["input_tokens"] or 0),
-            "outputTokens": int(r["output_tokens"] or 0),
-            "cachedTokens": int(r["cached_tokens"] or 0),
-            "costMicros": int(r["cost_micros"] or 0),
-            "currency": r["currency"] or "CNY",
-        }
-        for r in rows
-    ]
+    ).fetchone()
     return {
         "window": window,
+        "groupBy": group_by,
+        "rangeDays": range_days,
         "startTs": start,
         "endTs": ts,
         "items": items,
-        "totalCostMicros": sum(item["costMicros"] for item in items),
+        "byDay": by_day,
+        "byAgent": by_agent,
+        "byModel": by_model,
+        "totals": {
+            "turns": int(totals["turns"] or 0),
+            "inputTokens": int(totals["input_tokens"] or 0),
+            "outputTokens": int(totals["output_tokens"] or 0),
+            "cachedTokens": int(totals["cached_tokens"] or 0),
+            "costMicros": int(totals["cost_micros"] or 0),
+        },
+        "totalCostMicros": int(totals["cost_micros"] or 0),
     }
 
 
-def export_csv(rows: list[dict[str, object]]) -> str:
-    header = ("bucket", "model", "turns", "inputTokens", "outputTokens",
+def export_csv(rows: list[dict[str, object]], group_by: str = "model") -> str:
+    key = group_by if group_by in GROUP_EXPR else "group"
+    header = ("bucket", key, "turns", "inputTokens", "outputTokens",
               "cachedTokens", "costMicros", "currency")
     lines = [",".join(header)]
     for item in rows:
-        lines.append(",".join(str(item.get(col, "")) for col in header))
+        values = []
+        for col in header:
+            if col in ("agent", "group"):
+                values.append(str(item.get("group", "")))
+            elif col == "day":
+                values.append(str(item.get("day") or item.get("group", "")))
+            else:
+                values.append(str(item.get(col, "")))
+        lines.append(",".join(values))
     return "\n".join(lines) + "\n"

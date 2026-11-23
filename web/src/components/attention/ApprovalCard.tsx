@@ -6,7 +6,10 @@ import styles from "./ApprovalCard.module.css";
 interface Props {
   attention: AttentionItem;
   busy: boolean;
-  onAnswer: (attentionId: string, decision: "approve" | "deny") => void;
+  onAnswer: (
+    attentionId: string,
+    decision: "approve" | "approve_session" | "deny",
+  ) => void;
 }
 
 interface Action {
@@ -105,14 +108,6 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
         <div className={styles.actions}>
           <Button
             size="sm"
-            data-testid="approval-approve"
-            disabled={busy}
-            onClick={() => onAnswer(attention.attentionId, "approve")}
-          >
-            批准
-          </Button>
-          <Button
-            size="sm"
             variant="danger"
             data-testid="approval-deny"
             disabled={busy}
@@ -120,7 +115,24 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
           >
             拒绝
           </Button>
-          <span className={styles.note}>任务卡不跳页</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="approval-approve"
+            disabled={busy}
+            onClick={() => onAnswer(attention.attentionId, "approve")}
+          >
+            仅本次允许
+          </Button>
+          <Button
+            size="sm"
+            data-testid="approval-approve-session"
+            disabled={busy}
+            onClick={() => onAnswer(attention.attentionId, "approve_session")}
+          >
+            本会话允许
+          </Button>
+          <span className={styles.note}>拒绝不会执行该工具</span>
         </div>
       </div>
     </div>

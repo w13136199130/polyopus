@@ -1,5 +1,5 @@
 {
-  "count": 142,
+  "count": 143,
   "ops": [
     {
       "method": "DELETE",
@@ -200,6 +200,10 @@
     {
       "method": "GET",
       "path": "/api/v1/me/export/{job_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/export/{job_id}/download"
     },
     {
       "method": "GET",

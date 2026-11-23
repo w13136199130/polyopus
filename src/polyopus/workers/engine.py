@@ -86,6 +86,27 @@ def _user_content(conn: sqlite3.Connection, turn_id: str) -> str:
     return str(row[0]) if row else ""
 
 
+MODE_PROMPTS = {
+    "ask": (
+        "当前是 Ask 模式。不要执行任何工具，也不要修改工作区。"
+        "先用 1-3 个关键问题澄清需求；如果信息足够，直接给出简短确认清单。"
+        "需要提问时，在回答最后附一个 ```json 代码块，格式为 "
+        '{"questions":[{"id":"q1","question":"问题","options":["选项A","选项B"]}]}；'
+        "不要在该代码块外重复问题列表。等待用户回答后再进入执行。"
+    ),
+    "plan": (
+        "当前是 Plan 模式。不要执行任何工具，也不要修改工作区。"
+        "输出一份可执行计划：目标、步骤、涉及文件/工具、风险与验收标准。"
+        "明确等待用户确认计划后再执行。"
+    ),
+}
+
+
+def _mode_prompt(system_prompt: str, mode: str) -> str:
+    instruction = MODE_PROMPTS.get(mode)
+    return f"{system_prompt}\n\n{instruction}" if instruction else system_prompt
+
+
 def _thread_settings(conn: sqlite3.Connection, thread_id: str) -> dict[str, object]:
     """Per-session composer state (model / KBs / approval policy).
 
@@ -454,6 +475,9 @@ async def run_turn(
     turn = _turn(conn, turn_id)
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
+    mode = str(turn["mode"] or "act")
+    if mode not in ("act", "ask", "plan"):
+        mode = "act"
     session = _thread_settings(conn, thread_id)
     # A thread pins its expert version at creation; that version's prompt and
     # model are the agent's identity for this conversation. Explicit config
@@ -509,7 +533,7 @@ async def run_turn(
         thread_id,
         "turn.started",
         {"turn_id": turn_id, "run_id": run_id, "attempt": attempt,
-         "model": resolved.model},
+         "model": resolved.model, "mode": mode},
         tenant_id=tenant_id,
         turn_id=turn_id,
         run_id=run_id,
@@ -544,7 +568,7 @@ async def run_turn(
         conn, tenant_id=tenant_id, thread_id=thread_id
     )
     messages, context_stats = context_svc.assemble(
-        system_prompt=agent_ctx.system_prompt,
+        system_prompt=_mode_prompt(agent_ctx.system_prompt, mode),
         agent_name=agent_ctx.name,
         memory=memory_block,
         knowledge=kb_context,
@@ -590,7 +614,7 @@ async def run_turn(
         "SELECT agent_id FROM threads WHERE thread_id = ?", (thread_id,)
     ).fetchone()
     quota_agent = str(agent_row[0]) if agent_row is not None and agent_row[0] else None
-    runtime_tools = _runtime_tools(
+    runtime_tools = {} if mode != "act" else _runtime_tools(
         conn, tenant_id=tenant_id,
         workspace=cfg.workspace, agent_id=quota_agent, session=session,
     )
@@ -600,6 +624,14 @@ async def run_turn(
     }
     ticket_id = turn["ticket_id"]
     auto_tools, auto_max_risk = _auto_approve_of(conn, tenant_id, ticket_id)
+    # "本会话允许" remembers the exact tool key in thread settings. It only
+    # upgrades `ask` (deny still wins) and is scoped to this conversation.
+    session_approved = session.get("approvedTools")
+    if isinstance(session_approved, list) and session_approved:
+        auto_tools = tuple(dict.fromkeys(
+            (*auto_tools, *(str(item) for item in session_approved))
+        ))
+        auto_max_risk = "high"
     # Composer 审批策略「全允许」= 本会话内的 ask 自动升级为 allow；
     # 显式 deny（含 critical、未授权插件）仍然优先，策略引擎负责兜底。
     if str(session.get("approvalPolicy") or "ask") == "auto":
@@ -832,6 +864,9 @@ def resume_after_approval(
     turn = _turn(conn, turn_id)
     thread_id = str(turn["thread_id"])
     tenant_id = str(turn["tenant_id"])
+    mode = str(turn["mode"] or "act")
+    if mode not in ("act", "ask", "plan"):
+        mode = "act"
     session = _thread_settings(conn, thread_id)
     from polyopus.domains.conversations import context as context_svc
 
@@ -962,7 +997,7 @@ def resume_after_approval(
     # The final round must see the same expert prefix + history as the first
     # round; only the tool exchange is new.
     base_messages, _stats = context_svc.assemble(
-        system_prompt=agent_ctx.system_prompt,
+        system_prompt=_mode_prompt(agent_ctx.system_prompt, mode),
         agent_name=agent_ctx.name,
         memory="",
         knowledge="",

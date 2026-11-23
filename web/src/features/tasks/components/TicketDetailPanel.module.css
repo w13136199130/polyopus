@@ -284,3 +284,52 @@
   padding: 7px 10px;
   font-size: 13px;
 }
+
+.budgetBar {
+  margin-top: 10px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.budgetFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.budgetWarn { background: var(--amber); }
+
+.budgetMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+.budgetAlert {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.mobileBack { display: none; }
+
+@media (max-width: 720px) {
+  .mobileBack {
+    display: inline-flex;
+    align-self: flex-start;
+    margin-bottom: 6px;
+  }
+
+  .head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions { flex-wrap: wrap; }
+}

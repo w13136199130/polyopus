@@ -37,6 +37,10 @@ export function fmtCost(micros?: number): string {
   return `¥${((micros ?? 0) / 1_000_000).toFixed(2)}`;
 }
 
+function shortRef(ticketId: string): string {
+  return `#${ticketId.replace(/^tk_/, "").slice(0, 4).toUpperCase()}`;
+}
+
 function stateTag(bucket: string): [string, string] {
   if (bucket === "attention") return ["待决", styles.tagRed];
   if (bucket === "running") return ["运行中", styles.tagGreen];
@@ -85,7 +89,9 @@ function TicketCard({
       <div className={styles.top}>
         <span className={styles.source}>
           <span className={styles.sourceTag}>{sourceTag(row.sourceKind)}</span>
-          <span className={styles.ref}>{row.ticketId.slice(0, 11)}</span>
+          <span className={styles.ref} title={row.ticketId}>
+            {shortRef(row.ticketId)} · {row.sourceName ?? "手动"}
+          </span>
         </span>
         <span className={styles.spacer} />
         <span className={styles.time}>{timeAgo(row.createdAt)}</span>

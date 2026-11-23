@@ -2,7 +2,9 @@ import { memo, useMemo, useState } from "react";
 import type { ChatStreamSnapshot } from "../streamStore";
 import { mergeHistory } from "../merge-history";
 import { summarizeTrace, traceFor, type TurnTrace } from "../message-trace";
-import type { Message, TraceEvent } from "@/lib/api/wire";
+import type { AttentionItem, Message, TraceEvent } from "@/lib/api/wire";
+import { ApprovalCard } from "@/components/attention/ApprovalCard";
+import { formatAnswers, parseAskContent, type AskQuestion } from "../ask-format";
 import styles from "./MessageList.module.css";
 
 interface Props {
@@ -23,6 +25,18 @@ interface Props {
   turnActive?: boolean;
   /** Editing/regenerating only makes sense for the newest turn. */
   latestTurnId?: string | null;
+  /** Pending approvals for this turn live inside the scroll flow. */
+  approvals?: AttentionItem[];
+  approvalBusy?: boolean;
+  onApprovalAnswer?: (
+    attentionId: string,
+    decision: "approve" | "approve_session" | "deny",
+  ) => void;
+  /** Ask/Plan cards: skip clarification or execute the plan in Act mode. */
+  onModeAction?: (
+    action: "skip_ask" | "execute_plan" | "create_ticket" | "answer_ask",
+    payload?: string,
+  ) => void;
 }
 
 const QUICK_PROMPTS: Array<[string, string, string]> = [
@@ -67,11 +81,7 @@ function buildBubbles(
         ?.filter((block) => block.type === "reasoning")
         .map((block) => block.text ?? "")
         .join(""),
-    }))
-    // a paused first round can leave an empty assistant projection; the
-    // final row carries the text, so hide the placeholder instead of showing
-    // a bare avatar + timestamp.
-    .filter((bubble) => bubble.role !== "assistant" || bubble.content.trim() !== "");
+    }));
 
   // optimistic user bubble until the projection confirms it
   if (snapshot.pendingUser) {
@@ -250,6 +260,183 @@ function Citations({ trace }: { trace: TurnTrace }) {
   );
 }
 
+interface TextSegment {
+  kind: "text" | "code";
+  content: string;
+  lang?: string;
+}
+
+/** Minimal fenced-code renderer; keeps streaming text readable before a
+ * closing fence arrives and never interprets HTML. */
+export function parseRichText(text: string): TextSegment[] {
+  const segments: TextSegment[] = [];
+  let textLines: string[] = [];
+  let codeLines: string[] | null = null;
+  let lang = "";
+
+  function flushText() {
+    if (!textLines.length) return;
+    segments.push({ kind: "text", content: textLines.join("\n") });
+    textLines = [];
+  }
+
+  for (const line of text.split("\n")) {
+    if (line.trimStart().startsWith("```")) {
+      if (codeLines === null) {
+        flushText();
+        codeLines = [];
+        lang = line.trimStart().slice(3).trim();
+      } else {
+        segments.push({ kind: "code", content: codeLines.join("\n"), lang });
+        codeLines = null;
+        lang = "";
+      }
+      continue;
+    }
+    if (codeLines !== null) codeLines.push(line);
+    else textLines.push(line);
+  }
+  if (codeLines !== null) {
+    segments.push({ kind: "code", content: codeLines.join("\n"), lang });
+  }
+  flushText();
+  return segments;
+}
+
+export function RichText({ text }: { text: string }) {
+  const segments = parseRichText(text);
+  if (segments.length === 1 && segments[0].kind === "text") {
+    return <>{segments[0].content}</>;
+  }
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.kind === "text" ? (
+          <span key={index}>{segment.content}</span>
+        ) : (
+          <pre key={index} className={styles.codeBlock} data-testid="code-block">
+            <span className={styles.codeLang}>{segment.lang || "code"}</span>
+            <code>{segment.content}</code>
+          </pre>
+        ),
+      )}
+    </>
+  );
+}
+
+function AskQuestions({
+  questions, onSubmit, onSkip,
+}: {
+  questions: AskQuestion[];
+  onSubmit: (text: string) => void;
+  onSkip: () => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const any = Object.values(answers).some((value) => value.trim());
+  return (
+    <div className={styles.askCard} data-testid="ask-questions">
+      <div className={styles.askHead}>
+        <b>请确认</b>
+        <span>回答后继续；也可以跳过直接执行</span>
+      </div>
+      {questions.map((question) => (
+        <div key={question.id} className={styles.askQuestion}>
+          <span className={styles.askLabel}>{question.question}</span>
+          {question.options.length ? (
+            <div className={styles.askOptions}>
+              {question.options.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={`${styles.askOption} ${
+                    answers[question.id] === option ? styles.askOptionOn : ""
+                  }`}
+                  onClick={() =>
+                    setAnswers((current) => ({ ...current, [question.id]: option }))}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <input
+            className={styles.askInput}
+            aria-label={`回答：${question.question}`}
+            placeholder="其他补充…"
+            value={answers[question.id] ?? ""}
+            onChange={(event) =>
+              setAnswers((current) => ({
+                ...current, [question.id]: event.target.value,
+              }))}
+          />
+        </div>
+      ))}
+      <div className={styles.askActions}>
+        <button type="button" className={styles.modeActionSecondary} onClick={onSkip}>
+          跳过并执行
+        </button>
+        <button
+          type="button"
+          className={styles.modeAction}
+          disabled={!any}
+          data-testid="ask-submit"
+          onClick={() => onSubmit(formatAnswers(questions, answers))}
+        >
+          提交回答
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ModeCard({
+  mode, content, onAction,
+}: {
+  mode: "ask" | "plan";
+  content: string;
+  onAction?: (
+    action: "skip_ask" | "execute_plan" | "create_ticket",
+    payload?: string,
+  ) => void;
+}) {
+  return (
+    <div className={styles.modeCard} data-testid={`mode-card-${mode}`}>
+      <span className={styles.modeIcon} aria-hidden="true">
+        {mode === "plan" ? "◇" : "?"}
+      </span>
+      <div className={styles.modeText}>
+        <b>{mode === "plan" ? "计划已生成" : "需要先澄清"}</b>
+        <span>
+          {mode === "plan"
+            ? "Plan 模式只输出计划，未执行工具或修改工作区。"
+            : "Ask 模式先向你确认需求，未执行工具；可直接在输入框补充。"}
+        </span>
+      </div>
+      {mode === "plan" ? (
+        <button
+          type="button"
+          className={styles.modeActionSecondary}
+          data-testid="mode-ticket"
+          onClick={() => onAction?.("create_ticket", content)}
+        >
+          转为任务
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className={styles.modeAction}
+        data-testid={mode === "plan" ? "mode-execute" : "mode-skip"}
+        onClick={() => onAction?.(
+          mode === "plan" ? "execute_plan" : "skip_ask",
+          content,
+        )}
+      >
+        {mode === "plan" ? "执行计划" : "跳过并执行"}
+      </button>
+    </div>
+  );
+}
+
 function Thinking({ text, streaming }: { text?: string; streaming?: boolean }) {
   if (!text?.trim() && !streaming) return null;
   return (
@@ -352,7 +539,7 @@ const UserRow = memo(function UserRow({
 
 const AssistantRow = memo(function AssistantRow({
   bubble, trace, agentName, onNotice, onRegenerate, onBranch, turnActive,
-  latestTurnId,
+  latestTurnId, onModeAction,
 }: {
   bubble: Bubble;
   trace: TurnTrace;
@@ -362,7 +549,15 @@ const AssistantRow = memo(function AssistantRow({
   onBranch?: (message: Message) => void;
   turnActive?: boolean;
   latestTurnId?: string | null;
+  onModeAction?: (
+    action: "skip_ask" | "execute_plan" | "create_ticket" | "answer_ask",
+    payload?: string,
+  ) => void;
 }) {
+  const ask = !bubble.streaming && trace.mode === "ask"
+    ? parseAskContent(bubble.content)
+    : null;
+  const body = ask?.questions.length ? ask.cleanText : bubble.content;
   const message: Message = {
     messageId: bubble.key,
     threadId: "",
@@ -388,8 +583,21 @@ const AssistantRow = memo(function AssistantRow({
         <Thinking text={bubble.reasoning} streaming={bubble.streaming} />
         <Steps trace={trace} />
         <div className={`${styles.assistantText} ${bubble.streaming ? styles.streaming : ""}`}>
-          {bubble.content}
+          <RichText text={body} />
         </div>
+        {!bubble.streaming && ask?.questions.length ? (
+          <AskQuestions
+            questions={ask.questions}
+            onSubmit={(text) => onModeAction?.("answer_ask", text)}
+            onSkip={() => onModeAction?.("skip_ask")}
+          />
+        ) : !bubble.streaming && trace.mode && trace.mode !== "act" ? (
+          <ModeCard
+            mode={trace.mode}
+            content={bubble.content}
+            onAction={onModeAction}
+          />
+        ) : null}
         <ToolCard trace={trace} />
         <FileCard trace={trace} />
         <Citations trace={trace} />
@@ -435,10 +643,23 @@ const AssistantRow = memo(function AssistantRow({
 export function MessageList({
   messages, snapshot, onScrollRef, onQuickPrompt, trace, agentName,
   onFollowUp, onNotice, onRegenerate, onBranch, onEditMessage, turnActive,
-  latestTurnId,
+  latestTurnId, approvals = [], approvalBusy = false, onApprovalAnswer,
+  onModeAction,
 }: Props) {
-  const bubbles = buildBubbles(messages, snapshot);
+  const rawBubbles = buildBubbles(messages, snapshot);
   const byTurn = useMemo(() => summarizeTrace(trace), [trace]);
+  // A paused first round can leave an empty assistant projection. Hide that
+  // placeholder, but keep an empty final row when the turn did produce tool
+  // steps/files/citations — otherwise a tool-only turn loses its file card.
+  const bubbles = rawBubbles.filter((bubble) => {
+    if (bubble.role !== "assistant" || bubble.content.trim() || bubble.streaming) {
+      return true;
+    }
+    const turnTrace = traceFor(byTurn, bubble.turnId);
+    return turnTrace.steps.length > 0
+      || turnTrace.files.length > 0
+      || turnTrace.citations.length > 0;
+  });
   const last = bubbles[bubbles.length - 1];
   // One turn can project more than one assistant row (paused round + final).
   // Decorate only the last one so steps/file cards are not duplicated.
@@ -453,7 +674,7 @@ export function MessageList({
   const hasAssistant = bubbles.some((bubble) => bubble.role === "assistant");
 
   return (
-    <div className={styles.scroll} ref={onScrollRef}>
+    <div className={styles.scroll} ref={onScrollRef} data-testid="message-scroll">
       <div className={styles.inner}>
         {bubbles.length === 0 ? (
           <div className={styles.welcome}>
@@ -513,6 +734,7 @@ export function MessageList({
                   onBranch={onBranch}
                   turnActive={turnActive}
                   latestTurnId={latestTurnId}
+                  onModeAction={onModeAction}
                 />
               );
             })}
@@ -544,6 +766,16 @@ export function MessageList({
             ) : null}
           </>
         )}
+
+        {approvals.map((attention) => (
+          <ApprovalCard
+            key={attention.attentionId}
+            attention={attention}
+            busy={approvalBusy}
+            onAnswer={(attentionId, decision) =>
+              onApprovalAnswer?.(attentionId, decision)}
+          />
+        ))}
       </div>
     </div>
   );

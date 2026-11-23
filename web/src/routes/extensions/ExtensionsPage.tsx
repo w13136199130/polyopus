@@ -5,10 +5,10 @@
  */
 
 import { useEffect, useState } from "react";
-import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
+import { Button, Dialog, Drawer, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
-import type { AgentToolBinding } from "@/lib/api/wire";
+import type { AgentToolBinding, PluginRow } from "@/lib/api/wire";
 import { useAgents } from "@/features/agents/api";
 import {
   useInstallExamples,
@@ -25,7 +25,7 @@ import {
 } from "@/features/tools/api";
 import styles from "./ExtensionsPage.module.css";
 
-type Tab = "plugins" | "tools" | "agent";
+type Tab = "plugins" | "skills" | "tools" | "agent";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
@@ -122,6 +122,8 @@ export function ExtensionsPage() {
   const uninstallPlugin = useUninstallPlugin();
 
   const [tab, setTab] = useState<Tab>("plugins");
+  const [pluginView, setPluginView] = useState<"installed" | "market">("installed");
+  const [detailPlugin, setDetailPlugin] = useState<PluginRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
@@ -181,7 +183,7 @@ export function ExtensionsPage() {
         {error ? <div className={styles.error}>{error}</div> : null}
 
         <div className={styles.tabs} role="tablist" aria-label="扩展视图">
-          {([["plugins", "插件"], ["tools", "工具注册表"], ["agent", "Agent 工具"]] as const)
+          {([["plugins", "插件"], ["skills", "技能包"], ["tools", "工具"], ["agent", "Agent 工具"]] as const)
             .map(([key, label]) => (
               <button
                 key={key}
@@ -225,7 +227,41 @@ export function ExtensionsPage() {
                 安装签名插件
               </Button>
             </div>
-            {pluginsQuery.isLoading ? <Loading label="载入插件…" /> : pluginsQuery.isError ? (
+            <div className={styles.subTabs} role="tablist" aria-label="插件视图">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={pluginView === "installed"}
+                className={`${styles.subTab} ${pluginView === "installed" ? styles.subTabOn : ""}`}
+                data-testid="plugin-view-installed"
+                onClick={() => setPluginView("installed")}
+              >
+                已安装
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={pluginView === "market"}
+                className={`${styles.subTab} ${pluginView === "market" ? styles.subTabOn : ""}`}
+                data-testid="plugin-view-market"
+                onClick={() => setPluginView("market")}
+              >
+                插件市场 <span className={styles.tag}>v1.1</span>
+              </button>
+            </div>
+            {pluginView === "market" ? (
+              <Empty
+                title="插件市场随 v1.1 接入"
+                hint="市场目录与在线更新暂无后端；现在可用示例插件或签名 manifest 安装。"
+                action={{
+                  label: "安装示例插件",
+                  onClick: () => installExamples.mutate(undefined, {
+                    onSuccess: (data) => setNotice(`已安装 ${data.items.length} 个示例插件`),
+                    onError: (err) => setError(messageOf(err)),
+                  }),
+                }}
+              />
+            ) : pluginsQuery.isLoading ? <Loading label="载入插件…" /> : pluginsQuery.isError ? (
               <ErrorState message="插件加载失败" onRetry={() => void pluginsQuery.refetch()} />
             ) : plugins.length === 0 ? (
               <Empty title="暂无插件" hint="可安装 3 个内置示例，或粘贴签名 manifest。" />
@@ -234,8 +270,8 @@ export function ExtensionsPage() {
                 <table className={styles.table}>
                   <thead>
                     <tr>
-                      <th>插件</th><th>版本</th><th>工具</th><th>状态</th>
-                      <th style={{ width: 150 }}>操作</th>
+                      <th>插件</th><th>版本</th><th>权限</th><th>状态</th>
+                      <th style={{ width: 210 }}>操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -247,7 +283,7 @@ export function ExtensionsPage() {
                         </td>
                         <td className={styles.mono}>v{plugin.version}</td>
                         <td className={styles.muted}>
-                          {plugin.tools.join(", ") || "—"}
+                          {plugin.permissions.join(", ") || "—"}
                         </td>
                         <td>
                           <span className={`${styles.badge} ${
@@ -260,6 +296,14 @@ export function ExtensionsPage() {
                         </td>
                         <td>
                           <div className={styles.rowActions}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              data-testid="plugin-detail"
+                              onClick={() => setDetailPlugin(plugin)}
+                            >
+                              详情
+                            </Button>
                             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
                               <input
                                 type="checkbox"
@@ -289,6 +333,19 @@ export function ExtensionsPage() {
                 </table>
               </div>
             )}
+          </section>
+        ) : null}
+
+        {tab === "skills" ? (
+          <section className={styles.panel}>
+            <div className={styles.head}>
+              <h2>技能包</h2>
+              <span>导入 / 启用 / 版本管理随 v1.1 接入</span>
+            </div>
+            <Empty
+              title="技能包运行时尚未开放"
+              hint="当前可用的能力装配在「插件」和「工具」；技能包不会伪造入口。"
+            />
           </section>
         ) : null}
 
@@ -412,6 +469,29 @@ export function ExtensionsPage() {
           </p>
         </form>
       </Dialog>
+
+      <Drawer
+        open={detailPlugin !== null}
+        onOpenChange={(open) => { if (!open) setDetailPlugin(null); }}
+        title={detailPlugin ? `插件详情 · ${detailPlugin.name}` : "插件详情"}
+        description="只读信息；权限与工具来自签名 manifest。"
+        width={520}
+      >
+        {detailPlugin ? (
+          <dl className={styles.detailList}>
+            <dt>ID</dt><dd className={styles.mono}>{detailPlugin.pluginId}</dd>
+            <dt>版本</dt><dd>v{detailPlugin.version} · API {detailPlugin.apiVersion}</dd>
+            <dt>签名</dt><dd>{detailPlugin.signed ? "已签名" : "未签名"}</dd>
+            <dt>状态</dt><dd>{detailPlugin.status}</dd>
+            <dt>权限</dt>
+            <dd>{detailPlugin.permissions.length ? detailPlugin.permissions.join(", ") : "—"}</dd>
+            <dt>工具</dt>
+            <dd>{detailPlugin.tools.length ? detailPlugin.tools.join(", ") : "—"}</dd>
+            <dt>安装时间</dt>
+            <dd>{new Date(detailPlugin.installedAt * 1000).toLocaleString("zh-CN")}</dd>
+          </dl>
+        ) : null}
+      </Drawer>
     </PageShell>
   );
 }

@@ -29,7 +29,7 @@ export interface UseChatStream {
    * Send with optimistic bubble + 2s ack rollback. Returns false when the
    * optimistic message was withdrawn (caller restores the composer text).
    */
-  send: (content: string) => Promise<boolean>;
+  send: (content: string, mode?: "act" | "ask" | "plan") => Promise<boolean>;
 }
 
 export function useChatStream(
@@ -144,7 +144,10 @@ export function useChatStream(
   }, [threadId, store, transport]);
 
   // ---- send with optimistic rollback ---------------------------------------
-  const send = async (content: string): Promise<boolean> => {
+  const send = async (
+    content: string,
+    mode: "act" | "ask" | "plan" = "act",
+  ): Promise<boolean> => {
     if (!threadId) return false;
     const pendingId = `pending-${Date.now()}`;
     store.beginOptimistic(pendingId, content);
@@ -157,7 +160,7 @@ export function useChatStream(
 
     try {
       const { threads } = await import("@/lib/api/endpoints");
-      const result = await threads.postTurn(threadId, content, pendingId);
+      const result = await threads.postTurn(threadId, content, pendingId, mode);
       if (ackTimer.current) clearTimeout(ackTimer.current);
       // (re)open the stream for this turn if it closed after a previous one
       transport.connect({

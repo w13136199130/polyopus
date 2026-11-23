@@ -6,7 +6,6 @@ import {
   useDeleteConnector,
   useDiscoverConnector,
   useProbeConnector,
-  useStartOAuth,
   useUpdateConnector,
   useUpdateConnectorTool,
 } from "@/features/connectors/api";
@@ -92,7 +91,6 @@ export function ConnectorDrawer({
   const update = useUpdateConnector();
   const remove = useDeleteConnector();
   const probe = useProbeConnector();
-  const oauth = useStartOAuth();
   const discover = useDiscoverConnector();
   const toggleTool = useUpdateConnectorTool();
   const toolsQuery = useConnectorTools(
@@ -259,17 +257,6 @@ export function ConnectorDrawer({
       { instanceId: instance.instanceId, toolKey, enabled },
       { onError: (err) => setError(messageOf(err)) },
     );
-  }
-
-  function reauthorize() {
-    if (!instance) return;
-    oauth.mutate(instance.kind, {
-      onSuccess: (result) => {
-        onNotice("已生成授权链接，请在新窗口完成授权。");
-        window.open(result.authorizeUrl, "_blank", "noopener,noreferrer");
-      },
-      onError: (err) => setError(messageOf(err)),
-    });
   }
 
   return (
@@ -581,11 +568,9 @@ export function ConnectorDrawer({
             <div className={styles.oauth}>
               <div>
                 <b>OAuth 授权</b>
-                <span>过期后可重新授权，不影响历史会话。</span>
+                <span>真实 provider 授权随 v1.1 接入；当前不会打开占位地址。</span>
               </div>
-              <Button size="sm" variant="secondary" onClick={reauthorize}>
-                重新授权
-              </Button>
+              <span className={styles.hint}>v1.1</span>
             </div>
           ) : null}
         </div>

@@ -17,6 +17,8 @@ router = APIRouter(prefix="/usage", tags=["usage"])
 @router.get("/summary")
 def usage_summary(
     window: str = Query(default="day"),
+    range_days: int | None = Query(default=None, alias="range", ge=1, le=365),
+    group_by: str = Query(default="model", alias="groupBy", pattern="^(model|agent|day)$"),
     as_user: str | None = Query(default=None, alias="asUser"),
     agent_id: str | None = Query(default=None, alias="agentId"),
     user: User = Depends(require_permission("usage:read")),
@@ -24,13 +26,15 @@ def usage_summary(
 ) -> dict[str, object]:
     return service.summary(
         conn, window=window, as_user=as_user, agent_id=agent_id,
-        tenant_id=user.tenant_id,
+        tenant_id=user.tenant_id, group_by=group_by, range_days=range_days,
     )
 
 
 @router.get("/export", response_class=PlainTextResponse)
 def usage_export(
     window: str = Query(default="day"),
+    range_days: int | None = Query(default=None, alias="range", ge=1, le=365),
+    group_by: str = Query(default="model", alias="groupBy", pattern="^(model|agent|day)$"),
     as_user: str | None = Query(default=None, alias="asUser"),
     agent_id: str | None = Query(default=None, alias="agentId"),
     user: User = Depends(require_permission("usage:read")),
@@ -38,7 +42,7 @@ def usage_export(
 ) -> PlainTextResponse:
     data = service.summary(
         conn, window=window, as_user=as_user, agent_id=agent_id,
-        tenant_id=user.tenant_id,
+        tenant_id=user.tenant_id, group_by=group_by, range_days=range_days,
     )
-    csv = service.export_csv(data["items"])  # type: ignore[arg-type]
+    csv = service.export_csv(data["items"], group_by)  # type: ignore[arg-type]
     return PlainTextResponse(csv, media_type="text/csv")

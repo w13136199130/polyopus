@@ -199,6 +199,11 @@ def test_user_export_job_writes_jsonl(
     assert {"user", "threads", "messages", "artifacts"} <= kinds
     assert (path.parent / "manifest.json").is_file()
 
+    download = client.get(f"/api/v1/me/export/{job_id}/download")
+    assert download.status_code == 200, download.text
+    assert download.headers["content-disposition"].startswith("attachment")
+    assert download.content == path.read_bytes()
+
     admin_job = client.get(f"/api/v1/admin/data-jobs/{job_id}")
     assert admin_job.status_code == 200
     assert admin_job.json()["jobId"] == job_id

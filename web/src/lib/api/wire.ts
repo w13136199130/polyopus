@@ -21,6 +21,7 @@ export interface SessionUser {
   roles?: string[];
   permissions?: string[];
   mfaEnabled?: boolean;
+  notificationPrefs?: Record<string, boolean>;
 }
 
 export interface LoginResponse {
@@ -39,8 +40,12 @@ export interface ThreadSettings {
   connectorIds?: string[];
   /** Published experts offered as sub-agents for this conversation. */
   subagentIds?: string[];
+  /** Composer run mode for the next turn. */
+  mode?: "act" | "ask" | "plan";
   /** "ask" opens an approval card; "auto" upgrades ask -> allow (deny wins). */
   approvalPolicy?: "ask" | "auto";
+  /** Tool keys the user allowed for this whole conversation. */
+  approvedTools?: string[];
 }
 
 export interface Thread {
@@ -289,7 +294,11 @@ export interface TicketDetail extends TicketRow {
 
 export interface UsageSummaryItem {
   bucket: string;
-  model: string;
+  group: string;
+  key: string;
+  model?: string | null;
+  agentId?: string | null;
+  day?: string | null;
   turns: number;
   inputTokens: number;
   outputTokens: number;
@@ -300,9 +309,21 @@ export interface UsageSummaryItem {
 
 export interface UsageSummaryResponse {
   window: string;
+  groupBy: "model" | "agent" | "day";
+  rangeDays: number | null;
   startTs: number;
   endTs: number;
   items: UsageSummaryItem[];
+  byDay: UsageSummaryItem[];
+  byAgent: UsageSummaryItem[];
+  byModel: UsageSummaryItem[];
+  totals: {
+    turns: number;
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens: number;
+    costMicros: number;
+  };
   totalCostMicros: number;
 }
 

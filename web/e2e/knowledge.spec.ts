@@ -67,6 +67,9 @@ test("knowledge: file upload, preview, retrieval and batch delete", async ({ pag
   await page.getByTestId("kb-tab-docs").click();
   await page.getByRole("checkbox", { name: "全选文档" }).click();
   await expect(page.getByText("已选 2 项")).toBeVisible();
+  await page.getByTestId("doc-batch-reindex").click();
+  await expect(page.getByText("已重建 2 个文档的索引")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("checkbox", { name: "全选文档" }).click();
   await page.getByTestId("doc-batch-delete").click();
   await expect(page.getByText("已删除 2 个文档")).toBeVisible({ timeout: 15_000 });
 
@@ -99,6 +102,16 @@ test("knowledge: pipeline chips and per-doc reindex", async ({ page }) => {
   await page.getByTestId("doc-upload").click();
   const row = page.locator("tr", { hasText: "pipeline.md" });
   await expect(row).toBeVisible({ timeout: 15_000 });
+
+  // document search + card view
+  await page.getByTestId("doc-search").fill("pipeline");
+  await expect(row).toBeVisible();
+  await page.getByTestId("doc-search").fill("missing-file");
+  await expect(page.getByText("没有匹配的文档")).toBeVisible();
+  await page.getByTestId("doc-search").fill("");
+  await page.getByTestId("doc-view-cards").click();
+  await expect(page.getByTestId("doc-card").filter({ hasText: "pipeline.md" })).toBeVisible();
+  await page.getByTestId("doc-view-table").click();
 
   // retrieval: pipeline chips with latency + hit, ranked rows with score bar
   await page.getByTestId("kb-tab-retrieval").click();

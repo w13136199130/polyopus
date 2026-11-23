@@ -240,3 +240,47 @@ def test_fs_read_still_allows_without_approval(env) -> None:
         "SELECT payload_json FROM events WHERE type='tool.completed'"
     ).fetchall()]
     assert any("note.txt" in payload for payload in completions)
+
+
+def test_approved_session_remembers_tool_for_next_turn(env) -> None:
+    db, conn, ws = env
+    assert _run(conn, ws) == "waiting_approval"
+    approval_id = conn.execute(
+        "SELECT approval_id FROM approvals ORDER BY id DESC LIMIT 1"
+    ).fetchone()[0]
+    attention.resolve(
+        conn, EventStore(conn),
+        tenant_id="default", thread_id="th_1",
+        approval_id=str(approval_id), decision="approved_session", by="us_test",
+    )
+    settings = json.loads(conn.execute(
+        "SELECT settings_json FROM threads WHERE thread_id='th_1'"
+    ).fetchone()[0])
+    assert settings["approvedTools"] == ["fs.write"]
+
+    assert engine.resume_after_approval(
+        conn, EventStore(conn), "tu_1", decision="approved_session",
+        registry=_registry(conn),
+        config=engine.EngineConfig(workspace=ws),
+    ) == "completed"
+
+    # A later turn in the same conversation no longer pauses for fs.write.
+    conn.execute(
+        "INSERT INTO messages (tenant_id, message_id, thread_id, turn_id, role,"
+        " content, status, seq, created_at, updated_at)"
+        " VALUES ('default','m_2','th_1','tu_2','user','再写一次','completed',100,100,100)"
+    )
+    conn.execute(
+        "INSERT INTO turns (tenant_id, turn_id, thread_id, user_message_id, status,"
+        " mode, seq, created_at, updated_at)"
+        " VALUES ('default','tu_2','th_1','m_2','queued','act',100,100,100)"
+    )
+    conn.commit()
+    result = asyncio.run(engine.run_turn(
+        conn, EventStore(conn), "tu_2",
+        model=WantsWrite(),  # type: ignore[arg-type]
+        registry=_registry(conn),
+        config=engine.EngineConfig(workspace=ws),
+    ))
+    assert result == "completed"
+    assert conn.execute("SELECT count(*) FROM approvals").fetchone()[0] == 1

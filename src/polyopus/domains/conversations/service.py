@@ -339,6 +339,7 @@ def post_turn(
     system_thread_ok: bool = False,
     status: str = "queued",
     quota_user_id: str | None = None,
+    mode: str = "act",
 ) -> tuple[str, str]:
     """Append a user message + queued turn. Returns (turn_id, message_id).
 
@@ -357,6 +358,8 @@ def post_turn(
         get_thread(conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id)
     if not content.strip():
         raise AppError("VALIDATION_FAILED", details={"fields": {"content": "required"}})
+    if mode not in ("act", "ask", "plan"):
+        raise AppError("VALIDATION_FAILED", details={"fields": {"mode": "act|ask|plan"}})
 
     now = int(time.time())
     if idempotency_key:
@@ -427,9 +430,9 @@ def post_turn(
             INSERT INTO turns
               (tenant_id, turn_id, thread_id, user_message_id, status, mode, seq,
                ticket_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'act', ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (tenant_id, turn_id, thread_id, message_id, status, turn_seq,
+            (tenant_id, turn_id, thread_id, message_id, status, mode, turn_seq,
              ticket_id, now, now),
         )
         conn.execute(
@@ -449,7 +452,8 @@ def post_turn(
     store.append(
         thread_id,
         "turn.queued",
-        {"turn_id": turn_id, "delivery": "auto", "input_ref": message_id},
+        {"turn_id": turn_id, "delivery": "auto", "input_ref": message_id,
+         "mode": mode},
         tenant_id=tenant_id,
         turn_id=turn_id,
     )

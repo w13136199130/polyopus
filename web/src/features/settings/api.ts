@@ -10,7 +10,31 @@ export const settingsKeys = {
 
 export function useUpdateProfile() {
   return useMutation({
-    mutationFn: (displayName: string) => auth.updateMe(displayName),
+    mutationFn: (input: {
+      displayName?: string;
+      notificationPrefs?: Record<string, boolean>;
+    }) => auth.updateMe(input),
+  });
+}
+
+export function useStartExport() {
+  return useMutation({
+    mutationFn: () => settings.exportData({
+      format: "jsonl", includeArtifacts: true,
+    }),
+  });
+}
+
+export function useExportJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ["me-export", jobId],
+    queryFn: () => settings.exportJob(jobId as string),
+    enabled: jobId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "ready" || status === "failed" || status === "done"
+        ? false : 1200;
+    },
   });
 }
 

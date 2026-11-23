@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from sqlite3 import Connection
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import FileResponse
 from pydantic import AliasChoices, BaseModel, Field
 
 from polyopus.api.deps import current_user, get_db, require_step_up
@@ -59,6 +61,24 @@ def get_export(
 ) -> dict[str, object]:
     return data_jobs.get_job(
         conn, tenant_id=user.tenant_id, job_id=job_id, user_id=user.user_id
+    )
+
+
+@router.get("/export/{job_id}/download")
+def download_export(
+    job_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    conn: Connection = Depends(get_db),
+) -> FileResponse:
+    data_dir = Path(str(request.app.state.settings.data_dir))
+    path = data_jobs.download_path(
+        conn, tenant_id=user.tenant_id, job_id=job_id,
+        user_id=user.user_id, data_dir=data_dir,
+    )
+    return FileResponse(
+        path, media_type="application/x-ndjson",
+        filename=f"polyopus-export-{job_id}.jsonl",
     )
 
 

@@ -58,8 +58,11 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
   const card = page.getByTestId("approval-card");
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect(card).toContainText("fs.write");
+  // the approval lives inside the transcript scroll flow, not below it
+  await expect(page.getByTestId("message-scroll").getByTestId("approval-card"))
+    .toBeVisible();
 
-  await card.getByRole("button", { name: "批准" }).click();
+  await card.getByRole("button", { name: "仅本次允许" }).click();
   await expect(card).toBeHidden({ timeout: 20_000 });
   // resume streams a final round (FakeModel echoes the request again)
   await expect(assistant.last()).toContainText("echo[", { timeout: 20_000 });
@@ -145,7 +148,7 @@ test("chat: 5s offline recovers the pending approval", async ({ page, context })
   await context.setOffline(false);
 
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await card.getByRole("button", { name: "批准" }).click();
+  await card.getByRole("button", { name: "仅本次允许" }).click();
   await expect(card).toBeHidden({ timeout: 20_000 });
 });
 
@@ -166,4 +169,87 @@ test("chat: welcome quick-start sends on click", async ({ page }) => {
   await expect(assistant.first()).toContainText("echo[", { timeout: 20_000 });
   // welcome disappears once the first message lands
   await expect(page.getByTestId("quick-prompt")).toHaveCount(0);
+});
+
+test("chat: 本会话允许 covers later write turns", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  const box = page.getByLabel("消息输入框");
+
+  await box.fill("请用 fs.write 工具把内容 'session-a' 写入 session-a.txt");
+  await box.press("Enter");
+  const card = page.getByTestId("approval-card");
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByRole("button", { name: "本会话允许" }).click();
+  await expect(card).toBeHidden({ timeout: 20_000 });
+  await expect(page.getByTestId("bubble-assistant").last()).toContainText(
+    "echo[",
+    { timeout: 20_000 },
+  );
+  await expect(page.getByTestId("file-card").last()).toContainText("session-a.txt", {
+    timeout: 20_000,
+  });
+
+  // The remembered tool key is now auto-approved for this conversation.
+  await box.fill("请用 fs.write 工具把内容 'session-b' 写入 session-b.txt");
+  await box.press("Enter");
+  await expect(page.getByTestId("file-card").last()).toContainText("session-b.txt", {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("approval-card")).toHaveCount(0);
+  await expect(page.getByTestId("composer-stop")).toBeHidden({ timeout: 20_000 });
+});
+
+test("chat: Plan mode produces a plan card and can execute in Act", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+
+  await page.getByTestId("composer-mode").click();
+  await page.getByTestId("composer-mode-plan").click();
+  await expect(page.getByTestId("composer-mode")).toContainText("Plan");
+
+  await page.getByLabel("消息输入框").fill("帮我规划发布流程");
+  await page.getByLabel("消息输入框").press("Enter");
+  const card = page.getByTestId("mode-card-plan");
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(card).toContainText("Plan 模式只输出计划");
+
+  await page.getByTestId("mode-execute").click();
+  await expect(page.getByTestId("bubble-user").last()).toContainText("请执行上面的计划");
+  await expect(page.getByTestId("composer-mode")).toContainText("Act");
+});
+
+test("chat: Ask mode asks first and can skip into Act", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+
+  await page.getByTestId("composer-mode").click();
+  await page.getByTestId("composer-mode-ask").click();
+  await expect(page.getByTestId("composer-mode")).toContainText("Ask");
+  await page.getByLabel("消息输入框").fill("帮我整理需求");
+  await page.getByLabel("消息输入框").press("Enter");
+
+  const card = page.getByTestId("mode-card-ask");
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId("mode-skip").click();
+  await expect(page.getByTestId("bubble-user").last()).toContainText("跳过澄清");
+  await expect(page.getByTestId("composer-mode")).toContainText("Act");
+});
+
+test("chat: Plan card can turn into a ticket", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  await page.getByTestId("composer-mode").click();
+  await page.getByTestId("composer-mode-plan").click();
+  await page.getByLabel("消息输入框").fill("规划一次发布检查");
+  await page.getByLabel("消息输入框").press("Enter");
+
+  await expect(page.getByTestId("mode-card-plan")).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId("mode-ticket").click();
+  await page.waitForURL(/\/tasks\?ticketId=/);
+  await expect(page.getByTestId("ticket-detail")).toBeVisible({ timeout: 15_000 });
 });

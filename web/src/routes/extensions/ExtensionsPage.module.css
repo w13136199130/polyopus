@@ -190,3 +190,38 @@
   color: var(--text-4);
   margin: 0;
 }
+
+/* plugin sub tabs / detail drawer */
+.subTabs {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.subTab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 7px 10px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.subTabOn {
+  color: var(--primary);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
+.detailList {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.detailList dt { color: var(--text-4); }
+.detailList dd { margin: 0; color: var(--text-2); word-break: break-word; }

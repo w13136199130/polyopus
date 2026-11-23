@@ -17,6 +17,9 @@ interface Props {
   onPin: (thread: Thread) => void;
   onBranch: (thread: Thread) => void;
   onDelete: (thread: Thread) => void;
+  className?: string;
+  /** Render inside the mobile session drawer (full width, not hidden). */
+  embedded?: boolean;
 }
 
 const SELECTED_AGENT_KEY = "poly:new-chat-agent";
@@ -58,7 +61,7 @@ function initials(name: string): string {
  */
 export function ThreadRail({
   threads, loading, activeId, error, agents, onSelect, onCreate, onRetry,
-  onRename, onPin, onBranch, onDelete,
+  onRename, onPin, onBranch, onDelete, className, embedded,
 }: Props) {
   const [query, setQuery] = useState("");
   const [agentId, setAgentId] = useState(() => {
@@ -120,7 +123,10 @@ export function ThreadRail({
   const createLabel = selectedAgent ? `用「${selectedAgent.name}」新建` : "新建会话";
 
   return (
-    <aside className={styles.rail} aria-label="会话列表">
+    <aside
+      className={`${styles.rail} ${embedded ? styles.mobileRail : ""} ${className ?? ""}`}
+      aria-label="会话列表"
+    >
       <div className={styles.head}>
         <b>对话</b>
         <span className={styles.count}>{threads?.length ?? 0}</span>

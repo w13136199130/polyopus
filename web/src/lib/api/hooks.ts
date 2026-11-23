@@ -22,8 +22,10 @@ export function useAttentions() {
 export function useAnswerAttention() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { attentionId: string; decision: "approve" | "deny" }) =>
-      attentions.answer(input.attentionId, input.decision),
+    mutationFn: (input: {
+      attentionId: string;
+      decision: "approve" | "approve_session" | "deny";
+    }) => attentions.answer(input.attentionId, input.decision),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: attentionKeys.all });
     },

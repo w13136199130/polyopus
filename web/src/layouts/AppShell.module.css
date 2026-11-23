@@ -18,3 +18,14 @@
   margin: auto;
   color: var(--text-3);
 }
+
+@media (max-width: 960px) {
+  .shell { padding-bottom: 0; }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    height: 100dvh;
+    padding-bottom: 56px;
+  }
+}

@@ -27,6 +27,7 @@ export interface Citation {
 
 export interface TurnTrace {
   model?: string;
+  mode?: "act" | "ask" | "plan";
   finished?: boolean;
   durationMs?: number;
   steps: ToolStep[];
@@ -100,6 +101,8 @@ export function summarizeTrace(
     if (event.type === "turn.started") {
       const trace = ensure(turnId);
       trace.model = String(payload.model ?? "");
+      const mode = String(payload.mode ?? "act");
+      if (mode === "ask" || mode === "plan") trace.mode = mode;
       started.set(turnId, event.ts);
       continue;
     }

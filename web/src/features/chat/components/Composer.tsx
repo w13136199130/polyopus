@@ -17,6 +17,7 @@ import styles from "./Composer.module.css";
 type MenuKey =
   | "plus"
   | "model"
+  | "mode"
   | "kb"
   | "connector"
   | "subagent"
@@ -51,6 +52,8 @@ export interface ComposerProps {
   onToggleSubagent: (agentId: string) => void;
   approvalPolicy: "ask" | "auto";
   onApprovalPolicyChange: (policy: "ask" | "auto") => void;
+  mode: "act" | "ask" | "plan";
+  onModeChange: (mode: "act" | "ask" | "plan") => void;
   /** Workspace files offered by the @ menu (first entries are enough). */
   mentionFiles?: WorkspaceEntry[];
   onNewThread: () => void;
@@ -101,6 +104,7 @@ export function Composer({
   connectors, connectorIds, onToggleConnector,
   subagents, subagentIds, onToggleSubagent,
   approvalPolicy, onApprovalPolicyChange,
+  mode, onModeChange,
   mentionFiles = [], onNewThread, onExport, onNotice, streaming = false, onStop,
   queued = [], onQueue, onRemoveQueued,
 }: ComposerProps) {
@@ -239,7 +243,8 @@ export function Composer({
       return;
     }
     if (name === "plan") {
-      setValue("请先给出执行计划，确认后再动手：");
+      onModeChange("plan");
+      onNotice?.("已切换到 Plan 模式：先出计划，不执行工具。");
       return;
     }
     onNotice?.(
@@ -312,6 +317,31 @@ export function Composer({
                   >
                     <span aria-hidden="true">{icon as string}</span>
                     {label as string}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {menu === "mode" ? (
+              <div className={styles.menuList}>
+                <div className={styles.menuTitle}>运行模式（本会话）</div>
+                {([
+                  ["act", "Act", "直接执行；写操作仍按策略审批"],
+                  ["ask", "Ask", "先澄清问题，不执行工具"],
+                  ["plan", "Plan", "只输出计划，不执行工具"],
+                ] as const).map(([key, label, hint]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`${styles.menuItem} ${mode === key ? styles.menuItemOn : ""}`}
+                    data-testid={`composer-mode-${key}`}
+                    onClick={() => {
+                      onModeChange(key);
+                      setMenu(null);
+                    }}
+                  >
+                    <span>{label}</span>
+                    <span className={styles.menuMeta}>{hint}</span>
                   </button>
                 ))}
               </div>
@@ -583,13 +613,12 @@ export function Composer({
           </button>
           <button
             type="button"
-            className={`${styles.chip} ${styles.chipOn}`}
+            className={`${styles.chip} ${mode === "act" ? styles.chipOn : ""}`}
             title="运行模式"
-            onClick={() =>
-              onNotice?.("Act 模式直接执行；Plan/Ask 模式随 v1.1 开放。")
-            }
+            data-testid="composer-mode"
+            onClick={() => setMenu(menu === "mode" ? null : "mode")}
           >
-            ✦ Act
+            {mode === "ask" ? "? Ask" : mode === "plan" ? "◇ Plan" : "✦ Act"}
           </button>
           <button
             type="button"

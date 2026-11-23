@@ -37,6 +37,21 @@ test("settings: appearance preferences and step-up key create", async ({ page })
   await page.getByTestId("display-name").fill("admin");
   await page.getByTestId("profile-save").click();
 
+  // notification preference is server-owned and survives reload
+  await page.getByTestId("settings-tab-notifications").click();
+  const weekly = page.getByTestId("notify-weekly");
+  const before = await weekly.isChecked();
+  const patched = page.waitForResponse(
+    (response) => response.url().endsWith("/api/v1/auth/me")
+      && response.request().method() === "PATCH",
+  );
+  await weekly.click();
+  await patched;
+  await expect(weekly).toBeChecked({ checked: !before });
+  await page.reload();
+  await page.getByTestId("settings-tab-notifications").click();
+  await expect(page.getByTestId("notify-weekly")).toBeChecked({ checked: !before });
+
   // account tab: system snapshot + step-up API key
   await page.getByTestId("settings-tab-account").click();
   await expect(page.getByText("系统（只读）")).toBeVisible();
@@ -49,4 +64,10 @@ test("settings: appearance preferences and step-up key create", async ({ page })
   await page.getByTestId("api-key-name").fill(`e2e-key-${Date.now()}`);
   await page.getByTestId("api-key-create").click();
   await expect(page.getByTestId("api-key-secret")).toContainText("poly_");
+
+  // personal data export: job progresses and exposes a download link
+  await page.getByTestId("me-export-start").click();
+  await expect(page.getByTestId("me-export-download")).toBeVisible({
+    timeout: 30_000,
+  });
 });

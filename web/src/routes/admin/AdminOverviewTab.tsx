@@ -6,7 +6,7 @@ import {
 } from "@/features/admin/api";
 import styles from "./AdminConfig.module.css";
 
-type AdminTab = "models" | "storage" | "security" | "backup" | "jobs";
+type AdminTab = "models" | "storage" | "plugins" | "security" | "backup" | "jobs";
 
 function bytes(value: number): string {
   if (value < 1024) return `${value} B`;
@@ -211,6 +211,7 @@ export function AdminOverviewTab({
             {([
               ["models", "模型配置", "Provider / 模型 / 探活"],
               ["storage", "存储", "容量 / 自动备份"],
+              ["plugins", "插件", "安装 / 启停 / 卸载"],
               ["security", "安全", "策略 / 工具 / 审计"],
               ["backup", "备份", "快照 / 恢复 / 导入"],
               ["jobs", "数据任务", "导出 / 租户清理"],

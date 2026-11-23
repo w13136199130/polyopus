@@ -14,6 +14,7 @@ import styles from "./TicketDetailPanel.module.css";
 
 interface Props {
   ticketId: string | null;
+  onBack?: () => void;
 }
 
 const BUCKET_META: Record<string, [string, string]> = {
@@ -25,11 +26,15 @@ const BUCKET_META: Record<string, [string, string]> = {
 
 const KIND_LABEL: Record<string, string> = {
   trigger: "Trigger",
+  gate: "Gate",
+  eval: "Eval",
   ticket: "Ticket",
   assignment: "Assign",
+  execution: "Execution",
   report: "Report",
   attention: "Attention",
   channel: "Reply",
+  error: "Error",
 };
 
 function toneClass(item: TicketTimelineItem): string {
@@ -65,7 +70,7 @@ function errorText(error: unknown): string {
  * The three actions are real: 重新派工 requeues, 追加预算 raises the ceiling,
  * 停止 ends the ticket (confirm required).
  */
-export function TicketDetailPanel({ ticketId }: Props) {
+export function TicketDetailPanel({ ticketId, onBack }: Props) {
   const detail = useTicketDetail(ticketId);
   const timeline = useTicketTimeline(ticketId);
   const stop = useStopTicket();
@@ -109,6 +114,9 @@ export function TicketDetailPanel({ ticketId }: Props) {
     ? "内置执行器"
     : `${data.executor} 执行器`;
   const budgetCap = data.budget?.maxCostMicros;
+  const budgetPct = budgetCap
+    ? Math.min(100, Math.round(((data.costMicros ?? 0) / budgetCap) * 100))
+    : 0;
   const facts = data.report?.facts ?? {};
 
   function exportReport() {
@@ -156,6 +164,17 @@ export function TicketDetailPanel({ ticketId }: Props) {
   return (
     <div className={styles.panel} data-testid="ticket-detail">
       <div className={styles.head}>
+        {onBack ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className={styles.mobileBack}
+            data-testid="detail-back"
+            onClick={onBack}
+          >
+            ← 返回列表
+          </Button>
+        ) : null}
         <div className={styles.headMain}>
           <h2 className={styles.title}>{data.title}</h2>
           <div className={styles.chips}>
@@ -248,12 +267,28 @@ export function TicketDetailPanel({ ticketId }: Props) {
             {fmtCost(data.costMicros)} / {budgetCap ? fmtCost(budgetCap) : "未设置"}
           </dd>
         </dl>
+        <div className={styles.budgetBar} aria-hidden="true" data-testid="budget-bar">
+          <i
+            className={`${styles.budgetFill} ${
+              budgetPct >= 80 ? styles.budgetWarn : ""
+            }`}
+            style={{ width: `${budgetCap ? budgetPct : 0}%` }}
+          />
+        </div>
+        <div className={styles.budgetMeta}>
+          <span>{budgetCap ? `已用 ${budgetPct}%` : "未设置上限"}</span>
+          {budgetPct >= 80 && data.state !== "ended" ? (
+            <span className={styles.budgetAlert}>接近或已超预算</span>
+          ) : null}
+        </div>
       </section>
 
       <section className={styles.panelCard}>
         <div className={styles.panelHead}>
           <b>任务线</b>
-          <span className={styles.panelSub}>Trigger → Eval → Ticket → Report</span>
+          <span className={styles.panelSub}>
+            Trigger → Gate → Eval → Ticket → Assign → Execution → Report → Attention
+          </span>
         </div>
         {timeline.isLoading ? (
           <p className={styles.muted}>载入时间线…</p>

@@ -216,6 +216,28 @@ def _fail(conn: sqlite3.Connection, job_id: str, error: str) -> None:
     conn.commit()
 
 
+def download_path(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    job_id: str,
+    user_id: str,
+    data_dir: Path,
+) -> Path:
+    """Resolve a finished personal export, jailed under data/exports."""
+    job = get_job(conn, tenant_id=tenant_id, job_id=job_id, user_id=user_id)
+    if job.get("kind") != "export" or job.get("status") != "ready":
+        raise AppError("NOT_FOUND", details={"jobId": job_id})
+    ref = job.get("storageRef")
+    if not ref:
+        raise AppError("NOT_FOUND", details={"jobId": job_id})
+    path = Path(str(ref)).resolve()
+    root = (Path(data_dir) / "exports").resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise AppError("NOT_FOUND", details={"jobId": job_id})
+    return path
+
+
 def _job_dir(data_dir: Path, tenant_id: str, job_id: str) -> Path:
     root = Path(data_dir) / "exports" / _safe(tenant_id) / _safe(job_id, "job")
     root.mkdir(parents=True, exist_ok=True)

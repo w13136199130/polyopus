@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from polyopus.platform.db.seed import verify_password
 from polyopus.platform.errors import AppError
@@ -23,6 +24,7 @@ class User:
     is_owner: bool
     roles: tuple[str, ...] = ()
     permissions: tuple[str, ...] = ()
+    preferences: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -35,12 +37,18 @@ class Session:
 
 
 def _row_to_user(row: sqlite3.Row) -> User:
+    keys = row.keys() if hasattr(row, "keys") else ()
+    try:
+        prefs = json.loads(str(row["preferences_json"] or "{}")) if "preferences_json" in keys else {}
+    except (ValueError, TypeError):
+        prefs = {}
     return User(
         user_id=str(row["user_id"]),
         tenant_id=str(row["tenant_id"]),
         username=str(row["username"]),
         display_name=row["display_name"],
         is_owner=bool(row["is_owner"]),
+        preferences=prefs if isinstance(prefs, dict) else {},
     )
 
 

@@ -7,7 +7,7 @@ import json
 import time
 from collections.abc import AsyncIterator
 from sqlite3 import Connection
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
@@ -36,6 +36,7 @@ class CreateThreadBody(BaseModel):
 class PostTurnBody(BaseModel):
     content: str
     clientMessageId: str | None = None
+    mode: Literal["act", "ask", "plan"] = "act"
 
 
 class PatchThreadBody(BaseModel):
@@ -69,6 +70,8 @@ class PatchThreadBody(BaseModel):
                 raise ValueError(f"{key} must be a list of up to 50 ids")
         if "model" in value and not isinstance(value["model"], str):
             raise ValueError("model must be a string")
+        if "mode" in value and value["mode"] not in ("act", "ask", "plan"):
+            raise ValueError("mode must be act|ask|plan")
         if value.get("approvalPolicy") not in (None, "ask", "auto"):
             raise ValueError("approvalPolicy must be ask or auto")
         return value
@@ -256,6 +259,7 @@ def post_turn(
         thread_id=thread_id,
         content=body.content,
         idempotency_key=idempotency_key or body.clientMessageId,
+        mode=body.mode,
     )
     return {"turnId": turn_id, "messageId": message_id, "status": "queued"}
 

@@ -86,11 +86,13 @@ export const auth = {
     })),
   me: op("GET", "/auth/me", () =>
     apiFetch<{ user: SessionUser }>("/auth/me", { skipUnauthorized: true })),
-  updateMe: op("PATCH", "/auth/me", (displayName: string) =>
-    apiFetch<{ user: SessionUser }>("/auth/me", {
-      method: "PATCH",
-      body: JSON.stringify({ displayName }),
-    })),
+  updateMe: op("PATCH", "/auth/me", (input: {
+    displayName?: string;
+    notificationPrefs?: Record<string, boolean>;
+  }) => apiFetch<{ user: SessionUser }>("/auth/me", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  })),
   logout: op("POST", "/auth/logout", () =>
     apiFetch<{ ok: boolean }>("/auth/logout", {
       method: "POST",
@@ -171,11 +173,15 @@ export const threads = {
   postTurn: op(
     "POST",
     "/threads/{thread_id}/turns",
-    (threadId: string, content: string, clientMessageId?: string) =>
-      apiFetch<PostTurnResponse>(`/threads/${encodeURIComponent(threadId)}/turns`, {
-        method: "POST",
-        body: JSON.stringify({ content, clientMessageId }),
-      }),
+    (
+      threadId: string,
+      content: string,
+      clientMessageId?: string,
+      mode: "act" | "ask" | "plan" = "act",
+    ) => apiFetch<PostTurnResponse>(`/threads/${encodeURIComponent(threadId)}/turns`, {
+      method: "POST",
+      body: JSON.stringify({ content, clientMessageId, mode }),
+    }),
   ),
 };
 
@@ -367,13 +373,20 @@ export const tickets = {
     apiFetch<{ alerts: number }>("/tickets/watchdog/run", { method: "POST" })),
 };
 
-function usageParams(
-  window: string,
-  filters?: { asUser?: string; agentId?: string },
-): string {
-  const params = new URLSearchParams({ window });
-  if (filters?.asUser) params.set("asUser", filters.asUser);
-  if (filters?.agentId) params.set("agentId", filters.agentId);
+export interface UsageQuery {
+  range: 7 | 30 | 90;
+  groupBy: "model" | "agent" | "day";
+  asUser?: string;
+  agentId?: string;
+}
+
+function usageParams(query: UsageQuery): string {
+  const params = new URLSearchParams({
+    range: String(query.range),
+    groupBy: query.groupBy,
+  });
+  if (query.asUser) params.set("asUser", query.asUser);
+  if (query.agentId) params.set("agentId", query.agentId);
   return params.toString();
 }
 
@@ -381,15 +394,15 @@ export const usage = {
   summary: op(
     "GET",
     "/usage/summary",
-    (window: "day" | "week" | "month", filters?: { asUser?: string; agentId?: string }) =>
-      apiFetch<UsageSummaryResponse>(`/usage/summary?${usageParams(window, filters)}`),
+    (query: UsageQuery) =>
+      apiFetch<UsageSummaryResponse>(`/usage/summary?${usageParams(query)}`),
   ),
   /** Raw CSV — plain fetch, not the JSON client. */
   exportCsv: op(
     "GET",
     "/usage/export",
-    (window: "day" | "week" | "month", filters?: { asUser?: string; agentId?: string }) =>
-      fetch(`/api/v1/usage/export?${usageParams(window, filters)}`, {
+    (query: UsageQuery) =>
+      fetch(`/api/v1/usage/export?${usageParams(query)}`, {
         credentials: "include",
       }).then((response) => {
         if (!response.ok) throw new Error(`export failed: HTTP ${response.status}`);
@@ -584,6 +597,15 @@ export const adminOps = {
 
 
 export const settings = {
+  exportData: op("POST", "/me/export", (body?: {
+    format?: "jsonl" | "json";
+    includeArtifacts?: boolean;
+  }) => apiFetch<DataJobRow>("/me/export", {
+    method: "POST",
+    body: JSON.stringify(body ?? { format: "jsonl", includeArtifacts: true }),
+  })),
+  exportJob: op("GET", "/me/export/{job_id}", (jobId: string) =>
+    apiFetch<DataJobRow>(`/me/export/${encodeURIComponent(jobId)}`)),
   get: op("GET", "/admin/settings", () =>
     apiFetch<AdminSettings>("/admin/settings")),
   reauth: op("POST", "/auth/reauth", (password: string, mfaCode?: string) =>
@@ -651,10 +673,12 @@ export const knowledge = {
     apiFetch<{ ok: boolean; kbId: string }>(
       `/knowledge-bases/${encodeURIComponent(kbId)}`, { method: "DELETE" },
     )),
-  docs: op("GET", "/knowledge-bases/{kb_id}/docs", (kbId: string) =>
-    apiFetch<{ items: KnowledgeDocRow[] }>(
-      `/knowledge-bases/${encodeURIComponent(kbId)}/docs`,
-    )),
+  docs: op("GET", "/knowledge-bases/{kb_id}/docs", (kbId: string, q?: string) => {
+    const suffix = q ? `?q=${encodeURIComponent(q)}` : "";
+    return apiFetch<{ items: KnowledgeDocRow[] }>(
+      `/knowledge-bases/${encodeURIComponent(kbId)}/docs${suffix}`,
+    );
+  }),
   upload: op("POST", "/knowledge-bases/{kb_id}/docs", (
     kbId: string, body: { filename: string; content: string },
   ) => apiFetch<KnowledgeDocRow>(

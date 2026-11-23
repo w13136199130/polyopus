@@ -151,3 +151,17 @@ def test_update_own_display_name(client: TestClient) -> None:
     assert me["displayName"] == "新名字"
     blank = client.patch("/api/v1/auth/me", json={"displayName": "  "})
     assert blank.status_code in (400, 422)
+
+
+def test_notification_preferences_persist_per_user(client: TestClient) -> None:
+    login(client)
+    updated = client.patch("/api/v1/auth/me", json={
+        "notificationPrefs": {"approval": False, "weekly": True},
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["user"]["notificationPrefs"] == {
+        "approval": False, "weekly": True,
+    }
+    me = client.get("/api/v1/auth/me").json()["user"]
+    assert me["notificationPrefs"]["approval"] is False
+    assert me["notificationPrefs"]["weekly"] is True

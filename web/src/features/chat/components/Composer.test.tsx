@@ -25,6 +25,8 @@ const baseProps: ComposerProps = {
   onToggleSubagent: () => undefined,
   approvalPolicy: "ask",
   onApprovalPolicyChange: () => undefined,
+  mode: "act",
+  onModeChange: () => undefined,
   onNewThread: () => undefined,
   onExport: () => undefined,
 };

@@ -264,4 +264,10 @@
 
 @media (max-width: 960px) {
   .rail { display: none; }
+  .rail.mobileRail {
+    display: flex;
+    width: 100%;
+    flex-basis: auto;
+    border-right: 0;
+  }
 }

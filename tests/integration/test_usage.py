@@ -175,3 +175,20 @@ def test_export_csv_matches_summary(client: tuple[Path, TestClient]) -> None:
         int(line.split(",")[6]) for line in csv_text.strip().splitlines()[1:]
     )
     assert total_in_csv == summary["totalCostMicros"]
+
+
+def test_summary_range_and_group_breakdowns(
+    client: tuple[Path, TestClient],
+) -> None:
+    _, c = client
+    data = c.get("/api/v1/usage/summary?range=7&groupBy=agent").json()
+    assert data["groupBy"] == "agent"
+    assert data["rangeDays"] == 7
+    assert data["totals"]["turns"] == 2
+    assert {row["group"] for row in data["items"]} == {"ag_1", "builtin"}
+    assert data["byDay"] and data["byModel"] and data["byAgent"]
+    assert data["byModel"][0]["model"] == "deepseek-flash"
+
+    csv_text = c.get("/api/v1/usage/export?range=7&groupBy=agent").text
+    assert csv_text.startswith("bucket,agent,turns,inputTokens")
+    assert "ag_1" in csv_text

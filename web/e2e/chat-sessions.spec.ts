@@ -128,12 +128,12 @@ test("chat: composer KB/approval/attachment/@// menus work and persist", async (
     .click();
   await expect(page.getByLabel("消息输入框")).toHaveValue(new RegExp(`@${kbName}`));
 
-  // / command prefills a plan request
+  // /plan switches the composer into Plan mode
   await page.getByRole("button", { name: "命令" }).click();
   await page.getByRole("dialog", { name: "输入选项" })
     .getByRole("button", { name: /\/plan/ })
     .click();
-  await expect(page.getByLabel("消息输入框")).toHaveValue(/执行计划/);
+  await expect(page.getByTestId("composer-mode")).toContainText("Plan");
 });
 
 test("chat: Dock opens files/trace/terminal and persists its state", async ({ page }) => {

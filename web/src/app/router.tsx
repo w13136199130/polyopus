@@ -42,7 +42,7 @@ export const appRoutes: RouteObject[] = [
       { path: "usage", element: <RequirePermission permission="usage:read"><UsagePage /></RequirePermission> },
       { path: "agents", element: <RequirePermission permission="agent:read"><AgentsPage /></RequirePermission> },
       { path: "knowledge", element: <RequirePermission permission="knowledge:read"><KnowledgePage /></RequirePermission> },
-      { path: "connections", element: <RequirePermission permission="source:read"><ConnectionsPage /></RequirePermission> },
+      { path: "connections", element: <RequirePermission anyOf={["source:read", "connector:read"]}><ConnectionsPage /></RequirePermission> },
       { path: "extensions", element: <RequirePermission permission="extension:read"><ExtensionsPage /></RequirePermission> },
       { path: "workbench", element: <ComingSoonPage title="工作台" milestone="v1.1" /> },
       { path: "settings", element: <RequirePermission permission="settings:read"><SettingsPage /></RequirePermission> },

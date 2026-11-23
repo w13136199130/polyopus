@@ -30,15 +30,21 @@ export function AgentsPage() {
   const [template, setTemplate] = useState("");
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingSection, setEditingSection] = useState<"basic" | "test">("basic");
   const [pendingPublish, setPendingPublish] = useState<AgentRow | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AgentRow | null>(null);
 
-  const agents = query.data?.items ?? [];
+  const agents = useMemo(() => query.data?.items ?? [], [query.data]);
   const templates = query.data?.templates ?? [];
   const editing = useMemo(
     () => agents.find((agent) => agent.agentId === editingId) ?? null,
     [agents, editingId],
   );
+
+  function openAgent(agentId: string, section: "basic" | "test" = "basic") {
+    setEditingSection(section);
+    setEditingId(agentId);
+  }
 
   function applyTemplate(id: string) {
     setTemplate(id);
@@ -97,7 +103,38 @@ export function AgentsPage() {
       title="专家"
       subtitle="草稿可改；发布后的版本不可变，旧会话继续锁定旧版本。"
     >
-      <div className={styles.page}>
+      <div className={styles.layout}>
+        <aside className={styles.side} aria-label="专家列表">
+          <div className={styles.sideHead}>
+            <b>专家</b>
+            <span>{agents.length} 个 · {agents.filter((agent) => agent.status === "published").length} 已发布</span>
+          </div>
+          <div className={styles.sideList}>
+            {agents.map((agent) => (
+              <button
+                key={agent.agentId}
+                type="button"
+                className={styles.sideRow}
+                data-testid="agent-side-row"
+                onClick={() => openAgent(agent.agentId)}
+              >
+                <span className={styles.sideAvatar}>{agent.name.slice(0, 1).toUpperCase()}</span>
+                <span className={styles.sideMeta}>
+                  <b>{agent.name}</b>
+                  <span>{agent.model || "默认模型"}</span>
+                </span>
+                <i
+                  className={`${styles.sideDot} ${
+                    agent.status === "published" ? styles.sideDotOn : ""
+                  }`}
+                  aria-label={agent.status === "published" ? "已发布" : "草稿"}
+                />
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className={styles.page}>
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
 
@@ -145,7 +182,7 @@ export function AgentsPage() {
                 key={agent.agentId}
                 className={styles.card}
                 data-testid="agent-row"
-                onClick={() => setEditingId(agent.agentId)}
+                onClick={() => openAgent(agent.agentId)}
               >
                 <div className={styles.cardHead}>
                   <span className={styles.avatar}>
@@ -176,11 +213,19 @@ export function AgentsPage() {
                 >
                   <Button
                     size="sm"
-                    variant="ghost"
-                    disabled={!canWrite}
-                    onClick={() => setEditingId(agent.agentId)}
+                    data-testid="agent-open"
+                    onClick={() => openAgent(agent.agentId)}
                   >
-                    编辑
+                    打开
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    data-testid="agent-try"
+                    disabled={!canWrite}
+                    onClick={() => openAgent(agent.agentId, "test")}
+                  >
+                    试运行
                   </Button>
                   <Button
                     size="sm"
@@ -190,24 +235,31 @@ export function AgentsPage() {
                   >
                     发布
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    disabled={!canWrite}
-                    onClick={() => setPendingDelete(agent)}
-                  >
-                    删除
-                  </Button>
+                  <details className={styles.more} onClick={(event) => event.stopPropagation()}>
+                    <summary aria-label="更多操作" data-testid="agent-more">⋯</summary>
+                    <div className={styles.moreMenu}>
+                      <button
+                        type="button"
+                        className={styles.moreDanger}
+                        disabled={!canWrite}
+                        onClick={() => setPendingDelete(agent)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </div>
             ))}
           </div>
         )}
+        </div>
       </div>
 
       <AgentEditDrawer
         agent={editing}
         open={editing !== null}
+        initialSection={editingSection}
         onOpenChange={(open) => { if (!open) setEditingId(null); }}
         onNotice={setNotice}
         onError={setError}

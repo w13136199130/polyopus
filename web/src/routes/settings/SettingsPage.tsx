@@ -29,8 +29,10 @@ import {
   useMfaDisable,
   useMfaEnroll,
   useMfaVerify,
+  useExportJob,
   useReauth,
   useRevokeApiKey,
+  useStartExport,
   useUpdateProfile,
 } from "@/features/settings/api";
 import styles from "./SettingsPage.module.css";
@@ -94,6 +96,9 @@ export function SettingsPage() {
   const createKey = useCreateApiKey();
   const revokeKey = useRevokeApiKey();
   const updateProfile = useUpdateProfile();
+  const startExport = useStartExport();
+  const [exportJobId, setExportJobId] = useState<string | null>(null);
+  const exportJob = useExportJob(exportJobId);
 
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(readThemeChoice);
   const [palette, setPalette] = useState(readPalette);
@@ -119,6 +124,12 @@ export function SettingsPage() {
   useEffect(() => {
     if (user) setDisplayName(user.displayName ?? user.username);
     setMfaEnabled(Boolean(user?.mfaEnabled));
+    if (user) {
+      setNotify(Object.fromEntries(NOTIFY_ITEMS.map(([key]) => [
+        key,
+        user.notificationPrefs?.[key] ?? readNotify(key),
+      ])));
+    }
   }, [user]);
 
   const settings = settingsQuery.data;
@@ -157,7 +168,7 @@ export function SettingsPage() {
       setError("显示名称不能为空");
       return;
     }
-    updateProfile.mutate(displayName.trim(), {
+    updateProfile.mutate({ displayName: displayName.trim() }, {
       onSuccess: async () => {
         await refresh();
         setNotice("显示名称已保存");
@@ -476,7 +487,7 @@ export function SettingsPage() {
             <section className={styles.panel}>
               <div className={styles.panelHead}>
                 <b>通知偏好</b>
-                <span>本机偏好；服务端站内通知仍会按规则生成</span>
+                <span>保存到账号；站内通知仍会按服务端规则生成</span>
               </div>
               {NOTIFY_ITEMS.map(([key, label, hint]) => (
                 <label key={key} className={styles.switchRow}>
@@ -487,10 +498,16 @@ export function SettingsPage() {
                   <input
                     type="checkbox"
                     checked={notify[key] ?? true}
+                    data-testid={`notify-${key}`}
                     onChange={(event) => {
                       const on = event.target.checked;
-                      setNotify((current) => ({ ...current, [key]: on }));
+                      const next = { ...notify, [key]: on };
+                      setNotify(next);
                       writeNotify(key, on);
+                      updateProfile.mutate({ notificationPrefs: next }, {
+                        onSuccess: async () => { await refresh(); },
+                        onError: (err) => setError(messageOf(err)),
+                      });
                     }}
                   />
                 </label>
@@ -673,6 +690,45 @@ export function SettingsPage() {
                   创建 Key
                 </Button>
               </form>
+            </section>
+
+            <section className={styles.panel}>
+              <div className={styles.panelHead}>
+                <b>导出我的数据</b>
+                <span>JSONL：个人资料、会话、任务与产物清单</span>
+              </div>
+              <Button
+                size="sm"
+                data-testid="me-export-start"
+                loading={startExport.isPending}
+                onClick={() => startExport.mutate(undefined, {
+                  onSuccess: (job) => {
+                    setExportJobId(job.jobId);
+                    setNotice(`导出任务已创建：${job.jobId}`);
+                  },
+                  onError: (err) => setError(messageOf(err)),
+                })}
+              >
+                导出我的数据
+              </Button>
+              {exportJobId ? (
+                <div className={styles.exportJob} data-testid="me-export-status">
+                  <span>
+                    {exportJob.data
+                      ? `${exportJob.data.status} · ${Math.round((exportJob.data.progress ?? 0) * 100)}%`
+                      : "排队中…"}
+                  </span>
+                  {exportJob.data?.status === "ready" ? (
+                    <a
+                      href={`/api/v1/me/export/${encodeURIComponent(exportJobId)}/download`}
+                      data-testid="me-export-download"
+                    >
+                      下载导出文件
+                    </a>
+                  ) : null}
+                  {exportJob.data?.error ? <small>{exportJob.data.error}</small> : null}
+                </div>
+              ) : null}
             </section>
 
             <section className={styles.panel}>

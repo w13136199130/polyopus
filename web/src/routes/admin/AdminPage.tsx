@@ -5,10 +5,12 @@
  */
 
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
 import { AdminModelsTab } from "./AdminModelsTab";
+import { AdminPluginsTab } from "./AdminPluginsTab";
 import { AdminOverviewTab } from "./AdminOverviewTab";
 import { AdminSecurityTab } from "./AdminSecurityTab";
 import { AdminStorageTab } from "./AdminStorageTab";
@@ -27,7 +29,7 @@ import {
 import type { BackupRow } from "@/lib/api/wire";
 import styles from "./AdminPage.module.css";
 
-type Tab = "overview" | "users" | "quotas" | "models" | "storage" | "security" | "audit" | "backup" | "jobs";
+type Tab = "overview" | "users" | "quotas" | "models" | "storage" | "plugins" | "security" | "audit" | "backup" | "jobs";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
@@ -516,6 +518,7 @@ function JobsTab() {
 }
 
 export function AdminPage() {
+  const navigate = useNavigate();
   const canAudit = useCan("audit:read");
   const canAdmin = useCan("admin:write");
   const canUsage = useCan("usage:read");
@@ -529,6 +532,7 @@ export function AdminPage() {
     ["quotas", "配额", canUsage],
     ["models", "模型", canAdmin],
     ["storage", "存储", canAdmin],
+    ["plugins", "插件", canAdmin],
     ["security", "安全", canAdmin],
     ["audit", "审计", canAudit],
     ["backup", "备份", canAdmin],
@@ -574,6 +578,14 @@ export function AdminPage() {
             onOpenBackups={() => setTab("backup")}
           />
         ) : null}
+        {tab === "plugins" ? (
+          <AdminPluginsTab
+            onNotice={(message) => setNotice(message)}
+            onError={(message) => setError(message)}
+            onOpenExtensions={() => navigate("/extensions")}
+          />
+        ) : null}
+
         {tab === "security" ? (
           <AdminSecurityTab onNotice={setNotice} onError={setError} />
         ) : null}

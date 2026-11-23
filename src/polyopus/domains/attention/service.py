@@ -155,6 +155,51 @@ def request(
     return approval_id, attention_id
 
 
+def _remember_session_approval(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    request_json: str,
+    now: int,
+) -> None:
+    """Persist one tool key into the thread's session approval list.
+
+    The composer sends the whole settings object, so this must read-modify-write
+    instead of replacing it. Malformed JSON degrades to `{}` (old threads keep
+    working) and duplicate approvals are idempotent."""
+    try:
+        payload = json.loads(request_json)
+        action = (payload.get("actions") or [{}])[0]
+        tool = str(action.get("tool") or "")
+    except (ValueError, TypeError, IndexError, AttributeError):
+        return
+    if not tool:
+        return
+    row = conn.execute(
+        "SELECT settings_json FROM threads WHERE tenant_id = ? AND thread_id = ?",
+        (tenant_id, thread_id),
+    ).fetchone()
+    if row is None:
+        return
+    try:
+        settings = json.loads(str(row["settings_json"] or "{}"))
+    except (ValueError, TypeError):
+        settings = {}
+    if not isinstance(settings, dict):
+        settings = {}
+    approved = settings.get("approvedTools")
+    tools = [str(item) for item in approved] if isinstance(approved, list) else []
+    if tool not in tools:
+        tools.append(tool)
+    settings["approvedTools"] = tools
+    conn.execute(
+        "UPDATE threads SET settings_json = ?, updated_at = ?, version = version + 1 "
+        "WHERE tenant_id = ? AND thread_id = ?",
+        (json.dumps(settings, ensure_ascii=False), now, tenant_id, thread_id),
+    )
+
+
 def resolve(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -174,7 +219,7 @@ def resolve(
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute(
-            "SELECT status, turn_id, run_id, expires_at FROM approvals "
+            "SELECT status, turn_id, run_id, expires_at, request_json FROM approvals "
             "WHERE tenant_id = ? AND approval_id = ?",
             (tenant_id, approval_id),
         ).fetchone()
@@ -197,6 +242,11 @@ def resolve(
             "WHERE source_type = 'approval' AND source_id = ? AND status = 'pending'",
             (ts, approval_id),
         )
+        if decision == "approved_session":
+            _remember_session_approval(
+                conn, tenant_id=tenant_id, thread_id=thread_id,
+                request_json=str(row["request_json"]), now=ts,
+            )
         conn.commit()
     except AppError:
         conn.execute("ROLLBACK")

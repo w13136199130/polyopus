@@ -32,8 +32,10 @@ describe("ApprovalCard", () => {
       />,
     );
     expect(screen.getByText("fs.write")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "批准" }));
+    await userEvent.click(screen.getByRole("button", { name: "仅本次允许" }));
     expect(onAnswer).toHaveBeenCalledWith("at_1", "approve");
+    await userEvent.click(screen.getByRole("button", { name: "本会话允许" }));
+    expect(onAnswer).toHaveBeenCalledWith("at_1", "approve_session");
     await userEvent.click(screen.getByRole("button", { name: "拒绝" }));
     expect(onAnswer).toHaveBeenCalledWith("at_1", "deny");
   });
@@ -82,7 +84,8 @@ describe("ApprovalCard", () => {
         onAnswer={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: "批准" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "仅本次允许" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "本会话允许" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "拒绝" })).toBeDisabled();
   });
 });

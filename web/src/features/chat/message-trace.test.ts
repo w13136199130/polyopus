@@ -67,6 +67,13 @@ describe("message-trace", () => {
     ]);
   });
 
+  it("keeps the turn mode from turn.started", () => {
+    const trace = summarizeTrace([
+      event(1, "turn.started", { model: "fake", mode: "plan" }),
+    ]);
+    expect(traceFor(trace, "tu_1").mode).toBe("plan");
+  });
+
   it("formatArgs prefers the path and trims unknown payloads", () => {
     expect(formatArgs("fs.read", '{"path":"a.txt"}')).toBe("a.txt");
     expect(formatArgs("shell.exec", `{"cmd":"${"x".repeat(120)}"}`)).toHaveLength(81);

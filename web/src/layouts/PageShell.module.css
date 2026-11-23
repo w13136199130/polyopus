@@ -50,3 +50,12 @@
   flex-direction: column;
   overflow: auto;
 }
+
+@media (max-width: 720px) {
+  .header {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .title { font-size: 18px; }
+  .subtitle { font-size: 11.5px; }
+}

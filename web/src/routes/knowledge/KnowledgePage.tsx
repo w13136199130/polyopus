@@ -5,13 +5,13 @@
  * supports batch delete.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Dialog, Drawer, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
 import { knowledge } from "@/lib/api/endpoints";
-import type { KnowledgeSearchResult } from "@/lib/api/wire";
+import type { KnowledgeDocRow, KnowledgeSearchResult } from "@/lib/api/wire";
 import {
   useCreateKb,
   useDeleteDoc,
@@ -32,6 +32,14 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
 }
 
+function statusLabel(status: string): string {
+  if (status === "ready") return "已就绪";
+  if (status === "processing") return "处理中";
+  if (status === "queued") return "排队中";
+  if (status === "failed") return "失败";
+  return status;
+}
+
 export function KnowledgePage() {
   const canWrite = useCan("knowledge:write");
   const kbsQuery = useKnowledgeBases();
@@ -42,7 +50,10 @@ export function KnowledgePage() {
   const kbId = activeKb ?? kbs[0]?.kbId ?? null;
   const active = kbs.find((row) => row.kbId === kbId) ?? null;
 
-  const docsQuery = useKnowledgeDocs(kbId);
+  const [docSearch, setDocSearch] = useState("");
+  const deferredDocSearch = useDeferredValue(docSearch.trim());
+  const [docView, setDocView] = useState<"table" | "cards">("table");
+  const docsQuery = useKnowledgeDocs(kbId, deferredDocSearch);
   const docs = docsQuery.data?.items ?? [];
 
   const createKb = useCreateKb();
@@ -141,6 +152,48 @@ export function KnowledgePage() {
     if (done) setNotice(`已删除 ${done} 个文档`);
   }
 
+  async function batchReindex() {
+    setError(null);
+    let done = 0;
+    for (const docId of selected) {
+      try {
+        await reindexDoc.mutateAsync(docId);
+        done += 1;
+      } catch (err) {
+        setError(messageOf(err));
+      }
+    }
+    setSelected(new Set());
+    if (done) setNotice(`已重建 ${done} 个文档的索引`);
+  }
+
+  function renderDocActions(doc: KnowledgeDocRow) {
+    return (
+      <div className={styles.docActions}>
+        <Button size="sm" variant="ghost" data-testid="doc-preview"
+          onClick={() => setPreviewId(doc.docId)}>
+          预览
+        </Button>
+        <Button size="sm" variant="ghost" data-testid="doc-reindex"
+          disabled={!canWrite}
+          loading={reindexDoc.isPending && reindexDoc.variables === doc.docId}
+          onClick={() => reindexDoc.mutate(doc.docId, {
+            onSuccess: () => setNotice(`已重建 ${doc.filename} 的索引`),
+            onError: (err) => setError(messageOf(err)),
+          })}>
+          重建
+        </Button>
+        <Button size="sm" variant="danger"
+          disabled={!canWrite}
+          onClick={() => deleteDoc.mutate(doc.docId, {
+            onError: (err) => setError(messageOf(err)),
+          })}>
+          删除
+        </Button>
+      </div>
+    );
+  }
+
   async function runSearch(event: React.FormEvent) {
     event.preventDefault();
     if (!kbId || !query.trim()) return;
@@ -214,6 +267,14 @@ export function KnowledgePage() {
 
         {kbId ? (
           <>
+            {active ? (
+              <div className={styles.kbSummary} data-testid="kb-summary">
+                <b>{active.name}</b>
+                <span>
+                  {active.docCount} 文档 · {active.chunkCount} 切片 · {active.kbId}
+                </span>
+              </div>
+            ) : null}
             <div className={styles.tabs} role="tablist" aria-label="知识库视图">
               {([["docs", "文档"], ["retrieval", "检索测试"], ["settings", "设置"]] as const)
                 .map(([key, label]) => (
@@ -311,9 +372,49 @@ export function KnowledgePage() {
                   ) : null}
                 </div>
 
+                <div className={styles.docToolbar}>
+                  <input
+                    data-testid="doc-search"
+                    placeholder="搜索文件名…"
+                    value={docSearch}
+                    onChange={(event) => setDocSearch(event.target.value)}
+                  />
+                  <span className={styles.spacer} />
+                  <div className={styles.viewToggle} role="group" aria-label="文档视图">
+                    <button
+                      type="button"
+                      aria-pressed={docView === "table"}
+                      className={docView === "table" ? styles.viewOn : ""}
+                      data-testid="doc-view-table"
+                      onClick={() => setDocView("table")}
+                    >
+                      表格
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={docView === "cards"}
+                      className={docView === "cards" ? styles.viewOn : ""}
+                      data-testid="doc-view-cards"
+                      onClick={() => setDocView("cards")}
+                    >
+                      卡片
+                    </button>
+                  </div>
+                </div>
+
                 {selected.size > 0 ? (
                   <div className={styles.batchBar}>
                     已选 {selected.size} 项
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      data-testid="doc-batch-reindex"
+                      disabled={!canWrite}
+                      loading={reindexDoc.isPending}
+                      onClick={() => void batchReindex()}
+                    >
+                      批量重建
+                    </Button>
                     <Button size="sm" variant="danger" data-testid="doc-batch-delete"
                       disabled={!canWrite}
                       onClick={() => void batchDelete()}>
@@ -328,8 +429,16 @@ export function KnowledgePage() {
                 {docsQuery.isLoading ? <Loading label="载入文档…" /> : docsQuery.isError ? (
                   <ErrorState message="文档加载失败" onRetry={() => void docsQuery.refetch()} />
                 ) : docs.length === 0 ? (
-                  <Empty title="暂无文档" hint="上传一个 Markdown 文件开始。" />
-                ) : (
+                  <Empty
+                    title={deferredDocSearch ? "没有匹配的文档" : "暂无文档"}
+                    hint={deferredDocSearch
+                      ? "换个关键词，或清除搜索查看全部。"
+                      : "上传一个 Markdown 文件开始。"}
+                    action={deferredDocSearch
+                      ? { label: "清除搜索", onClick: () => setDocSearch("") }
+                      : undefined}
+                  />
+                ) : docView === "table" ? (
                   <div className={styles.tableWrap}>
                     <table className={styles.table}>
                       <thead>
@@ -347,10 +456,10 @@ export function KnowledgePage() {
                             />
                           </th>
                           <th>文件名</th>
-                          <th>切片</th>
                           <th>状态</th>
+                          <th>分块</th>
                           <th>上传时间</th>
-                          <th style={{ width: 120 }}>操作</th>
+                          <th style={{ width: 190 }}>操作</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -373,45 +482,59 @@ export function KnowledgePage() {
                               />
                             </td>
                             <td className={styles.mono}>{doc.filename}</td>
-                            <td>{doc.chunkCount}</td>
                             <td>
                               <span className={`${styles.statusChip} ${
                                 doc.status === "ready" ? styles.statusReady
                                   : doc.status === "failed" ? styles.statusFailed
                                     : styles.statusPending
                               }`}>
-                                {doc.status}
+                                {statusLabel(doc.status)}
                               </span>
                             </td>
+                            <td>{doc.chunkCount}</td>
                             <td className={styles.muted}>
                               {new Date(doc.createdAt * 1000).toLocaleString("zh-CN")}
                             </td>
-                            <td>
-                              <Button size="sm" variant="ghost" data-testid="doc-preview"
-                                onClick={() => setPreviewId(doc.docId)}>
-                                预览
-                              </Button>
-                              <Button size="sm" variant="ghost" data-testid="doc-reindex"
-                                disabled={!canWrite}
-                                loading={reindexDoc.isPending && reindexDoc.variables === doc.docId}
-                                onClick={() => reindexDoc.mutate(doc.docId, {
-                                  onSuccess: () => setNotice(`已重建 ${doc.filename} 的索引`),
-                                  onError: (err) => setError(messageOf(err)),
-                                })}>
-                                重建
-                              </Button>
-                              <Button size="sm" variant="danger"
-                                disabled={!canWrite}
-                                onClick={() => deleteDoc.mutate(doc.docId, {
-                                  onError: (err) => setError(messageOf(err)),
-                                })}>
-                                删除
-                              </Button>
-                            </td>
+                            <td>{renderDocActions(doc)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                ) : (
+                  <div className={styles.docCards} data-testid="doc-cards">
+                    {docs.map((doc) => (
+                      <article key={doc.docId} className={styles.docCard} data-testid="doc-card">
+                        <div className={styles.docCardHead}>
+                          <input
+                            type="checkbox"
+                            aria-label={`选择 ${doc.filename}`}
+                            checked={selected.has(doc.docId)}
+                            disabled={!canWrite}
+                            onChange={(event) =>
+                              setSelected((current) => {
+                                const next = new Set(current);
+                                if (event.target.checked) next.add(doc.docId);
+                                else next.delete(doc.docId);
+                                return next;
+                              })}
+                          />
+                          <b title={doc.filename}>{doc.filename}</b>
+                          <span className={`${styles.statusChip} ${
+                            doc.status === "ready" ? styles.statusReady
+                              : doc.status === "failed" ? styles.statusFailed
+                                : styles.statusPending
+                          }`}>
+                            {statusLabel(doc.status)}
+                          </span>
+                        </div>
+                        <div className={styles.docCardMeta}>
+                          <span>{doc.chunkCount} 切片</span>
+                          <span>{new Date(doc.createdAt * 1000).toLocaleDateString("zh-CN")}</span>
+                        </div>
+                        {renderDocActions(doc)}
+                      </article>
+                    ))}
                   </div>
                 )}
               </>

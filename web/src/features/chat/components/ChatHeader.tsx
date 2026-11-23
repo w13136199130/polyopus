@@ -18,6 +18,7 @@ interface Props {
   onPin: (thread: Thread) => void;
   onBranch: (thread: Thread) => void;
   onDelete: (thread: Thread) => void;
+  onOpenSessions: () => void;
 }
 
 function initials(name: string | undefined): string {
@@ -30,12 +31,21 @@ function initials(name: string | undefined): string {
  */
 export function ChatHeader({
   thread, fallbackTitle, agent, modelLabel, mode = "Act", dockOpen,
-  onToggleDock, onShare, onRename, onPin, onBranch, onDelete,
+  onToggleDock, onShare, onRename, onPin, onBranch, onDelete, onOpenSessions,
 }: Props) {
   const agentName = agent?.name ?? "默认助手";
   const title = thread?.title || fallbackTitle || "新对话";
   return (
     <header className={styles.bar} data-testid="chat-header">
+      <Button
+        size="sm"
+        variant="ghost"
+        className={styles.mobileSessions}
+        data-testid="mobile-sessions"
+        onClick={onOpenSessions}
+      >
+        会话
+      </Button>
       <div className={styles.who}>
         <span className={styles.avatar} aria-hidden="true">
           {initials(agent?.name)}

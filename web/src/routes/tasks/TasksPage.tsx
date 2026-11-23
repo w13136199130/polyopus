@@ -256,7 +256,7 @@ export function TasksPage() {
           ))}
         </div>
 
-        <div className={styles.split}>
+        <div className={`${styles.split} ${ticketId ? styles.mobileDetail : ""}`}>
           <div className={styles.listPane}>
             <TicketList
               rows={rows}
@@ -274,7 +274,14 @@ export function TasksPage() {
             />
           </div>
           <div className={styles.detailPane}>
-            <TicketDetailPanel ticketId={selectedId} />
+            <TicketDetailPanel
+              ticketId={selectedId}
+              onBack={() => {
+                const next = new URLSearchParams(params);
+                next.delete("ticketId");
+                setParams(next, { replace: true });
+              }}
+            />
           </div>
         </div>
       </section>

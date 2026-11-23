@@ -8,17 +8,25 @@ import { useQuery } from "@tanstack/react-query";
 import { usage } from "@/lib/api/endpoints";
 import type { UsageSummaryItem } from "@/lib/api/wire";
 
-export const WINDOWS = ["day", "week", "month"] as const;
-export type UsageWindow = (typeof WINDOWS)[number];
+export const RANGES = [7, 30, 90] as const;
+export type UsageRange = (typeof RANGES)[number];
+export const GROUPS = ["day", "agent", "model"] as const;
+export type UsageGroup = (typeof GROUPS)[number];
+
+export interface UsageQuery {
+  range: UsageRange;
+  groupBy: UsageGroup;
+}
 
 export const usageKeys = {
-  summary: (window: UsageWindow) => ["usage", "summary", window] as const,
+  summary: (query: UsageQuery) =>
+    ["usage", "summary", query.range, query.groupBy] as const,
 };
 
-export function useUsageSummary(window: UsageWindow) {
+export function useUsageSummary(query: UsageQuery) {
   return useQuery({
-    queryKey: usageKeys.summary(window),
-    queryFn: () => usage.summary(window),
+    queryKey: usageKeys.summary(query),
+    queryFn: () => usage.summary(query),
     staleTime: 30_000, // docs/49 §4.2
   });
 }
@@ -39,14 +47,14 @@ export function formatTokens(tokens: number): string {
   return String(tokens);
 }
 
-/** CSV download honoring the current window (keeps the filter honest). */
-export async function downloadCsv(window: UsageWindow): Promise<void> {
-  const csv = await usage.exportCsv(window);
+/** CSV download honoring the current range/group (keeps the filter honest). */
+export async function downloadCsv(query: UsageQuery): Promise<void> {
+  const csv = await usage.exportCsv(query);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `polyopus-usage-${window}.csv`;
+  anchor.download = `polyopus-usage-${query.range}d-${query.groupBy}.csv`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

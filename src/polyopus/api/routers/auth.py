@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from sqlite3 import Connection
 
@@ -49,9 +50,13 @@ class RefreshBody(BaseModel):
 
 
 class UpdateMeBody(BaseModel):
-    display_name: str = Field(
-        min_length=1, max_length=64,
+    display_name: str | None = Field(
+        default=None, min_length=1, max_length=64,
         validation_alias=AliasChoices("displayName", "display_name"),
+    )
+    notification_prefs: dict[str, bool] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("notificationPrefs", "notification_prefs"),
     )
 
 
@@ -75,6 +80,7 @@ def _user_payload(user: User) -> dict[str, object]:
         "isOwner": user.is_owner,
         "roles": list(user.roles),
         "permissions": list(user.permissions),
+        "notificationPrefs": user.preferences.get("notifications", {}),
     }
 
 
@@ -252,21 +258,35 @@ def update_me(
     user: User = Depends(current_user),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    clean = body.display_name.strip()
-    if not clean:
+    if body.display_name is None and body.notification_prefs is None:
         raise AppError(
             "VALIDATION_FAILED", details={"fields": {"displayName": "required"}}
         )
+    clean = user.display_name
+    if body.display_name is not None:
+        clean = body.display_name.strip()
+        if not clean:
+            raise AppError(
+                "VALIDATION_FAILED", details={"fields": {"displayName": "required"}}
+            )
+    preferences = dict(user.preferences)
+    if body.notification_prefs is not None:
+        current = preferences.get("notifications")
+        merged = dict(current) if isinstance(current, dict) else {}
+        merged.update(body.notification_prefs)
+        preferences["notifications"] = merged
     conn.execute(
-        "UPDATE users SET display_name = ?, updated_at = ? "
+        "UPDATE users SET display_name = ?, preferences_json = ?, updated_at = ? "
         "WHERE tenant_id = ? AND user_id = ?",
-        (clean, int(time.time()), user.tenant_id, user.user_id),
+        (clean, json.dumps(preferences, ensure_ascii=False), int(time.time()),
+         user.tenant_id, user.user_id),
     )
     conn.commit()
     return {
         "user": {
             **_user_payload(user),
             "displayName": clean,
+            "notificationPrefs": preferences.get("notifications", {}),
             "mfaEnabled": mfa.is_enabled(conn, user),
         },
     }

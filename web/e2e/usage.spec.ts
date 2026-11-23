@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * V05-05 acceptance: window switch keeps data honest (URL param + separate
- * cache entries), export matches the active filter, unpriced shows as 未计价.
- * The shared e2e backend has usage rows from the chat specs (FakeModel).
+ * Batch D: 7/30/90-day usage analytics with overview, daily, agent and model
+ * views. The shared e2e backend has FakeModel rows from the chat specs.
  */
 
 const PASSWORD = "chat-e2e";
@@ -16,42 +15,58 @@ async function login(page: import("@playwright/test").Page) {
   await page.waitForURL("**/chat");
 }
 
-test("usage: window tabs, unpriced cost, export matches filter", async ({ page }) => {
+test("usage: range tabs, overview, group views and export", async ({ page }) => {
   await login(page);
+
+  // make the test self-contained: one FakeModel turn creates a usage row
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  const box = page.getByLabel("消息输入框");
+  await box.fill("usage seed turn");
+  await box.press("Enter");
+  await expect(page.getByTestId("bubble-assistant").last()).toContainText("echo[", {
+    timeout: 20_000,
+  });
+
   await page.getByRole("link", { name: "用量" }).click();
   await page.waitForURL("**/usage");
 
-  // default window is week and omitted from the URL
   await expect(page.getByRole("heading", { name: "用量" })).toBeVisible();
-  expect(page.url()).not.toContain("window=");
+  expect(page.url()).not.toContain("range=");
+  expect(page.url()).not.toContain("view=");
 
-  // there is usage from the chat specs; the model row renders
-  const table = page.getByRole("table", { name: /本周用量/ });
-  await expect(table).toBeVisible({ timeout: 15_000 });
-  await expect(table).toContainText("fake"); // FakeModel from the chat specs
+  // overview: KPI cards + daily chart; unpriced cost is never rendered as ¥0
+  await expect(page.getByTestId("usage-chart")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("usage-kpi")).toHaveCount(4);
+  await expect(page.getByText(/未计价|¥/).first()).toBeVisible();
 
-  // unpriced (price table lands in V05-18) — never ¥0
-  await expect(table.getByRole("row").last()).toContainText(/未计价|¥/);
+  // model view: table keeps the fake model rows
+  await page.getByTestId("usage-view-model").click();
+  await expect(page).toHaveURL(/view=model/);
+  const modelTable = page.getByRole("table", { name: /最近 30 天 · 按模型/ });
+  await expect(modelTable).toBeVisible();
+  await expect(modelTable).toContainText("fake");
 
-  // switching windows writes the param and loads that window's data
-  await page.getByRole("tab", { name: "本月" }).click();
-  await expect(page).toHaveURL(/window=month/);
-  await expect(page.getByRole("table", { name: /本月用量/ })).toBeVisible();
+  // agent + day views come from the same response
+  await page.getByTestId("usage-view-agent").click();
+  await expect(page.getByRole("table", { name: /最近 30 天 · 按专家/ })).toBeVisible();
+  await page.getByTestId("usage-view-day").click();
+  await expect(page.getByRole("table", { name: /最近 30 天 · 按天/ })).toBeVisible();
 
-  await page.getByRole("tab", { name: "今天" }).click();
-  await expect(page).toHaveURL(/window=day/);
-  await expect(page.getByRole("table", { name: /今天用量/ })).toBeVisible();
+  // range switch writes URL and updates the caption
+  await page.getByTestId("usage-range-90").click();
+  await expect(page).toHaveURL(/range=90/);
+  await expect(page.getByRole("table", { name: /最近 90 天 · 按天/ })).toBeVisible();
 
-  // export honors the CURRENT filter (day): CSV includes the header row
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name: "导出 CSV" }).click(),
   ]);
-  expect(download.suggestedFilename()).toBe("polyopus-usage-day.csv");
-  // export API honors the CURRENT filter
-  const csvResponse = await page.request.get("/api/v1/usage/export?window=day");
+  expect(download.suggestedFilename()).toBe("polyopus-usage-90d-day.csv");
+  const csvResponse = await page.request.get(
+    "/api/v1/usage/export?range=90&groupBy=day",
+  );
   expect(csvResponse.ok()).toBe(true);
   const csv = await csvResponse.text();
-  expect(csv).toContain("bucket,model,turns");
-  expect(csv).toContain("day");
+  expect(csv).toContain("bucket,day,turns");
 });

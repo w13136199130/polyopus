@@ -57,3 +57,66 @@ test("rail collapses and persists across reloads", async ({ page }) => {
   await page.getByTestId("rail-collapse").click();
   await expect(label).toBeVisible();
 });
+
+test("mobile: bottom navigation replaces the rail", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  const mobile = page.getByRole("navigation", { name: "移动端导航" });
+  await expect(mobile).toBeVisible();
+  await expect(page.getByTestId("rail-collapse")).toBeHidden();
+
+  // chat on mobile: the session rail becomes a drawer
+  await page.getByTestId("mobile-sessions").click();
+  const sessions = page.getByRole("dialog", { name: "会话" });
+  await expect(sessions).toBeVisible();
+  await sessions.getByRole("button", { name: "关闭" }).click();
+
+  await mobile.getByRole("link", { name: /任务/ }).click();
+  await page.waitForURL("**/tasks");
+  await expect(page.getByRole("heading", { name: "任务", level: 1 })).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  // mobile tasks: list -> detail -> back, without a second column
+  await page.getByTestId("new-ticket").click();
+  await page.getByTestId("new-ticket-title").fill(`移动端任务 ${Date.now()}`);
+  await page.getByTestId("new-ticket-submit").click();
+  await page.waitForURL(/ticketId=/);
+  await expect(page.getByTestId("ticket-detail")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("detail-back").click();
+  await expect(page.getByTestId("ticket-detail")).toBeHidden();
+});
+
+test("error page: unknown route offers a way back", async ({ page }) => {
+  await login(page);
+  await page.goto("/definitely-not-a-page");
+  await expect(page.getByTestId("error-page-404")).toBeVisible();
+  await page.getByRole("link", { name: "回到对话" }).click();
+  await page.waitForURL("**/chat");
+});
+
+
+test("mobile: main pages do not overflow at 390", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  for (const [route, label] of PAGES) {
+    await page.goto(route);
+    await page.getByRole("heading", { name: label, level: 1 }).waitFor();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `${route} overflows by ${overflow}px`).toBeLessThanOrEqual(0);
+  }
+});
+
+test("command palette: ⌘K opens, searches and navigates", async ({ page }) => {
+  await login(page);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "命令面板" });
+  await expect(palette).toBeVisible();
+  await palette.getByPlaceholder("搜索页面或动作…").fill("任务");
+  await palette.getByRole("button", { name: /^任务 / }).click();
+  await page.waitForURL("**/tasks");
+});
