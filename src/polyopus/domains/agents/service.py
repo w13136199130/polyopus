@@ -13,6 +13,7 @@ import sqlite3
 import time
 from typing import Any, cast
 
+from polyopus.domains.audit import service as audit
 from polyopus.platform.errors import AppError
 
 TENANT = "default"
@@ -282,3 +283,125 @@ def pin_version(conn: sqlite3.Connection, *, tenant_id: str, agent_id: str) -> s
     if row is None:
         raise AppError("NOT_FOUND", details={"agentId": agent_id})
     return str(row[0])
+
+# ---- v1.1 agent-level default subagents (single level) --------------------
+
+MAX_SUBAGENTS = 8
+
+
+def list_subagents(
+    conn: sqlite3.Connection, *, tenant_id: str, agent_id: str,
+) -> list[dict[str, Any]]:
+    """Enabled subagents configured on one expert, newest published first."""
+    get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
+    rows = conn.execute(
+        """
+        SELECT a.agent_id, a.name, a.description, a.model, a.status,
+               a.published_version
+        FROM agent_subagents s
+        JOIN agents a
+          ON a.tenant_id = s.tenant_id AND a.agent_id = s.subagent_id
+        WHERE s.tenant_id = ? AND s.agent_id = ? AND s.enabled = 1
+          AND a.deleted_at IS NULL
+        ORDER BY a.name, a.id
+        """,
+        (tenant_id, agent_id),
+    ).fetchall()
+    return [
+        {
+            "agentId": row["agent_id"],
+            "name": row["name"],
+            "description": row["description"],
+            "status": _status(row),
+            "model": row["model"],
+        }
+        for row in rows
+    ]
+
+
+def _graph(conn: sqlite3.Connection, tenant_id: str) -> dict[str, set[str]]:
+    rows = conn.execute(
+        "SELECT agent_id, subagent_id FROM agent_subagents"
+        " WHERE tenant_id = ? AND enabled = 1", (tenant_id,),
+    ).fetchall()
+    graph: dict[str, set[str]] = {}
+    for row in rows:
+        graph.setdefault(str(row["agent_id"]), set()).add(str(row["subagent_id"]))
+    return graph
+
+
+def _reaches(graph: dict[str, set[str]], start: str, target: str) -> bool:
+    stack = [start]
+    seen: set[str] = set()
+    while stack:
+        node = stack.pop()
+        if node == target:
+            return True
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(graph.get(node, ()))
+    return False
+
+
+def set_subagents(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    agent_id: str,
+    subagent_ids: list[str],
+    by: str = "system",
+) -> list[dict[str, Any]]:
+    """Replace an expert's default subagents; single level, no cycles."""
+    get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
+    wanted: list[str] = []
+    for raw in subagent_ids:
+        item = str(raw).strip()
+        if item and item not in wanted:
+            wanted.append(item)
+    if len(wanted) > MAX_SUBAGENTS:
+        raise AppError(
+            "VALIDATION_FAILED",
+            details={"field": "subagentIds", "reason": f"max {MAX_SUBAGENTS}"},
+        )
+    graph = _graph(conn, tenant_id)
+    graph[agent_id] = set(wanted)
+    for subagent_id in wanted:
+        if subagent_id == agent_id:
+            raise AppError(
+                "VALIDATION_FAILED",
+                details={"field": "subagentIds", "reason": "cannot_delegate_to_self"},
+            )
+        target = get_agent(conn, tenant_id=tenant_id, agent_id=subagent_id)
+        if target.get("status") != "published":
+            raise AppError(
+                "VALIDATION_FAILED",
+                details={"field": "subagentIds", "reason": "subagent_not_published",
+                         "agentId": subagent_id},
+            )
+        if _reaches(graph, subagent_id, agent_id):
+            raise AppError(
+                "CONFLICT",
+                details={"reason": "subagent_cycle", "agentId": subagent_id},
+            )
+
+    now = _now()
+    conn.execute(
+        "DELETE FROM agent_subagents WHERE tenant_id = ? AND agent_id = ?",
+        (tenant_id, agent_id),
+    )
+    for subagent_id in wanted:
+        conn.execute(
+            "INSERT INTO agent_subagents"
+            " (tenant_id, agent_id, subagent_id, enabled, config_json,"
+            "  created_at, updated_at)"
+            " VALUES (?, ?, ?, 1, NULL, ?, ?)",
+            (tenant_id, agent_id, subagent_id, now, now),
+        )
+    conn.commit()
+    audit.record(
+        conn, tenant_id=tenant_id, action="agent.subagents_update",
+        result="ok", actor_id=by, resource_type="agent",
+        resource_id=agent_id, detail={"subagentIds": wanted},
+    )
+    return list_subagents(conn, tenant_id=tenant_id, agent_id=agent_id)

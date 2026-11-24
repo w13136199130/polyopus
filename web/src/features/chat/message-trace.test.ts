@@ -90,6 +90,42 @@ describe("message-trace", () => {
     expect(turn.steps[0].output).toBe("结论：notes.txt 写着 alpha");
   });
 
+  it("nests child tools under the delegation step", () => {
+    const trace = summarizeTrace([
+      event(1, "tool.started", {
+        tool_call_id: "tc_d", name: "子智能体 · 分析员",
+        args_preview: '{"agent_id":"ag_1","task":"读 notes.txt"}',
+      }),
+      event(2, "subagent.started", {
+        tool_call_id: "tc_d", agent_name: "分析员", model: "child-model",
+      }),
+      event(3, "tool.started", {
+        tool_call_id: "tc_d_sub1_0", name: "子智能体 · fs.read",
+        args_preview: '{"path":"notes.txt"}',
+      }),
+      event(4, "tool.completed", {
+        tool_call_id: "tc_d_sub1_0", output: { content: "alpha" },
+      }),
+      event(5, "subagent.completed", {
+        tool_call_id: "tc_d", agent_name: "分析员", rounds: 2,
+        usage: { input_tokens: 12, output_tokens: 4 },
+      }),
+      event(6, "tool.completed", {
+        tool_call_id: "tc_d", output: { summary: "结论：alpha" },
+      }),
+    ]);
+    const turn = traceFor(trace, "tu_1");
+    expect(turn.steps).toHaveLength(1);
+    expect(turn.steps[0].output).toBe("结论：alpha");
+    expect(turn.steps[0].subagent).toEqual({
+      name: "分析员", model: "child-model", rounds: 2,
+      inputTokens: 12, outputTokens: 4,
+    });
+    expect(turn.steps[0].children).toHaveLength(1);
+    expect(turn.steps[0].children?.[0].name).toBe("子智能体 · fs.read");
+    expect(turn.steps[0].children?.[0].output).toContain("alpha");
+  });
+
   it("formatArgs prefers the path and trims unknown payloads", () => {
     expect(formatArgs("fs.read", '{"path":"a.txt"}')).toBe("a.txt");
     expect(formatArgs("shell.exec", `{"cmd":"${"x".repeat(120)}"}`)).toHaveLength(81);

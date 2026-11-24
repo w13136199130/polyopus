@@ -223,6 +223,42 @@ function ToolCard({ trace }: { trace: TurnTrace }) {
               {step.status === "failed" ? "失败" : step.status === "running" ? "运行中" : "完成"}
             </span>
           </summary>
+          {step.subagent ? (
+            <div className={styles.toolSubMeta}>
+              <span>{step.subagent.name}</span>
+              {step.subagent.model ? <span>· {step.subagent.model}</span> : null}
+              {step.subagent.rounds ? <span>· {step.subagent.rounds} 轮</span> : null}
+              {(step.subagent.inputTokens || step.subagent.outputTokens) ? (
+                <span>
+                  · {(step.subagent.inputTokens ?? 0) + (step.subagent.outputTokens ?? 0)} tokens
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {step.children?.length ? (
+            <div className={styles.toolChildren}>
+              {step.children.map((child) => (
+                <details key={child.id} className={styles.toolChild}>
+                  <summary className={styles.toolChildHead}>
+                    <b>{child.name}</b>
+                    <span>{child.args}</span>
+                    <span className={styles.spacer} />
+                    {child.durationMs ? <span>{duration(child.durationMs)}</span> : null}
+                    <span
+                      className={`${styles.toolStatus} ${
+                        child.status === "failed"
+                          ? styles.toolBad
+                          : child.status === "running" ? styles.toolRun : styles.toolOk
+                      }`}
+                    >
+                      {child.status === "failed" ? "失败" : child.status === "running" ? "运行中" : "完成"}
+                    </span>
+                  </summary>
+                  <pre className={styles.toolBody}>{child.output || "（无输出）"}</pre>
+                </details>
+              ))}
+            </div>
+          ) : null}
           <pre className={styles.toolBody}>{step.output || "（无输出）"}</pre>
         </details>
       ))}

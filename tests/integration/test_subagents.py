@@ -7,10 +7,13 @@ import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import pytest
+
 from polyopus.domains.agents import service as agents
 from polyopus.domains.conversations import service as conversations
 from polyopus.kernel.models import gateway as gt
 from polyopus.platform.db import migrator as m
+from polyopus.platform.errors import AppError
 from polyopus.platform.events.store import EventStore
 from polyopus.workers import engine
 
@@ -231,4 +234,138 @@ def test_unpublished_and_self_agents_are_not_delegatable(tmp_path: Path) -> None
     assert not any(
         tool.name == "subagent.delegate" for tool in self_parent.requests[0].tools
     )
+    conn.close()
+
+
+def test_agent_defaults_inherit_into_new_thread(tmp_path: Path) -> None:
+    conn = _env(tmp_path)
+    parent_id = _agent(
+        conn, name="主专家", prompt="你负责拆解任务。", model="parent-model",
+        publish=True,
+    )
+    child_id = _agent(
+        conn, name="分析员", prompt="你负责只读调查。", model="child-model",
+        publish=True,
+    )
+    agents.set_subagents(
+        conn, tenant_id="default", agent_id=parent_id,
+        subagent_ids=[child_id], by="u",
+    )
+    rows = agents.list_subagents(
+        conn, tenant_id="default", agent_id=parent_id
+    )
+    assert [row["agentId"] for row in rows] == [child_id]
+    assert rows[0]["status"] == "published"
+
+    inherited = conversations.create_thread(
+        conn, tenant_id="default", owner_id="u", agent_id=parent_id,
+    )
+    assert inherited.settings["subagentIds"] == [child_id]
+
+    explicit = conversations.create_thread(
+        conn, tenant_id="default", owner_id="u", agent_id=parent_id,
+        settings={"subagentIds": []},
+    )
+    assert explicit.settings.get("subagentIds") == []
+    conn.close()
+
+
+def test_subagent_validation_rejects_draft_self_and_cycles(tmp_path: Path) -> None:
+    conn = _env(tmp_path)
+    parent_id = _agent(
+        conn, name="主专家", prompt="你负责拆解任务。", model="parent-model",
+        publish=True,
+    )
+    child_id = _agent(
+        conn, name="分析员", prompt="你负责只读调查。", model="child-model",
+        publish=True,
+    )
+    draft_id = _agent(
+        conn, name="草稿专家", prompt="还没发布。", model="child-model",
+        publish=False,
+    )
+
+    with pytest.raises(AppError) as draft_error:
+        agents.set_subagents(
+            conn, tenant_id="default", agent_id=parent_id,
+            subagent_ids=[draft_id], by="u",
+        )
+    assert draft_error.value.details["reason"] == "subagent_not_published"
+
+    with pytest.raises(AppError) as self_error:
+        agents.set_subagents(
+            conn, tenant_id="default", agent_id=parent_id,
+            subagent_ids=[parent_id], by="u",
+        )
+    assert self_error.value.details["reason"] == "cannot_delegate_to_self"
+
+    agents.set_subagents(
+        conn, tenant_id="default", agent_id=parent_id,
+        subagent_ids=[child_id], by="u",
+    )
+    with pytest.raises(AppError) as cycle_error:
+        agents.set_subagents(
+            conn, tenant_id="default", agent_id=child_id,
+            subagent_ids=[parent_id], by="u",
+        )
+    assert cycle_error.value.details["reason"] == "subagent_cycle"
+    conn.close()
+
+
+class CancellingChild:
+    """Emits enough deltas for the engine to observe a human stop."""
+
+    def __init__(self, conn, turn_id: str) -> None:
+        self.conn = conn
+        self.turn_id = turn_id
+
+    def capabilities(self, model: str) -> gt.ModelCaps:
+        return gt.ModelCaps()
+
+    async def stream(self, req: gt.ModelRequest) -> AsyncIterator[gt.ModelDelta]:
+        for index in range(24):
+            if index == 8:
+                self.conn.execute(
+                    "UPDATE turns SET status = 'cancel_requested' WHERE turn_id = ?",
+                    (self.turn_id,),
+                )
+                self.conn.commit()
+            yield gt.TextDelta(text=f"child-{index} ")
+            await asyncio.sleep(0)
+        yield gt.UsageDelta(input_tokens=4, output_tokens=24)
+        yield gt.FinishDelta(reason="stop")
+
+
+def test_parent_stop_cancels_a_running_child(tmp_path: Path) -> None:
+    conn = _env(tmp_path)
+    parent_id = _agent(
+        conn, name="主专家", prompt="你负责拆解任务。", model="parent-model",
+        publish=True,
+    )
+    child_id = _agent(
+        conn, name="慢分析员", prompt="你负责只读调查。", model="child-model",
+        publish=True,
+    )
+    thread_id = _thread(conn, parent_id, [child_id])
+    store = EventStore(conn)
+    turn_id, _ = conversations.post_turn(
+        conn, store, tenant_id="default", owner_id="u",
+        thread_id=thread_id, content="请委派子智能体调查",
+    )
+    parent = DelegatingParent(child_id)
+    status = asyncio.run(engine.run_turn(
+        conn, store, turn_id, owner="test", model=parent,
+        config=engine.EngineConfig(subagent_model=CancellingChild(conn, turn_id)),
+    ))
+    assert status == "cancelled"
+    row = conn.execute(
+        "SELECT status FROM turns WHERE turn_id = ?", (turn_id,)
+    ).fetchone()
+    assert row[0] == "cancelled"
+    types = {
+        row[0] for row in conn.execute(
+            "SELECT type FROM events WHERE turn_id = ?", (turn_id,)
+        ).fetchall()
+    }
+    assert "subagent.cancelled" in types
     conn.close()

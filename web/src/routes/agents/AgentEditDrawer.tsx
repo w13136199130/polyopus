@@ -1,7 +1,7 @@
 /**
  * Agent edit drawer (P1-4): sectioned editing over the real agent draft.
- * Files/skills/subagents/workspace/heartbeat/personality have no backend in
- * v1.0 — they render as disabled sections tagged v1.1, never fake inputs.
+ * Files/skills/workspace/heartbeat/personality remain v1.1 placeholders;
+ * subagents are real v1.1 defaults used when a new conversation starts.
  */
 
 import { useEffect, useState } from "react";
@@ -9,6 +9,9 @@ import { Button, Dialog, Drawer } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import type { AgentRow, AgentToolBinding } from "@/lib/api/wire";
 import {
+  useAgentSubagents,
+  useAgents,
+  useSetAgentSubagents,
   useTestAgent,
   useUpdateAgent,
 } from "@/features/agents/api";
@@ -20,6 +23,7 @@ type Section =
   | "model"
   | "prompt"
   | "tools"
+  | "subagents"
   | "versions"
   | "test";
 
@@ -41,6 +45,9 @@ export function AgentEditDrawer({
   const test = useTestAgent();
   const toolsQuery = useAgentTools(agent?.agentId ?? null);
   const saveTools = useSetAgentTools(agent?.agentId ?? "");
+  const agentsQuery = useAgents();
+  const subagentsQuery = useAgentSubagents(agent?.agentId ?? null);
+  const saveSubagents = useSetAgentSubagents(agent?.agentId ?? "");
 
   const [section, setSection] = useState<Section>("basic");
   const [name, setName] = useState("");
@@ -48,6 +55,7 @@ export function AgentEditDrawer({
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
   const [draftTools, setDraftTools] = useState<AgentToolBinding[]>([]);
+  const [draftSubagents, setDraftSubagents] = useState<string[]>([]);
   const [testMessage, setTestMessage] = useState("你好，介绍一下你自己");
   const [baseline, setBaseline] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -72,7 +80,12 @@ export function AgentEditDrawer({
   }, [open, initialSection, agent?.agentId]);
 
   const draft = JSON.stringify({ name, description, model, prompt });
-  const dirty = baseline !== "" && draft !== baseline;
+  const savedSubagents = (subagentsQuery.data?.items ?? [])
+    .map((item) => item.agentId).sort().join("|");
+  const draftSubagentsKey = [...draftSubagents].sort().join("|");
+  const subagentsDirty = subagentsQuery.data !== undefined
+    && savedSubagents !== draftSubagentsKey;
+  const dirty = (baseline !== "" && draft !== baseline) || subagentsDirty;
 
   function handleOpenChange(next: boolean) {
     if (!next && dirty) {
@@ -85,6 +98,12 @@ export function AgentEditDrawer({
   useEffect(() => {
     if (toolsQuery.data?.items) setDraftTools(toolsQuery.data.items);
   }, [toolsQuery.data]);
+
+  useEffect(() => {
+    if (subagentsQuery.data?.items) {
+      setDraftSubagents(subagentsQuery.data.items.map((item) => item.agentId));
+    }
+  }, [subagentsQuery.data]);
 
   if (!agent) return null;
 
@@ -115,6 +134,15 @@ export function AgentEditDrawer({
     }
   }
 
+  async function saveSubagentBindings() {
+    try {
+      await saveSubagents.mutateAsync(draftSubagents);
+      onNotice("已保存子智能体默认配置");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "保存失败");
+    }
+  }
+
   async function runTest() {
     if (!agent) return;
     try {
@@ -132,12 +160,12 @@ export function AgentEditDrawer({
     ["model", "模型与运行"],
     ["prompt", "系统提示词"],
     ["tools", "工具"],
+    ["subagents", "子智能体"],
     ["versions", "版本"],
     ["test", "测试对话"],
   ];
   const planned: Array<[string, string]> = [
     ["skills", "技能"],
-    ["subagents", "子智能体"],
     ["workspace", "工作区"],
     ["heartbeat", "心跳与主动"],
     ["personality", "人格与记忆"],
@@ -160,6 +188,15 @@ export function AgentEditDrawer({
             onClick={() => void saveBindings()}
           >
             保存工具设置
+          </Button>
+        ) : section === "subagents" ? (
+          <Button
+            data-testid="agent-save-subagents"
+            disabled={!canWrite}
+            loading={saveSubagents.isPending}
+            onClick={() => void saveSubagentBindings()}
+          >
+            保存子智能体
           </Button>
         ) : section === "test" ? null : (
           <Button
@@ -284,6 +321,58 @@ export function AgentEditDrawer({
                   </label>
                 </div>
               ))
+            )
+          ) : null}
+
+          {section === "subagents" ? (
+            subagentsQuery.isLoading ? (
+              <p style={{ color: "var(--text-3)", fontSize: 12 }}>载入子智能体…</p>
+            ) : (
+              <>
+                <p className={styles.versionNote}>
+                  新会话默认带上这些子智能体；对话里仍可临时增删。
+                  只能选择已发布的其他专家，最多 8 个。
+                </p>
+                {(() => {
+                  const selected = subagentsQuery.data?.items ?? [];
+                  const candidates = (agentsQuery.data?.items ?? [])
+                    .filter((item) => item.status === "published"
+                      && item.agentId !== agent.agentId
+                      && !selected.some((row) => row.agentId === item.agentId));
+                  const options = [...selected, ...candidates];
+                  if (!options.length) {
+                    return <p className={styles.muted}>还没有其他已发布专家。</p>;
+                  }
+                  return options.map((item) => (
+                    <label
+                      key={item.agentId}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "7px 0", fontSize: 12,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        data-testid="agent-subagent-option"
+                        checked={draftSubagents.includes(item.agentId)}
+                        disabled={!canWrite}
+                        onChange={(event) => {
+                          setDraftSubagents((current) =>
+                            event.target.checked
+                              ? [...current, item.agentId]
+                              : current.filter((id) => id !== item.agentId));
+                        }}
+                      />
+                      <span style={{ flex: 1 }}>{item.name}</span>
+                      <span style={{ color: "var(--text-4)", fontSize: 11 }}>
+                        {item.status !== "published"
+                          ? `${item.status} · 保存时会被拒绝`
+                          : item.model || "默认模型"}
+                      </span>
+                    </label>
+                  ));
+                })()}
+              </>
             )
           ) : null}
 

@@ -519,6 +519,14 @@ export interface NotificationListResponse {
   nextCursor: string | null;
 }
 
+export interface AgentSubagentRow {
+  agentId: string;
+  name: string;
+  description: string | null;
+  status: "draft" | "published" | "disabled";
+  model: string | null;
+}
+
 export interface AgentRow {
   id: string;
   agentId: string;

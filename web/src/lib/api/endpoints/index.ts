@@ -12,6 +12,7 @@ import type {
   AgentListResponse,
   BackupAutoSettings,
   AgentRow,
+  AgentSubagentRow,
   AgentToolBinding,
   AnswerResponse,
   ApiKeyRow,
@@ -762,6 +763,16 @@ export const agents = {
       `/agents/${encodeURIComponent(agentId)}/test`,
       { method: "POST", body: JSON.stringify({ message }) },
     )),
+  subagents: op("GET", "/agents/{agent_id}/subagents", (agentId: string) =>
+    apiFetch<{ items: AgentSubagentRow[] }>(
+      `/agents/${encodeURIComponent(agentId)}/subagents`,
+    )),
+  setSubagents: op("PUT", "/agents/{agent_id}/subagents", (
+    agentId: string, subagentIds: string[],
+  ) => apiFetch<{ items: AgentSubagentRow[] }>(
+    `/agents/${encodeURIComponent(agentId)}/subagents`,
+    { method: "PUT", body: JSON.stringify({ subagentIds }) },
+  )),
 };
 
 export const notifications = {

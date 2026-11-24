@@ -4,6 +4,14 @@
 
 import type { TraceEvent } from "@/lib/api/wire";
 
+export interface SubagentMeta {
+  name: string;
+  model?: string;
+  rounds?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 export interface ToolStep {
   id: string;
   name: string;
@@ -11,6 +19,10 @@ export interface ToolStep {
   status: "running" | "ok" | "failed";
   durationMs?: number;
   output?: string;
+  /** Child tool calls made by a delegated subagent. */
+  children?: ToolStep[];
+  /** v1.1 delegation metadata from subagent.* events. */
+  subagent?: SubagentMeta;
 }
 
 export interface FileChange {
@@ -101,6 +113,8 @@ export function summarizeTrace(
   const byTurn = new Map<string, TurnTrace>();
   const started = new Map<string, number>();
   const open = new Map<string, { turnId: string; step: ToolStep; startedAt: number }>();
+  // delegate call id -> child tool call prefix ("<callId>_sub")
+  const childParents = new Map<string, ToolStep>();
 
   const ensure = (turnId: string): TurnTrace => {
     let trace = byTurn.get(turnId);
@@ -149,12 +163,57 @@ export function summarizeTrace(
       continue;
     }
 
+    if (event.type === "subagent.started") {
+      const callId = String(payload.tool_call_id ?? "");
+      const entry = open.get(callId);
+      if (entry) {
+        entry.step.subagent = {
+          name: String(payload.agent_name ?? "子智能体"),
+          model: payload.model ? String(payload.model) : undefined,
+        };
+        childParents.set(`${callId}_sub`, entry.step);
+      }
+      continue;
+    }
+
+    if (event.type === "subagent.completed" || event.type === "subagent.cancelled") {
+      const callId = String(payload.tool_call_id ?? "");
+      const entry = open.get(callId);
+      const step = entry?.step ?? ensure(turnId).steps.find((item) => item.id === callId);
+      if (step) {
+        const usage = payload.usage;
+        const meta = step.subagent ?? { name: String(payload.agent_name ?? "子智能体") };
+        step.subagent = {
+          ...meta,
+          rounds: typeof payload.rounds === "number" ? payload.rounds : meta.rounds,
+          inputTokens: usage && typeof usage === "object"
+            ? Number((usage as Record<string, unknown>).input_tokens ?? 0) || undefined
+            : meta.inputTokens,
+          outputTokens: usage && typeof usage === "object"
+            ? Number((usage as Record<string, unknown>).output_tokens ?? 0) || undefined
+            : meta.outputTokens,
+        };
+      }
+      continue;
+    }
+
     if (event.type === "tool.started") {
       const callId = String(payload.tool_call_id ?? event.seq);
       const name = String(payload.name ?? "tool");
       const args = String(payload.args_preview ?? "");
       const step: ToolStep = { id: callId, name, args: formatArgs(name, args), status: "running" };
-      ensure(turnId).steps.push(step);
+      let parent: ToolStep | undefined;
+      for (const [prefix, candidate] of childParents) {
+        if (callId.startsWith(prefix)) {
+          parent = candidate;
+          break;
+        }
+      }
+      if (parent) {
+        parent.children = [...(parent.children ?? []), step];
+      } else {
+        ensure(turnId).steps.push(step);
+      }
       open.set(callId, { turnId, step, startedAt: event.ts });
       continue;
     }

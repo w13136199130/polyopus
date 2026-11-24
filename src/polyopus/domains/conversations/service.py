@@ -82,6 +82,7 @@ def create_thread(
     thread_id = "th_" + secrets.token_hex(12)
     now = int(time.time())
     version_id = None
+    initial_settings = dict(settings or {})
     if agent_id:
         from polyopus.domains.agents import service as agent_svc
 
@@ -89,6 +90,18 @@ def create_thread(
         version_id = agent_svc.pin_version(
             conn, tenant_id=tenant_id, agent_id=agent_id
         )
+        # v1.1: new conversations inherit the expert's default subagents.
+        # An explicit key (including an empty list) is a session-level override.
+        if "subagentIds" not in initial_settings:
+            defaults = [
+                row["agentId"]
+                for row in agent_svc.list_subagents(
+                    conn, tenant_id=tenant_id, agent_id=agent_id
+                )
+                if row["status"] == "published"
+            ]
+            if defaults:
+                initial_settings["subagentIds"] = defaults
     conn.execute(
         """
         INSERT INTO threads
@@ -98,7 +111,7 @@ def create_thread(
         """,
         (
             tenant_id, thread_id, owner_id, agent_id, version_id, title,
-            branch_of, json.dumps(settings or {}, ensure_ascii=False), now, now,
+            branch_of, json.dumps(initial_settings, ensure_ascii=False), now, now,
         ),
     )
     conn.commit()

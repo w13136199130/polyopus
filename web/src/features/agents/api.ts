@@ -5,6 +5,7 @@ import { agents } from "@/lib/api/endpoints";
 
 export const agentKeys = {
   list: ["agents"] as const,
+  subagents: (agentId: string) => ["agent-subagents", agentId] as const,
 };
 
 export function useAgents() {
@@ -53,5 +54,26 @@ export function useTestAgent() {
   return useMutation({
     mutationFn: (input: { agentId: string; message: string }) =>
       agents.test(input.agentId, input.message),
+  });
+}
+
+export function useAgentSubagents(agentId: string | null) {
+  return useQuery({
+    queryKey: agentKeys.subagents(agentId ?? ""),
+    queryFn: () => agents.subagents(agentId as string),
+    enabled: Boolean(agentId),
+  });
+}
+
+export function useSetAgentSubagents(agentId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (subagentIds: string[]) =>
+      agents.setSubagents(agentId, subagentIds),
+    onSuccess: () => {
+      void client.invalidateQueries({
+        queryKey: agentKeys.subagents(agentId),
+      });
+    },
   });
 }

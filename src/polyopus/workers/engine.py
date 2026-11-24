@@ -353,6 +353,9 @@ def _record_file_artifact(
 async def _collect_child_round(
     gateway: gateway_types.ModelGateway,
     request: gateway_types.ModelRequest,
+    *,
+    conn: sqlite3.Connection | None = None,
+    parent_turn_id: str | None = None,
 ) -> tuple[str, str, list[gateway_types.ToolCallDelta], int, int, int, int | None]:
     """Consume one child model round without touching the parent message stream.
 
@@ -365,7 +368,15 @@ async def _collect_child_round(
     input_tokens = output_tokens = cached_tokens = 0
     first_token_ms: int | None = None
     started = time.monotonic()
+    seen = 0
     async for delta in gateway.stream(request):
+        seen += 1
+        if (
+            conn is not None and parent_turn_id
+            and seen % 8 == 0
+            and _cancel_requested(conn, parent_turn_id)
+        ):
+            raise _Cancelled
         if isinstance(delta, gateway_types.TextDelta):
             if first_token_ms is None:
                 first_token_ms = int((time.monotonic() - started) * 1000)
@@ -483,7 +494,10 @@ async def _delegate_to_subagent(
             tenant_id=tenant_id,
         )
         text, reasoning, calls, in_tok, out_tok, cache_tok, first = (
-            await _collect_child_round(gateway, request)
+            await _collect_child_round(
+                gateway, request,
+                conn=conn, parent_turn_id=parent_turn_id,
+            )
         )
         input_tokens += in_tok
         output_tokens += out_tok
@@ -673,6 +687,30 @@ async def _execute_delegation(
             tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
         )
         ok = True
+    except _Cancelled:
+        row = conn.execute(
+            "SELECT name FROM agents WHERE tenant_id = ? AND agent_id = ?",
+            (tenant_id, agent_id),
+        ).fetchone()
+        store.append(
+            thread_id,
+            "subagent.cancelled",
+            {
+                "tool_call_id": call_id,
+                "agent_id": agent_id,
+                "agent_name": str(row[0]) if row is not None else agent_id,
+            },
+            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+        )
+        store.append(
+            thread_id,
+            "tool.failed",
+            {"tool_call_id": call_id, "code": "cancelled",
+             "message": "父任务已取消，子智能体停止", "retryable": False,
+             "source": "builtin"},
+            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+        )
+        raise
     except (ToolError, AppError, OSError, RuntimeError) as exc:
         code = exc.code if isinstance(exc, (ToolError, AppError)) else "SUBAGENT_FAILED"
         message = str(exc)
@@ -1088,30 +1126,10 @@ async def run_turn(
                 tenant_id=tenant_id, message_id=message_id, conn=conn,
             )
         except _Cancelled:
-            projection.apply(
-                conn,
-                store.append(
-                    thread_id,
-                    "message.failed",
-                    {
-                        "message_id": message_id,
-                        "blocks": _message_blocks(state),
-                        "reason": "cancelled",
-                    },
-                    tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
-                ),
-            )
-            _record_usage(
+            _cancel_turn(
                 conn, store, tenant_id=tenant_id, thread_id=thread_id,
-                turn_id=turn_id, model=resolved.model,
-                input_tokens=state.input_tokens, output_tokens=state.output_tokens,
-                cached_tokens=state.cached_tokens,
-                first_token_ms=state.first_token_ms,
-            )
-            _finish(
-                conn, store, tenant_id=tenant_id, thread_id=thread_id,
-                turn_id=turn_id, run_id=run_id, status="cancelled",
-                note="cancelled_by_human",
+                turn_id=turn_id, run_id=run_id, state=state,
+                message_id=message_id, model=resolved.model,
             )
             return "cancelled"
         if not calls or tool_round >= cfg.max_tool_rounds:
@@ -1173,17 +1191,26 @@ async def run_turn(
                         )
                     else:
                         delegations += 1
-                        output_json, _ok = await _execute_delegation(
-                            conn, store,
-                            tenant_id=tenant_id, thread_id=thread_id,
-                            turn_id=turn_id, run_id=run_id,
-                            call_id=call_id, tool_round=tool_round,
-                            arguments_json=call.arguments_json,
-                            parent_user=user_content,
-                            parent_agent_id=quota_agent,
-                            workspace=cfg.workspace, registry=registry,
-                            cfg=cfg,
-                        )
+                        try:
+                            output_json, _ok = await _execute_delegation(
+                                conn, store,
+                                tenant_id=tenant_id, thread_id=thread_id,
+                                turn_id=turn_id, run_id=run_id,
+                                call_id=call_id, tool_round=tool_round,
+                                arguments_json=call.arguments_json,
+                                parent_user=user_content,
+                                parent_agent_id=quota_agent,
+                                workspace=cfg.workspace, registry=registry,
+                                cfg=cfg,
+                            )
+                        except _Cancelled:
+                            _cancel_turn(
+                                conn, store, tenant_id=tenant_id,
+                                thread_id=thread_id, turn_id=turn_id,
+                                run_id=run_id, state=state,
+                                message_id=message_id, model=resolved.model,
+                            )
+                            return "cancelled"
                 elif (
                     runtime_tool is not None
                     and runtime_tool.connector is None
@@ -1503,30 +1530,10 @@ def resume_after_approval(
             )
         )
     except _Cancelled:
-        projection.apply(
-            conn,
-            store.append(
-                thread_id,
-                "message.failed",
-                {
-                    "message_id": message_id,
-                    "blocks": _message_blocks(state),
-                    "reason": "cancelled",
-                },
-                tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
-            ),
-        )
-        _record_usage(
+        _cancel_turn(
             conn, store, tenant_id=tenant_id, thread_id=thread_id,
-            turn_id=turn_id, model=resolved.model,
-            input_tokens=state.input_tokens, output_tokens=state.output_tokens,
-            cached_tokens=state.cached_tokens,
-            first_token_ms=state.first_token_ms,
-        )
-        _finish(
-            conn, store, tenant_id=tenant_id, thread_id=thread_id,
-            turn_id=turn_id, run_id=run_id, status="cancelled",
-            note="cancelled_by_human",
+            turn_id=turn_id, run_id=run_id, state=state,
+            message_id=message_id, model=resolved.model,
         )
         return "cancelled"
     projection.apply(
@@ -1822,6 +1829,46 @@ def _scope_covers(
     except ValueError:
         return False
     return required_scope in scope
+
+
+def _cancel_turn(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    turn_id: str,
+    run_id: str,
+    state: _StreamState,
+    message_id: str,
+    model: str,
+) -> None:
+    """Close a turn that was cancelled while streaming or delegating."""
+    projection.apply(
+        conn,
+        store.append(
+            thread_id,
+            "message.failed",
+            {
+                "message_id": message_id,
+                "blocks": _message_blocks(state),
+                "reason": "cancelled",
+            },
+            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+        ),
+    )
+    _record_usage(
+        conn, store, tenant_id=tenant_id, thread_id=thread_id,
+        turn_id=turn_id, model=model,
+        input_tokens=state.input_tokens, output_tokens=state.output_tokens,
+        cached_tokens=state.cached_tokens,
+        first_token_ms=state.first_token_ms,
+    )
+    _finish(
+        conn, store, tenant_id=tenant_id, thread_id=thread_id,
+        turn_id=turn_id, run_id=run_id, status="cancelled",
+        note="cancelled_by_human",
+    )
 
 
 def _finish(

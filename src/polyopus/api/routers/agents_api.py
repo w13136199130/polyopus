@@ -41,6 +41,13 @@ class AgentTestBody(BaseModel):
     message: str = Field(min_length=1)
 
 
+class AgentSubagentsBody(BaseModel):
+    subagent_ids: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("subagentIds", "subagent_ids"),
+    )
+
+
 @router.get("")
 def list_agents(
     status: str | None = Query(default=None),
@@ -101,6 +108,34 @@ def delete_agent(
 ) -> dict[str, object]:
     service.delete_agent(conn, tenant_id=user.tenant_id, agent_id=agent_id)
     return {"ok": True, "agentId": agent_id}
+
+
+@router.get("/{agent_id}/subagents")
+def list_subagents(
+    agent_id: str,
+    user: User = Depends(require_permission("agent:read")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return {
+        "items": service.list_subagents(
+            conn, tenant_id=user.tenant_id, agent_id=agent_id
+        )
+    }
+
+
+@router.put("/{agent_id}/subagents")
+def set_subagents(
+    agent_id: str,
+    body: AgentSubagentsBody,
+    user: User = Depends(require_permission("agent:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return {
+        "items": service.set_subagents(
+            conn, tenant_id=user.tenant_id, agent_id=agent_id,
+            subagent_ids=body.subagent_ids, by=user.user_id,
+        )
+    }
 
 
 @router.post("/{agent_id}/publish")
