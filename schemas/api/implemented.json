@@ -1,5 +1,5 @@
 {
-  "count": 148,
+  "count": 154,
   "ops": [
     {
       "method": "DELETE",
@@ -20,6 +20,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/auth/mfa/{method}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/channels/{channel_id}"
     },
     {
       "method": "DELETE",
@@ -144,6 +148,10 @@
     {
       "method": "GET",
       "path": "/api/v1/auth/me"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/channels"
     },
     {
       "method": "GET",
@@ -319,6 +327,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/v1/channels/{channel_id}"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/v1/connectors/instances/{instance_id}"
     },
     {
@@ -428,6 +440,18 @@
     {
       "method": "POST",
       "path": "/api/v1/auth/refresh"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/channels"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/channels/{channel_id}/probe"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/channels/{kind}/{channel_id}/events"
     },
     {
       "method": "POST",

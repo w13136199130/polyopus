@@ -199,6 +199,24 @@ export interface CronRunRow {
   triggerId: string | null;
 }
 
+export interface ChannelRow {
+  channelId: string;
+  kind: string;
+  displayName: string;
+  status: string;
+  appId: string | null;
+  sourceId: string | null;
+  webhookPath: string;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ChannelListResponse {
+  items: ChannelRow[];
+  supported: string[];
+}
+
 export interface SourceView {
   sourceId: string;
   kind: string;

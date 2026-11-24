@@ -7,6 +7,13 @@
 import { useState } from "react";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
 import {
+  useChannels,
+  useCreateChannel,
+  useDeleteChannel,
+  useProbeChannel,
+  useUpdateChannel,
+} from "@/features/channels/api";
+import {
   sendTestWebhook,
   useCreateCronJob,
   useCreateSource,
@@ -18,7 +25,7 @@ import {
   useToggleCronJob,
   useToggleSource,
 } from "@/features/sources/api";
-import type { CronJobView, SourceView } from "@/lib/api/wire";
+import type { ChannelRow, CronJobView, SourceView } from "@/lib/api/wire";
 import styles from "./SourcesTab.module.css";
 
 function messageOf(error: unknown): string {
@@ -45,6 +52,17 @@ export function SourcesTab() {
   const createJob = useCreateCronJob();
   const toggleJob = useToggleCronJob();
   const deleteJob = useDeleteCronJob();
+  const channelsQuery = useChannels();
+  const createChannel = useCreateChannel();
+  const updateChannel = useUpdateChannel();
+  const probeChannel = useProbeChannel();
+  const deleteChannel = useDeleteChannel();
+
+  const [channelOpen, setChannelOpen] = useState(false);
+  const [channelForm, setChannelForm] = useState({
+    displayName: "", appId: "", appSecret: "", verificationToken: "",
+  });
+  const [pendingChannelDelete, setPendingChannelDelete] = useState<ChannelRow | null>(null);
 
   const [name, setName] = useState("");
   const [actor, setActor] = useState("alice");
@@ -63,7 +81,8 @@ export function SourcesTab() {
   const [jobText, setJobText] = useState("/polyopus 定时任务");
 
   const webhookSources = (sourcesQuery.data?.items ?? []).filter(
-    (source) => source.kind !== "schedule",
+    (source) => source.kind !== "schedule"
+      && !source.kind.startsWith("channel_"),
   );
   const jobs = jobsQuery.data?.items ?? [];
 
@@ -139,6 +158,61 @@ export function SourcesTab() {
     }
   }
 
+  async function submitChannel(event: React.FormEvent) {
+    event.preventDefault();
+    resetError();
+    setNotice(null);
+    try {
+      const created = await createChannel.mutateAsync({
+        kind: "feishu",
+        displayName: channelForm.displayName.trim(),
+        appId: channelForm.appId.trim(),
+        appSecret: channelForm.appSecret,
+        verificationToken: channelForm.verificationToken.trim() || undefined,
+      });
+      setNotice(`已创建飞书通道「${created.displayName}」`);
+      setChannelForm({ displayName: "", appId: "", appSecret: "", verificationToken: "" });
+      setChannelOpen(false);
+    } catch (err) {
+      setError(messageOf(err));
+    }
+  }
+
+  async function toggleChannel(row: ChannelRow) {
+    resetError();
+    try {
+      await updateChannel.mutateAsync({
+        channelId: row.channelId,
+        status: row.status === "active" ? "disabled" : "active",
+      });
+      setNotice(row.status === "active" ? "通道已停用" : "通道已启用");
+    } catch (err) {
+      setError(messageOf(err));
+    }
+  }
+
+  function probeChannelRow(row: ChannelRow) {
+    resetError();
+    probeChannel.mutate(row.channelId, {
+      onSuccess: (result) =>
+        result.ok
+          ? setNotice(`${row.displayName} 授权正常`)
+          : setError(`${row.displayName}: ${result.error ?? "授权失败"}`),
+      onError: (err) => setError(messageOf(err)),
+    });
+  }
+
+  function copyWebhook(row: ChannelRow) {
+    const url = `${window.location.origin}${row.webhookPath}`;
+    if (!navigator.clipboard) {
+      setNotice(url);
+      return;
+    }
+    void navigator.clipboard.writeText(url)
+      .then(() => setNotice("回调地址已复制"))
+      .catch(() => setNotice(url));
+  }
+
   function confirmDelete() {
     if (!pendingDelete) return;
     const action = pendingDelete;
@@ -168,6 +242,93 @@ export function SourcesTab() {
         ) : null}
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
+
+        <section className={styles.panel} data-testid="channel-panel">
+          <div className={styles.panelHead}>
+            <h2>飞书通道</h2>
+            <span className={styles.hint}>
+              飞书消息进入 Gate 建单；回执地址与会话能力见各通道。
+            </span>
+            <span className={styles.spacer} />
+            <Button
+              size="sm"
+              data-testid="channel-new"
+              onClick={() => {
+                setChannelOpen(true);
+                setNotice(null);
+                setError(null);
+              }}
+            >
+              ＋ 添加飞书通道
+            </Button>
+          </div>
+          {channelsQuery.isLoading ? (
+            <Loading label="载入通道…" />
+          ) : channelsQuery.isError ? (
+            <ErrorState
+              message="通道加载失败"
+              onRetry={() => void channelsQuery.refetch()}
+            />
+          ) : (channelsQuery.data?.items ?? []).length === 0 ? (
+            <Empty
+              title="还没有飞书通道"
+              hint="添加飞书应用后，群消息会自动进入任务中心，审批结果可回到飞书。"
+              action={{ label: "添加飞书通道", onClick: () => setChannelOpen(true) }}
+            />
+          ) : (
+            <div className={styles.channelGrid}>
+              {(channelsQuery.data?.items ?? []).map((row) => (
+                <article key={row.channelId} className={styles.channelCard} data-testid="channel-row">
+                  <div className={styles.channelHead}>
+                    <span className={styles.channelAvatar}>飞</span>
+                    <div>
+                      <b>{row.displayName}</b>
+                      <span>{row.appId ?? row.kind} · {row.channelId}</span>
+                    </div>
+                    <span className={`${styles.channelTag} ${
+                      row.status === "active" ? styles.channelOk
+                        : row.status === "error" ? styles.channelBad : styles.channelIdle
+                    }`}>
+                      {row.status === "active" ? "已启用"
+                        : row.status === "error" ? "异常" : "已停用"}
+                    </span>
+                  </div>
+                  <div className={styles.channelUrl}>
+                    <code title={`${window.location.origin}${row.webhookPath}`}>
+                      {window.location.origin}{row.webhookPath}
+                    </code>
+                    <Button size="sm" variant="ghost" onClick={() => copyWebhook(row)}>
+                      复制
+                    </Button>
+                  </div>
+                  {row.lastError ? <p className={styles.channelError}>{row.lastError}</p> : null}
+                  <div className={styles.channelActions}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={probeChannel.isPending}
+                      onClick={() => probeChannelRow(row)}
+                    >
+                      探测
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => void toggleChannel(row)}>
+                      {row.status === "active" ? "停用" : "启用"}
+                    </Button>
+                    <span className={styles.spacer} />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className={styles.dangerText}
+                      onClick={() => setPendingChannelDelete(row)}
+                    >
+                      删除
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section className={styles.panel}>
           <div className={styles.panelHead}>
@@ -413,6 +574,99 @@ export function SourcesTab() {
             </ul>
           )}
         </section>
+
+      <Dialog
+        open={channelOpen}
+        onOpenChange={setChannelOpen}
+        title="添加飞书通道"
+        description="凭证加密保存且只写不读；回调地址由系统生成。"
+        width={560}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setChannelOpen(false)}>取消</Button>
+            <Button
+              type="submit"
+              form="channel-create-form"
+              data-testid="channel-create"
+              loading={createChannel.isPending}
+            >
+              添加
+            </Button>
+          </>
+        }
+      >
+        <form id="channel-create-form" className={styles.form} onSubmit={(event) => void submitChannel(event)}>
+          <label>
+            显示名称
+            <input
+              data-testid="channel-name"
+              required
+              value={channelForm.displayName}
+              onChange={(event) => setChannelForm({ ...channelForm, displayName: event.target.value })}
+              placeholder="研发群飞书"
+            />
+          </label>
+          <label>
+            App ID
+            <input
+              data-testid="channel-app-id"
+              required
+              value={channelForm.appId}
+              onChange={(event) => setChannelForm({ ...channelForm, appId: event.target.value })}
+              placeholder="cli_xxx"
+            />
+          </label>
+          <label>
+            App Secret
+            <input
+              data-testid="channel-app-secret"
+              required
+              type="password"
+              value={channelForm.appSecret}
+              onChange={(event) => setChannelForm({ ...channelForm, appSecret: event.target.value })}
+            />
+          </label>
+          <label>
+            Verification Token（可选）
+            <input
+              data-testid="channel-verification"
+              value={channelForm.verificationToken}
+              onChange={(event) => setChannelForm({ ...channelForm, verificationToken: event.target.value })}
+            />
+          </label>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={pendingChannelDelete !== null}
+        onOpenChange={(open) => { if (!open) setPendingChannelDelete(null); }}
+        title="删除飞书通道"
+        description="删除后该通道不再接收消息；历史任务与消息记录保留。"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPendingChannelDelete(null)}>取消</Button>
+            <Button
+              variant="danger"
+              data-testid="channel-delete-confirm"
+              loading={deleteChannel.isPending}
+              onClick={() => {
+                if (!pendingChannelDelete) return;
+                deleteChannel.mutate(pendingChannelDelete.channelId, {
+                  onSuccess: () => {
+                    setNotice(`已删除通道「${pendingChannelDelete.displayName}」`);
+                    setPendingChannelDelete(null);
+                  },
+                  onError: (err) => setError(messageOf(err)),
+                });
+              }}
+            >
+              删除
+            </Button>
+          </>
+        }
+      >
+        <p>确定删除「{pendingChannelDelete?.displayName}」？</p>
+      </Dialog>
 
       <Dialog
         open={pendingDelete !== null}

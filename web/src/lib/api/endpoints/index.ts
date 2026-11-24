@@ -21,6 +21,8 @@ import type {
   BackupRow,
   DataJobRow,
   AttentionListResponse,
+  ChannelListResponse,
+  ChannelRow,
   ConnectorCatalogRow,
   ConnectorInstanceRow,
   ConnectorToolRow,
@@ -495,6 +497,34 @@ export const tools = {
   ),
 };
 
+export const channels = {
+  list: op("GET", "/channels", () =>
+    apiFetch<ChannelListResponse>("/channels")),
+  create: op("POST", "/channels", (body: {
+    kind: string; displayName: string; appId: string; appSecret: string;
+    verificationToken?: string; encryptKey?: string;
+  }) => apiFetch<ChannelRow>("/channels", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  update: op("PATCH", "/channels/{channel_id}", (
+    channelId: string,
+    body: {
+      displayName?: string; appId?: string; appSecret?: string;
+      verificationToken?: string; encryptKey?: string; status?: string;
+    },
+  ) => apiFetch<ChannelRow>(`/channels/${encodeURIComponent(channelId)}`, {
+    method: "PATCH", body: JSON.stringify(body),
+  })),
+  remove: op("DELETE", "/channels/{channel_id}", (channelId: string) =>
+    apiFetch<{ ok: boolean; channelId: string }>(
+      `/channels/${encodeURIComponent(channelId)}`, { method: "DELETE" },
+    )),
+  probe: op("POST", "/channels/{channel_id}/probe", (channelId: string) =>
+    apiFetch<ChannelRow & { ok: boolean; error: string | null }>(
+      `/channels/${encodeURIComponent(channelId)}/probe`, { method: "POST" },
+    )),
+};
+
 export const connectors = {
   catalog: op("GET", "/connectors/catalog", () =>
     apiFetch<{ items: ConnectorCatalogRow[] }>("/connectors/catalog")),
@@ -878,7 +908,7 @@ export const adminSecurity = {
 };
 
 export const ENDPOINT_GROUPS = [
-  auth, threads, attentions, sources, cronJobs, tickets, usage,
+  auth, threads, attentions, sources, channels, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, tools, knowledge, connectors,
   plugins, settings, adminOps, models, workspace,
   adminModels, adminStorage, adminSecurity, adminOverview,
