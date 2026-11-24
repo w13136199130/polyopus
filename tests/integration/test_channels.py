@@ -43,13 +43,14 @@ def env(tmp_path: Path) -> Iterator[tuple[Path, TestClient]]:
         yield db, client
 
 
-def _create(client: TestClient) -> dict:
+def _create(client: TestClient, *, approvers: list[str] | None = None) -> dict:
     response = client.post("/api/v1/channels", json={
         "kind": "feishu",
         "displayName": "研发群飞书",
         "appId": "cli_test",
         "appSecret": "secret",
         "verificationToken": "verify-me",
+        "approvers": approvers or [],
     })
     assert response.status_code == 201, response.text
     return response.json()
@@ -57,12 +58,13 @@ def _create(client: TestClient) -> dict:
 
 def _message_body(token: str = "verify-me", *, message_id: str = "om_1",
                   text: str = "/polyopus 保存结果到 out.txt",
-                  chat_type: str = "p2p", mentions: list | None = None) -> dict:
+                  chat_type: str = "p2p", mentions: list | None = None,
+                  sender: str = "ou_alice") -> dict:
     return {
         "schema": "2.0",
         "header": {"event_type": "im.message.receive_v1", "token": token},
         "event": {
-            "sender": {"sender_id": {"open_id": "ou_alice"}},
+            "sender": {"sender_id": {"open_id": sender}},
             "message": {
                 "message_id": message_id,
                 "chat_id": "oc_chat",
@@ -83,7 +85,15 @@ def test_channel_create_hides_credentials_and_backs_a_source(
     assert created["displayName"] == "研发群飞书"
     assert created["status"] == "active"
     assert "appSecret" not in created and "verificationToken" not in created
+    assert created["approvers"] == []
     assert created["webhookPath"].endswith("/events")
+
+    patched = client.patch(
+        f"/api/v1/channels/{created['channelId']}",
+        json={"approvers": ["ou_bob", "ou_bob", " ou_carol "]},
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["approvers"] == ["ou_bob", "ou_carol"]
 
     listed = client.get("/api/v1/channels").json()
     assert [item["channelId"] for item in listed["items"]] == [created["channelId"]]
@@ -377,5 +387,92 @@ def test_command_without_pending_attention_replies(
         fake.install(monkeypatch)
         channels.deliver_queued(conn)
         assert fake.sent == ["当前没有待处理审批。"]
+    finally:
+        conn.close()
+
+
+def test_command_requires_creator_or_listed_approver(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    path = f"/api/v1/channels/feishu/{created['channelId']}/events"
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_owner",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+
+        denied = client.post(path, json=_message_body(
+            message_id="om_mallory", text="/approve", sender="ou_mallory",
+        ))
+        assert denied.status_code == 200, denied.text
+        assert denied.json()["denied"] == "not_approver"
+        assert not (ws / "out.txt").exists()
+        state = conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()[0]
+        assert state == "open"
+        audit_row = conn.execute(
+            "SELECT result FROM audit_log WHERE action = 'channel.approval_denied'"
+            " ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert audit_row is not None and audit_row[0] == "denied"
+
+        fake = FakeFeishu()
+        fake.install(monkeypatch)
+        channels.deliver_queued(conn)
+        assert any("没有审批权限" in text for text in fake.sent)
+
+        allowed = client.post(path, json=_message_body(
+            message_id="om_creator", text="/approve", sender="ou_alice",
+        ))
+        assert allowed.status_code == 200, allowed.text
+        assert allowed.json()["decision"] == "approved"
+        assert (ws / "out.txt").is_file()
+    finally:
+        conn.close()
+
+
+def test_listed_approver_can_approve_another_users_ticket(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client, approvers=["ou_bob"])
+    assert created["approvers"] == ["ou_bob"]
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_owner2",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        allowed = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_message_body(
+                message_id="om_bob", text="/approve", sender="ou_bob",
+            ),
+        )
+        assert allowed.status_code == 200, allowed.text
+        assert allowed.json()["decision"] == "approved"
+        assert (ws / "out.txt").is_file()
+        state = conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()[0]
+        assert state == "ended"
     finally:
         conn.close()

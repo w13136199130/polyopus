@@ -66,6 +66,15 @@ def _config(row: sqlite3.Row) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _normalize_approvers(values: list[str] | None) -> list[str]:
+    seen: list[str] = []
+    for value in values or []:
+        item = str(value).strip()
+        if item and item not in seen:
+            seen.append(item)
+    return seen
+
+
 def _view(row: sqlite3.Row) -> dict[str, Any]:
     cfg = _config(row)
     return {
@@ -75,6 +84,7 @@ def _view(row: sqlite3.Row) -> dict[str, Any]:
         "status": row["status"],
         "appId": cfg.get("app_id"),
         "sourceId": cfg.get("source_id"),
+        "approvers": cfg.get("approvers") or [],
         "webhookPath": f"/api/v1/channels/{row['kind']}/{row['channel_id']}/events",
         "lastError": row["last_error"],
         "createdAt": row["created_at"],
@@ -114,6 +124,7 @@ def create_channel(
     app_secret: str,
     verification_token: str | None = None,
     encrypt_key: str | None = None,
+    approvers: list[str] | None = None,
     by: str = "system",
 ) -> dict[str, Any]:
     if kind not in SUPPORTED_KINDS:
@@ -139,6 +150,7 @@ def create_channel(
     config = {
         "app_id": app_id.strip(),
         "source_id": source_id,
+        "approvers": _normalize_approvers(approvers),
     }
     try:
         conn.execute(
@@ -189,11 +201,15 @@ def update_channel(
     display_name: str | None = None,
     config: dict[str, Any] | None = None,
     credentials: dict[str, Any] | None = None,
+    approvers: list[str] | None = None,
     status: str | None = None,
     by: str = "system",
 ) -> dict[str, Any]:
     row = _channel(conn, tenant_id, channel_id)
     cfg = _config(row)
+    if approvers is not None:
+        cfg["approvers"] = _normalize_approvers(approvers)
+        config = {**(config or {}), "approvers": cfg["approvers"]}
     updates: list[str] = []
     params: list[object] = []
     if display_name is not None:
@@ -594,6 +610,18 @@ def _latest_ticket_for_chat(
     ).fetchone())
 
 
+def _ticket_creator(conn: sqlite3.Connection, ticket_id: str) -> str | None:
+    """Open id of the sender whose message opened the ticket."""
+    row = conn.execute(
+        "SELECT actor_id FROM channel_messages"
+        " WHERE direction = 'inbound' AND ticket_id = ?"
+        " ORDER BY id ASC LIMIT 1",
+        (ticket_id,),
+    ).fetchone()
+    value = str(row["actor_id"] or "") if row is not None else ""
+    return value or None
+
+
 def _handle_command(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -631,6 +659,27 @@ def _handle_command(
 
     ticket_id = str(found["ticket_id"])
     thread_id = str(found["thread_id"] or "")
+    configured = _config(row).get("approvers")
+    approvers = set(_normalize_approvers(
+        configured if isinstance(configured, list) else None
+    ))
+    creator = _ticket_creator(conn, ticket_id)
+    allowed = actor not in ("", "unknown") and (
+        actor in approvers or actor == creator
+    )
+    if not allowed:
+        audit.record(
+            conn, tenant_id=tenant_id, action="channel.approval_denied",
+            result="denied", actor_id=actor, resource_type="ticket",
+            resource_id=ticket_id,
+            detail={"channelId": channel_id, "creator": creator},
+        )
+        enqueue_text(
+            conn, tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
+            text="你没有审批权限：只有任务创建人或通道审批人可以处理该审批。",
+            ticket_id=ticket_id, thread_id=thread_id or None,
+        )
+        return {"denied": "not_approver", "ticketId": ticket_id}
     pending = conn.execute(
         "SELECT attention_id, source_id, turn_id FROM attentions"
         " WHERE tenant_id = ? AND ticket_id = ? AND status = 'pending'"

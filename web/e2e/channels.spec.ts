@@ -23,6 +23,7 @@ test("channels: create, toggle and delete a Feishu channel", async ({ page }) =>
   await dialog.getByTestId("channel-app-id").fill("cli_e2e");
   await dialog.getByTestId("channel-app-secret").fill("secret-e2e");
   await dialog.getByTestId("channel-verification").fill("verify-e2e");
+  await dialog.getByTestId("channel-approvers").fill("ou_bob, ou_carol");
   await dialog.getByTestId("channel-create").click();
   await expect(page.getByText(`已创建飞书通道「${name}」`)).toBeVisible();
 
@@ -30,6 +31,7 @@ test("channels: create, toggle and delete a Feishu channel", async ({ page }) =>
   await expect(card).toBeVisible();
   await expect(card).toContainText("已启用");
   await expect(card).toContainText("/api/v1/channels/feishu/");
+  await expect(card.getByTestId("channel-approvers-view")).toContainText("ou_bob、ou_carol");
 
   // channel-managed backing source must not leak into the source list
   await expect(

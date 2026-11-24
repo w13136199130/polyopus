@@ -502,7 +502,7 @@ export const channels = {
     apiFetch<ChannelListResponse>("/channels")),
   create: op("POST", "/channels", (body: {
     kind: string; displayName: string; appId: string; appSecret: string;
-    verificationToken?: string; encryptKey?: string;
+    verificationToken?: string; encryptKey?: string; approvers?: string[];
   }) => apiFetch<ChannelRow>("/channels", {
     method: "POST", body: JSON.stringify(body),
   })),
@@ -510,7 +510,8 @@ export const channels = {
     channelId: string,
     body: {
       displayName?: string; appId?: string; appSecret?: string;
-      verificationToken?: string; encryptKey?: string; status?: string;
+      verificationToken?: string; encryptKey?: string; approvers?: string[];
+      status?: string;
     },
   ) => apiFetch<ChannelRow>(`/channels/${encodeURIComponent(channelId)}`, {
     method: "PATCH", body: JSON.stringify(body),

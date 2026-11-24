@@ -39,6 +39,7 @@ class ChannelCreateBody(BaseModel):
         default=None,
         validation_alias=AliasChoices("encryptKey", "encrypt_key"),
     )
+    approvers: list[str] | None = None
 
 
 class ChannelPatchBody(BaseModel):
@@ -62,6 +63,7 @@ class ChannelPatchBody(BaseModel):
         default=None,
         validation_alias=AliasChoices("encryptKey", "encrypt_key"),
     )
+    approvers: list[str] | None = None
     status: str | None = None
 
 
@@ -87,7 +89,7 @@ def create_channel(
         display_name=body.display_name, app_id=body.app_id,
         app_secret=body.app_secret,
         verification_token=body.verification_token,
-        encrypt_key=body.encrypt_key, by=user.user_id,
+        encrypt_key=body.encrypt_key, approvers=body.approvers, by=user.user_id,
     )
 
 
@@ -109,8 +111,8 @@ def update_channel(
     return service.update_channel(
         conn, tenant_id=user.tenant_id, channel_id=channel_id,
         display_name=body.display_name, config=config,
-        credentials=credentials or None, status=body.status,
-        by=user.user_id,
+        credentials=credentials or None, approvers=body.approvers,
+        status=body.status, by=user.user_id,
     )
 
 

@@ -60,7 +60,7 @@ export function SourcesTab() {
 
   const [channelOpen, setChannelOpen] = useState(false);
   const [channelForm, setChannelForm] = useState({
-    displayName: "", appId: "", appSecret: "", verificationToken: "",
+    displayName: "", appId: "", appSecret: "", verificationToken: "", approvers: "",
   });
   const [pendingChannelDelete, setPendingChannelDelete] = useState<ChannelRow | null>(null);
 
@@ -169,9 +169,16 @@ export function SourcesTab() {
         appId: channelForm.appId.trim(),
         appSecret: channelForm.appSecret,
         verificationToken: channelForm.verificationToken.trim() || undefined,
+        approvers: channelForm.approvers
+          .split(/[,，\s]+/)
+          .map((item) => item.trim())
+          .filter(Boolean),
       });
       setNotice(`已创建飞书通道「${created.displayName}」`);
-      setChannelForm({ displayName: "", appId: "", appSecret: "", verificationToken: "" });
+      setChannelForm({
+        displayName: "", appId: "", appSecret: "",
+        verificationToken: "", approvers: "",
+      });
       setChannelOpen(false);
     } catch (err) {
       setError(messageOf(err));
@@ -292,6 +299,12 @@ export function SourcesTab() {
                       {row.status === "active" ? "已启用"
                         : row.status === "error" ? "异常" : "已停用"}
                     </span>
+                  </div>
+                  <div className={styles.channelMeta} data-testid="channel-approvers-view">
+                    审批人：
+                    {row.approvers.length > 0
+                      ? row.approvers.join("、")
+                      : "仅任务创建人"}
                   </div>
                   <div className={styles.channelUrl}>
                     <code title={`${window.location.origin}${row.webhookPath}`}>
@@ -632,6 +645,15 @@ export function SourcesTab() {
               data-testid="channel-verification"
               value={channelForm.verificationToken}
               onChange={(event) => setChannelForm({ ...channelForm, verificationToken: event.target.value })}
+            />
+          </label>
+          <label>
+            审批人 open_id（可选，逗号分隔）
+            <input
+              data-testid="channel-approvers"
+              value={channelForm.approvers}
+              onChange={(event) => setChannelForm({ ...channelForm, approvers: event.target.value })}
+              placeholder="ou_xxx, ou_yyy；留空则仅任务创建人可审批"
             />
           </label>
         </form>

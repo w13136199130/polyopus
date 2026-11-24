@@ -206,6 +206,7 @@ export interface ChannelRow {
   status: string;
   appId: string | null;
   sourceId: string | null;
+  approvers: string[];
   webhookPath: string;
   lastError: string | null;
   createdAt: number;
