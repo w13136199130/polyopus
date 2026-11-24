@@ -329,7 +329,10 @@ def expire_due(
         where += " AND a.tenant_id = ?"
         params.append(tenant_id)
     rows = conn.execute(
-        "SELECT a.approval_id, a.tenant_id, a.turn_id, t.thread_id "
+        "SELECT a.approval_id, a.tenant_id, a.turn_id, t.thread_id,"
+        " (SELECT at.ticket_id FROM attentions at"
+        "  WHERE at.source_type = 'approval' AND at.source_id = a.approval_id"
+        "  LIMIT 1) AS ticket_id "
         "FROM approvals a LEFT JOIN turns t ON t.turn_id = a.turn_id "
         f"WHERE {where}",
         params,
@@ -371,7 +374,7 @@ def expire_due(
             )
         expired.append(
             {"approvalId": approval_id, "turnId": turn_id,
-             "threadId": thread_id}
+             "threadId": thread_id, "ticketId": str(row["ticket_id"] or "")}
         )
     return expired
 

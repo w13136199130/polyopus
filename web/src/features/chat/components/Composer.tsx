@@ -698,13 +698,6 @@ export function Composer({
             >
               /
             </button>
-            <span
-              className={styles.ring}
-              title="上下文用量统计随 v1.1 开放"
-              aria-hidden="true"
-            >
-              —
-            </span>
             {streaming ? (
               <button
                 type="button"

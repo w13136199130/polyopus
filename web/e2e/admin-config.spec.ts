@@ -25,35 +25,42 @@ test("admin: provider create, probe failure, edit and delete", async ({ page }) 
   await dialog.getByTestId("provider-save").click();
   await expect(page.getByText(`已添加 provider「${name}」`)).toBeVisible();
 
-  const card = page.getByTestId("provider-card").filter({ hasText: name });
-  await expect(card).toContainText("e2e-model-a");
-  await card.getByTestId("provider-probe").click();
-  await expect(card).toContainText("连接失败", { timeout: 20_000 });
+  await page.getByTestId("provider-search").fill(name);
+  const row = page.getByTestId("provider-row").filter({ hasText: name });
+  await expect(row).toContainText("e2e-model-a");
+  await row.getByTestId("provider-probe").click();
+  await expect(row).toContainText("连接失败", { timeout: 20_000 });
 
-  await card.getByText("配置").click();
+  await row.getByRole("button", { name: "配置" }).click();
   const edit = page.getByRole("dialog", { name: "配置 Provider" });
   await edit.getByTestId("provider-name").fill(`${name} v2`);
   await edit.getByTestId("provider-save").click();
   await expect(page.getByText(`已保存 provider「${name} v2」`)).toBeVisible();
-  const renamed = page.getByTestId("provider-card").filter({ hasText: `${name} v2` });
-  await expect(renamed).toBeVisible();
 
-  await renamed.getByText("删除").click();
+  await page.getByTestId("provider-search").fill(`${name} v2`);
+  const renamed = page.getByTestId("provider-row").filter({ hasText: `${name} v2` });
+  await expect(renamed).toBeVisible();
+  await renamed.getByRole("button", { name: "配置" }).click();
+  const config = page.getByRole("dialog", { name: "配置 Provider" });
+  await config.getByTestId("provider-delete").click();
   const confirm = page.getByRole("dialog", { name: "删除 Provider" });
   await confirm.getByRole("button", { name: "删除" }).click();
   await expect(page.getByText(`已删除 provider「${name} v2」`)).toBeVisible();
-  await expect(page.getByTestId("provider-card").filter({ hasText: `${name} v2` }))
+  await expect(page.getByTestId("provider-row").filter({ hasText: `${name} v2` }))
     .toHaveCount(0);
 });
 
-test("admin: storage snapshot and auto-backup settings", async ({ page }) => {
+test("admin: storage backends and auto-backup settings", async ({ page }) => {
   await login(page);
   await page.goto("/admin");
   await page.getByTestId("admin-tab-storage").click();
-  await expect(page.getByText("控制面数据库")).toBeVisible();
-  await expect(page.getByText("本地磁盘")).toBeVisible();
-  await expect(page.getByText("S3")).toBeVisible();
+  await expect(page.getByText("本地目录")).toBeVisible();
+  await expect(page.getByText("腾讯云 COS")).toBeVisible();
+  await expect(page.getByText("PostgreSQL")).toBeVisible();
+  await expect(page.getByText("Docker 沙箱")).toBeVisible();
 
+  await page.getByTestId("admin-tab-app").click();
+  await page.getByTestId("admin-subtab-backup").click();
   await page.getByTestId("backup-auto-enabled").check();
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.getByText("已保存自动备份设置")).toBeVisible();
@@ -63,25 +70,25 @@ test("admin: security posture and policy editor are visible", async ({ page }) =
   await login(page);
   await page.goto("/admin");
   await page.getByTestId("admin-tab-security").click();
-  await expect(page.getByText("工作区 jail 强制")).toBeVisible();
-  await expect(page.getByText("fs.write")).toBeVisible();
-  await expect(page.getByText(/当前策略 v/)).toBeVisible();
+  await expect(page.getByText("fs.write").first()).toBeVisible();
+  await expect(page.getByText(/当前策略/)).toBeVisible();
 
-  await page.getByRole("button", { name: "编辑策略 JSON" }).click();
+  await page.getByTestId("admin-subtab-files").click();
+  await expect(page.getByText("工作区 jail 强制")).toBeVisible();
+
+  await page.getByTestId("admin-policy-edit").click();
   const dialog = page.getByRole("dialog", { name: "编辑策略规则" });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("textarea")).toHaveValue(/r-deny-rm|r-ask-write/);
   await page.keyboard.press("Escape");
 });
 
-test("admin: overview aggregates health, tickets and shortcuts", async ({ page }) => {
+test("admin: overview aggregates health and quick shortcuts", async ({ page }) => {
   await login(page);
   await page.goto("/admin");
-  await expect(page.getByText("实例概览")).toBeVisible();
   await expect(page.getByText("活跃会话")).toBeVisible();
   await expect(page.getByText("待决 Attention")).toBeVisible();
   await expect(page.getByRole("heading", { name: "数据地图" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "最近审计" })).toBeVisible();
   await page.getByRole("button", { name: /模型配置/ }).click();
   await expect(page.getByTestId("admin-tab-models")).toHaveAttribute(
     "aria-selected", "true",

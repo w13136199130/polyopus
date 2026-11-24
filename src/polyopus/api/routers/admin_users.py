@@ -18,6 +18,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 class CreateUserBody(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     display_name: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=200)
     password: str = Field(min_length=8, max_length=200)
     roles: list[str] = Field(default_factory=lambda: ["member"])
 
@@ -44,8 +45,8 @@ def create_user(
 ) -> dict[str, object]:
     return admin.create_user(
         conn, tenant_id=user.tenant_id, username=body.username,
-        display_name=body.display_name, password=body.password,
-        roles=body.roles, by=user.user_id,
+        display_name=body.display_name, email=body.email,
+        password=body.password, roles=body.roles, by=user.user_id,
     )
 
 

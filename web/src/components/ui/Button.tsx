@@ -1,7 +1,9 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import styles from "./interactive.module.css";
 
-export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
+/** `outline` / `outlineDanger` are the prototype's bordered quiet buttons. */
+export type ButtonVariant =
+  | "primary" | "secondary" | "danger" | "ghost" | "outline" | "outlineDanger";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;

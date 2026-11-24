@@ -43,72 +43,97 @@ function summarize(attention: AttentionItem): {
   };
 }
 
-function minutesLeft(expiresAt: number): number {
-  return Math.max(0, Math.round((expiresAt * 1000 - Date.now()) / 60000));
+/** The one argument worth showing on the headline line: a path, a command,
+ * or the first short string value. */
+function argumentOf(preview: string): string {
+  if (!preview) return "";
+  try {
+    const args = JSON.parse(preview) as Record<string, unknown>;
+    for (const key of ["path", "cmd", "command", "city", "query", "url"]) {
+      const value = args[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    const first = Object.values(args).find(
+      (value) => typeof value === "string" && value.trim(),
+    );
+    return typeof first === "string" ? first.trim().slice(0, 60) : "";
+  } catch {
+    /* truncated preview (500 chars): show the head of the raw text */
+    return preview.slice(0, 60);
+  }
 }
 
+function countdown(expiresAt: number): string {
+  const seconds = Math.max(0, Math.floor(expiresAt * 1000 - Date.now()) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.floor(seconds % 60);
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+const IMPACT: Record<string, string> = {
+  fs_read: "批准后读取工作区文件；拒绝则跳过该工具",
+  "fs.write": "批准后写入工作区，不会回滚；拒绝则跳过该工具",
+};
+
 /**
- * Policy-gate pause card restyled to the task-card prototype (待审批 state):
- * tc-top (icon/title/pill) + 影响 line + auto-deny chip + tc-actions.
+ * Policy-gate pause card (prototype 需要你确认): amber left rule, the tool
+ * and its argument on one line, the consequence, then the three decisions.
  */
 export function ApprovalCard({ attention, busy, onAnswer }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { tool, toolKey, source, preview, risk } = summarize(attention);
-  const minutes = minutesLeft(attention.expiresAt);
+  const mcp = source === "mcp";
+  const argument = argumentOf(preview);
+  const expiring = attention.expiresAt * 1000 <= Date.now();
 
   return (
     <div className={styles.wrap}>
       <div className={styles.card} data-testid="approval-card">
         <div className={styles.top}>
-          <span className={styles.icon} aria-hidden="true">⚑</span>
-          <span className={styles.title} data-testid="approval-tool-label">
-            等待你批准：{tool}
+          <span className={styles.icon} aria-hidden="true">⚠</span>
+          <span className={styles.title}>需要你确认</span>
+          <span className={styles.timer}>
+            {expiring ? "即将自动拒绝" : `剩 ${countdown(attention.expiresAt)}`}
           </span>
-          <span className={styles.pill}>待审批</span>
         </div>
 
         <div className={styles.line}>
-          <b>待批准</b>
+          <span className={styles.label}>工具</span>
+          <b data-testid="approval-tool-label">{tool}</b>
+          {argument ? (
+            <>
+              <span className={styles.sep}>·</span>
+              <code>{argument}</code>
+            </>
+          ) : null}
+          {mcp ? (
+            <span className={`${styles.chip} ${risk === "low" ? "" : styles.chipAmber}`}>
+              MCP 外部工具
+            </span>
+          ) : null}
+        </div>
+        <div className={styles.line}>
+          <span className={styles.label}>影响</span>
           <span>
-            <code>{toolKey || tool}</code>
-            {tool !== toolKey ? <> · {tool}</> : null}
-            {" "}· 风险 {risk}
+            {IMPACT[toolKey]
+              ?? (mcp
+                ? "批准后将调用外部 MCP 工具，结果回填到对话"
+                : "批准后继续执行，不会回滚；拒绝则跳过该工具")}
           </span>
         </div>
-        <div className={styles.line}>
-          <b>影响</b>
-          <span>批准后继续执行，不会回滚；拒绝则跳过该工具</span>
-        </div>
-
-        {preview ? (
+        {tool !== toolKey && toolKey ? (
           <div className={styles.line}>
-            <b>参数</b>
-            <button
-              type="button"
-              className={styles.toggle}
-              onClick={() => setExpanded((value) => !value)}
-              aria-expanded={expanded}
-            >
-              {expanded ? "收起参数" : "查看参数"}
-            </button>
-            {expanded ? (
-              <pre className={styles.args}>{preview}</pre>
-            ) : null}
+            <span className={styles.label}>标识</span>
+            <code>{toolKey}</code>
           </div>
         ) : null}
 
-        <div className={styles.chips}>
-          <span className={`${styles.chip} ${styles.chipAmber}`}>
-            {minutes > 0 ? `${minutes} 分钟后自动拒绝` : "即将自动拒绝"}
-          </span>
-          {source === "mcp" ? <span className={styles.chip}>MCP 外部工具</span> : null}
-          <span className={styles.chip}>审计已记录</span>
-        </div>
+        {expanded && preview ? <pre className={styles.args}>{preview}</pre> : null}
 
         <div className={styles.actions}>
           <Button
             size="sm"
-            variant="danger"
+            variant="outline"
             data-testid="approval-deny"
             disabled={busy}
             onClick={() => onAnswer(attention.attentionId, "deny")}
@@ -117,7 +142,7 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
           </Button>
           <Button
             size="sm"
-            variant="secondary"
+            variant="outline"
             data-testid="approval-approve"
             disabled={busy}
             onClick={() => onAnswer(attention.attentionId, "approve")}
@@ -132,7 +157,16 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
           >
             本会话允许
           </Button>
-          <span className={styles.note}>拒绝不会执行该工具</span>
+          {preview ? (
+            <button
+              type="button"
+              className={styles.toggle}
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={expanded}
+            >
+              {expanded ? "收起参数" : "查看参数"}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

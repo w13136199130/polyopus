@@ -81,8 +81,6 @@
   font-size: 14px;
   line-height: 1.75;
   color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
   max-width: 840px;
 }
 
@@ -99,11 +97,22 @@
   word-break: break-word;
 }
 
-.streaming::after {
+/* The cursor sits at the end of the last Markdown block, not on a line of
+   its own below the answer. */
+.assistantText.streaming > div > :last-child::after {
   content: "▋";
   animation: blink 1s steps(2) infinite;
   color: var(--text-4);
   margin-left: 2px;
+}
+
+.streamingDot {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--text-4);
+  animation: blink 1s steps(2) infinite;
 }
 
 @keyframes blink { 50% { opacity: 0; } }
@@ -206,13 +215,27 @@
 
 .stepTime { margin-left: auto; flex: none; color: var(--text-4); font-size: 10px; }
 
-/* tool card */
-.toolCard {
+/* tool rows: one per call, light band like the prototype tool row */
+.toolList {
   max-width: 700px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toolCard {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--surface-2);
   overflow: hidden;
+}
+
+.toolCard[open] {
+  background: var(--surface);
+}
+
+.toolCard[open] .toolHead {
+  border-bottom: 1px solid var(--line);
 }
 
 .toolHead {
@@ -247,7 +270,15 @@
   font-weight: 600;
 }
 .toolOk { background: var(--green-soft); color: var(--green); }
+.toolRun { background: var(--primary-soft); color: var(--primary); }
 .toolBad { background: var(--red-soft); color: var(--red); }
+
+.toolTime {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-4);
+}
 .toolBody {
   margin: 0;
   padding: 8px 11px;
@@ -453,22 +484,22 @@
   box-shadow: 0 8px 24px rgba(22, 119, 255, 0.25);
 }
 
-.welcome h2 { margin: var(--space-2) 0 0; font-size: 18px; font-weight: 700; }
+.welcome h2 { margin: var(--space-2) 0 0; font-size: 20px; font-weight: 700; }
 .welcome p { margin: 0; color: var(--text-3); font-size: 13px; }
 
 .quickGrid {
   margin-top: var(--space-4);
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 260px));
-  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(220px, 276px));
+  gap: 12px;
 }
 
 .quickCard {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  padding: var(--space-3) var(--space-4);
+  gap: 5px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -479,9 +510,31 @@
 }
 
 .quickCard:hover { border-color: var(--primary-border); box-shadow: var(--shadow-1); }
-.quickCard b { font-size: 13.5px; }
+.quickCard b { font-size: 14px; }
 .quickCard > span:last-child { font-size: 12px; color: var(--text-3); }
-.quickIc { font-size: 15px; color: var(--primary); }
+
+/* icon tile (prototype quick-start card) */
+.quickIc {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 4px;
+  border-radius: 9px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quickIc svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 @media (max-width: 1440px) {
   .assistantText { max-width: 720px; }
@@ -493,35 +546,6 @@
   .stepArg { max-width: 180px; }
   .msgTools { opacity: 1; }
 }
-
-.codeBlock {
-  position: relative;
-  margin: 10px 0;
-  padding: 24px 12px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
-  overflow: auto;
-  white-space: pre;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.65;
-  color: var(--text);
-  max-width: 840px;
-}
-
-.codeLang {
-  position: absolute;
-  top: 6px;
-  right: 10px;
-  font-family: var(--font-sans);
-  font-size: 9.5px;
-  color: var(--text-4);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.codeBlock code { font: inherit; }
 
 /* Ask / Plan mode card */
 .modeCard {

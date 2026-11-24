@@ -89,6 +89,7 @@ export function ChatHeader({
         <Button
           size="sm"
           variant="secondary"
+          className={styles.shareBtn}
           onClick={() => onShare(thread)}
           title="复制当前会话链接"
         >

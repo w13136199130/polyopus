@@ -431,7 +431,8 @@ export const usage = {
 export const users = {
   list: op("GET", "/users", () => apiFetch<AdminUserListResponse>("/users")),
   create: op("POST", "/users", (body: {
-    username: string; displayName?: string; password: string; roles: string[];
+    username: string; displayName?: string; email?: string;
+    password: string; roles: string[];
   }) => apiFetch<AdminUserRow>("/users", {
     method: "POST", body: JSON.stringify(body),
   })),

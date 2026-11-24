@@ -59,6 +59,8 @@ export interface Thread {
   agentVersionId?: string | null;
   pinned?: boolean;
   branchOf?: string | null;
+  /** Latest visible message, one line; shown under the title in the rail. */
+  preview?: string | null;
   settings?: ThreadSettings;
 }
 
@@ -287,7 +289,13 @@ export interface TicketArtifact {
 export interface TicketDetail extends TicketRow {
   instruction: string;
   scope: string[];
-  budget: { maxTotalTokens?: number; maxCostMicros?: number } | null;
+  /** The mandate budget is returned as stored, i.e. snake_case keys. */
+  budget: {
+    maxTotalTokens?: number;
+    maxCostMicros?: number;
+    max_total_tokens?: number;
+    max_cost_micros?: number;
+  } | null;
   costMicros?: number;
   report: { state: string; summary: string; facts: Record<string, unknown> } | null;
   artifacts?: TicketArtifact[];
@@ -457,6 +465,7 @@ export interface AdminUserRow {
   userId: string;
   username: string;
   displayName: string;
+  email: string | null;
   tenantId: string;
   status: string;
   isOwner: boolean;

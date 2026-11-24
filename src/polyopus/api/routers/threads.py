@@ -101,6 +101,7 @@ def _thread_payload(thread: service.Thread) -> dict[str, object]:
         "pinned": thread.pinned,
         "branchOf": thread.branch_of,
         "settings": thread.settings,
+        "preview": thread.preview,
     }
 
 

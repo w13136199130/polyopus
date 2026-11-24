@@ -180,6 +180,13 @@ def expire_pending_approvals(conn: sqlite3.Connection) -> int:
                 config=engine.EngineConfig(workspace=_workspace()),
             )
             resumed += 1
+            ticket_id = item.get("ticketId")
+            if ticket_id:
+                # The resume path never re-enters the assignment tail, so the
+                # ticket would stay parked in `attention` with nothing pending.
+                tickets.finish_after_attention(
+                    conn, store, ticket_id, decision="denied", expired=True,
+                )
         except Exception as exc:  # noqa: BLE001 - one bad turn must not stop the sweep
             tlog.log(logger, 40, "approval.expire_resume_failed",
                      turn_id=turn_id, error=str(exc))

@@ -54,8 +54,11 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (input: { userId: string; roles?: string[]; status?: string }) =>
-      users.update(input.userId, { roles: input.roles, status: input.status }),
+    mutationFn: (input: {
+      userId: string; displayName?: string; roles?: string[]; status?: string;
+    }) => users.update(input.userId, {
+      displayName: input.displayName, roles: input.roles, status: input.status,
+    }),
     onSuccess: invalidate,
   });
 }

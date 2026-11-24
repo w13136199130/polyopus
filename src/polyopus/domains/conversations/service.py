@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 from polyopus.platform.errors import AppError
@@ -46,6 +47,8 @@ class Thread:
     pinned: bool = False
     branch_of: str | None = None
     settings: dict[str, Any] = field(default_factory=dict)
+    # Session rail preview: the latest visible message, one line (list only).
+    preview: str | None = None
 
 
 def _thread(row: sqlite3.Row) -> Thread:
@@ -318,13 +321,49 @@ def get_thread(
     return _thread(row)
 
 
+PREVIEW_CHARS = 120
+
+
+def _preview_of(content: str) -> str:
+    """One plain-text line for the session rail: Markdown marks are stripped
+    so a heading or bold text reads as words, not as `##` / `**`."""
+    text = content.replace("```", " ")
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\|?[\s:|-]+\|?\s*$", "", text, flags=re.MULTILINE)
+    for mark in ("**", "__", "`", "|"):
+        text = text.replace(mark, " ")
+    return " ".join(text.split())[:PREVIEW_CHARS]
+
+
 def list_threads(conn: sqlite3.Connection, *, tenant_id: str, owner_id: str) -> list[Thread]:
     rows = conn.execute(
         "SELECT * FROM threads WHERE tenant_id = ? AND owner_id = ? AND deleted_at IS NULL "
         "ORDER BY pinned DESC, COALESCE(last_message_at, created_at) DESC LIMIT 100",
         (tenant_id, owner_id),
     ).fetchall()
-    return [_thread(r) for r in rows]
+    threads = [_thread(r) for r in rows]
+    if not threads:
+        return threads
+    ids = [thread.thread_id for thread in threads]
+    placeholders = ",".join("?" for _ in ids)
+    previews = {
+        str(row["thread_id"]): _preview_of(str(row["content"]))
+        for row in conn.execute(
+            "SELECT thread_id, content FROM ("
+            "  SELECT thread_id, content, ROW_NUMBER() OVER ("
+            "    PARTITION BY thread_id ORDER BY seq DESC) AS rn"
+            f"  FROM messages WHERE thread_id IN ({placeholders})"
+            "    AND role IN ('user', 'assistant') AND content != '')"
+            " WHERE rn = 1",
+            ids,
+        ).fetchall()
+    }
+    return [
+        replace(thread, preview=previews.get(thread.thread_id) or None)
+        for thread in threads
+    ]
 
 
 def post_turn(

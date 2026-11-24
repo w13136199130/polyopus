@@ -220,6 +220,7 @@
 .tab {
   border: 0;
   border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   padding: 8px 9px;
   color: var(--text-3);

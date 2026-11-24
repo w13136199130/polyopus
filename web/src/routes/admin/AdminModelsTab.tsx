@@ -1,4 +1,6 @@
-import { useState } from "react";
+/** Admin → 模型配置: current model, provider table, probe and edit drawer. */
+
+import { useEffect, useRef, useState } from "react";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
 import type { ProviderRow } from "@/lib/api/wire";
 import {
@@ -20,6 +22,12 @@ function statusLabel(status: string): string {
   return "未探测";
 }
 
+function statusTone(status: string): string {
+  if (status === "authorized") return styles.badgeGreen;
+  if (status === "error") return styles.badgeRed;
+  return styles.badgeNeutral;
+}
+
 interface FormState {
   providerId: string | null;
   name: string;
@@ -38,32 +46,88 @@ function formOf(row: ProviderRow | null): FormState {
   };
 }
 
+function providerSlug(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+    || "provider";
+}
+
+function SearchIcon() {
+  return (
+    <svg className={styles.searchIcon} width="14" height="14" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
 export function AdminModelsTab({
-  onNotice, onError,
+  onNotice, onError, createSignal,
 }: {
   onNotice: (message: string) => void;
   onError: (message: string) => void;
+  createSignal: number;
 }) {
   const query = useProviders();
   const create = useCreateProvider();
   const update = useUpdateProvider();
   const remove = useDeleteProvider();
   const probe = useProbeProvider();
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(6);
   const [editing, setEditing] = useState<ProviderRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(formOf(null));
   const [deleting, setDeleting] = useState<ProviderRow | null>(null);
+  const [focusModels, setFocusModels] = useState(false);
+
+  const seenCreate = useRef(createSignal);
+  useEffect(() => {
+    if (createSignal === seenCreate.current) return;
+    seenCreate.current = createSignal;
+    setForm(formOf(null));
+    setFocusModels(false);
+    setCreating(true);
+  }, [createSignal]);
 
   const env = query.data?.env;
   const providers = query.data?.items ?? [];
+  const filtered = providers.filter((row) => {
+    if (!search.trim()) return true;
+    const needle = search.trim().toLowerCase();
+    return [row.name, row.kind, row.baseUrl, ...row.models.map((model) => model.name)]
+      .some((value) => value.toLowerCase().includes(needle));
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const effective = env?.configured
+    ? {
+      name: env.modelName ?? "环境变量模型",
+      meta: `OpenAI 兼容 · ${env.baseUrl ?? "—"}`,
+      status: "已授权",
+      tone: styles.badgeGreen,
+    }
+    : providers.length
+      ? {
+        name: providers[0].models[0]?.name ?? providers[0].name,
+        meta: `${providers[0].name} · ${providers[0].baseUrl}`,
+        status: statusLabel(providers[0].status),
+        tone: statusTone(providers[0].status),
+      }
+      : null;
 
   function openCreate() {
     setForm(formOf(null));
+    setFocusModels(false);
     setCreating(true);
   }
 
-  function openEdit(row: ProviderRow) {
+  function openEdit(row: ProviderRow, models = false) {
     setForm(formOf(row));
+    setFocusModels(models);
     setEditing(row);
   }
 
@@ -114,92 +178,149 @@ export function AdminModelsTab({
   }
 
   return (
-    <section className={styles.panel}>
-      <div className={styles.head}>
-        <h2>模型配置</h2>
-        <span>OpenAI 兼容 provider；API Key 加密保存且不回显</span>
-        <span className={styles.spacer} />
-        <Button size="sm" data-testid="provider-new" onClick={openCreate}>
-          ＋ 添加 Provider
-        </Button>
-      </div>
+    <div className={styles.page}>
+      <section className={styles.currentCard} data-testid="provider-current">
+        <div>
+          <span>当前生效</span>
+          <b>{effective?.name ?? "尚未配置模型"}</b>
+          <small>{effective?.meta ?? "添加 provider 后，对话 Composer 会显示可用模型。"}</small>
+        </div>
+        {effective ? (
+          <span className={`${styles.badge} ${effective.tone}`}>{effective.status}</span>
+        ) : null}
+      </section>
 
       {env?.configured ? (
-        <div className={styles.warning} data-testid="provider-env-warning">
-          环境变量 provider 已启用（{env.modelName ?? "默认模型"} · {env.baseUrl}）。
-          当前对话引擎优先使用 env，下表中的数据库 provider 会被忽略。
+        <div className={`${styles.alert} ${styles.alertWarn}`} data-testid="provider-env-warning">
+          环境变量 provider 已启用（{env.modelName ?? "默认模型"}）；下面的数据库 provider 会被忽略，用于保留配置。
         </div>
       ) : (
         <p className={styles.muted}>{env?.note}</p>
       )}
 
-      {query.isLoading ? (
-        <Loading label="载入 provider…" />
-      ) : query.isError ? (
-        <ErrorState message="provider 加载失败" onRetry={() => void query.refetch()} />
-      ) : providers.length === 0 ? (
-        <Empty
-          title="还没有配置 provider"
-          hint="添加 OpenAI 兼容地址与模型；未配置时使用 FakeModel。"
-          action={{ label: "添加 Provider", onClick: openCreate }}
-        />
-      ) : (
-        <div className={styles.cards}>
-          {providers.map((row) => (
-            <article key={row.providerId} className={styles.card} data-testid="provider-card">
-              <div className={styles.cardHead}>
-                <span className={styles.avatar}>{row.name.slice(0, 1).toUpperCase()}</span>
-                <div className={styles.identity}>
-                  <div className={styles.nameRow}>
-                    <b>{row.name}</b>
-                    <span className={`${styles.badge} ${
-                      row.status === "authorized" ? styles.green
-                        : row.status === "error" ? styles.red : styles.neutral
-                    }`}>
-                      {statusLabel(row.status)}
-                    </span>
-                  </div>
-                  <span className={styles.meta}>{row.kind} · {row.baseUrl}</span>
-                </div>
-              </div>
-              <div className={styles.modelChips}>
-                {row.models.length ? row.models.map((model) => (
-                  <span key={model.modelId} className={styles.modelChip}>{model.name}</span>
-                )) : <span className={styles.muted}>没有模型</span>}
-              </div>
-              <div className={styles.cardActions}>
-                <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>
-                  配置
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  data-testid="provider-probe"
-                  loading={probe.isPending}
-                  onClick={() => probe.mutate(row.providerId, {
-                    onSuccess: (result) =>
-                      result.ok
-                        ? onNotice(`${row.name} 连接正常 · ${result.detail}`)
-                        : onError(`${row.name}: ${result.detail}`),
-                    onError: (error) => onError(messageOf(error)),
-                  })}
-                >
-                  测试连接
-                </Button>
-                <span className={styles.spacer} />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={styles.danger}
-                  onClick={() => setDeleting(row)}
-                >
-                  删除
-                </Button>
-              </div>
-            </article>
-          ))}
+      <section className={styles.panel}>
+        <div className={styles.toolbar}>
+          <div className={styles.search}>
+            <SearchIcon />
+            <input
+              data-testid="provider-search"
+              placeholder="搜索提供商或模型"
+              value={search}
+              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+            />
+          </div>
+          <span className={styles.count}>共 {filtered.length} 条</span>
+          <span className={styles.spacer} />
+          <Button size="sm" variant="outline" disabled title="列设置随 v1.1">
+            列
+          </Button>
         </div>
-      )}
+
+        {query.isLoading ? <Loading label="载入 provider…" /> : query.isError ? (
+          <ErrorState message="provider 加载失败" onRetry={() => void query.refetch()} />
+        ) : providers.length === 0 ? (
+          <Empty
+            title="还没有配置 provider"
+            hint="添加 OpenAI 兼容地址与模型；未配置时使用 FakeModel。"
+            action={{ label: "添加供应商", onClick: openCreate }}
+          />
+        ) : (
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>提供商</th><th>ID</th><th>模型</th><th>状态</th><th>凭证</th>
+                  <th style={{ textAlign: "right" }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((row, index) => (
+                  <tr key={row.providerId} data-testid="provider-row">
+                    <td>
+                      <div className={styles.providerCell}>
+                        <span className={`${styles.providerIcon} ${styles[`icon${index % 4}`]}`}>
+                          {row.name.slice(0, 1).toUpperCase()}
+                        </span>
+                        <div className={styles.providerMeta}>
+                          <b>{row.name}</b>
+                          <span>{row.baseUrl}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className={styles.mono} title={row.providerId}>{providerSlug(row.name)}</td>
+                    <td>
+                      <div className={styles.modelChips}>
+                        {row.models.length ? row.models.map((model) => (
+                          <span key={model.modelId} className={styles.modelChip}>{model.name}</span>
+                        )) : <span className={styles.muted}>没有模型</span>}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`${styles.badge} ${statusTone(row.status)}`}>
+                        {statusLabel(row.status)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`${styles.badge} ${
+                        row.configured ? styles.badgeGreen : styles.badgeNeutral
+                      }`}>
+                        {row.configured ? "已配置" : "未配置"}
+                      </span>
+                    </td>
+                    <td>
+                      <div className={styles.rowActions}>
+                        <Button size="sm" variant="outline" onClick={() => openEdit(row)}>
+                          配置
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          data-testid="provider-probe"
+                          loading={probe.isPending}
+                          onClick={() => probe.mutate(row.providerId, {
+                            onSuccess: (result) =>
+                              result.ok
+                                ? onNotice(`${row.name} 连接正常 · ${result.detail}`)
+                                : onError(`${row.name}: ${result.detail}`),
+                            onError: (error) => onError(messageOf(error)),
+                          })}
+                        >
+                          测试
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(row, true)}>
+                          管理模型
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className={styles.pager}>
+              <span>第 {currentPage} / {totalPages} 页</span>
+              <span className={styles.spacer} />
+              <select
+                data-testid="provider-page-size"
+                value={pageSize}
+                onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}
+              >
+                <option value={6}>6</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+              </select>
+              <span>条 / 页</span>
+              <Button size="sm" variant="ghost" disabled={currentPage <= 1}
+                onClick={() => setPage(currentPage - 1)}>
+                上一页
+              </Button>
+              <Button size="sm" variant="ghost" disabled={currentPage >= totalPages}
+                onClick={() => setPage(currentPage + 1)}>
+                下一页
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <Dialog
         open={creating || editing !== null}
@@ -214,6 +335,17 @@ export function AdminModelsTab({
         width={560}
         footer={
           <>
+            {editing ? (
+              <Button
+                variant="ghost"
+                className={styles.danger}
+                data-testid="provider-delete"
+                onClick={() => setDeleting(editing)}
+              >
+                删除
+              </Button>
+            ) : null}
+            <span className={styles.spacer} />
             <Button variant="secondary" onClick={() => {
               setCreating(false);
               setEditing(null);
@@ -263,13 +395,14 @@ export function AdminModelsTab({
             模型（逗号或换行分隔）
             <textarea
               data-testid="provider-models"
+              autoFocus={focusModels}
               rows={4}
               value={form.models}
               onChange={(event) => setForm({ ...form, models: event.target.value })}
             />
           </label>
           <p className={styles.muted}>
-            保存后模型会出现在对话 Composer 的模型菜单中；测试连接会发起一次最小请求。
+            保存后模型会出现在对话 Composer 的模型菜单中；测试会发起一次最小请求。
           </p>
         </div>
       </Dialog>
@@ -291,6 +424,7 @@ export function AdminModelsTab({
                   onSuccess: () => {
                     onNotice(`已删除 provider「${deleting.name}」`);
                     setDeleting(null);
+                    setEditing(null);
                   },
                   onError: (error) => onError(messageOf(error)),
                 });
@@ -301,8 +435,8 @@ export function AdminModelsTab({
           </>
         }
       >
-        <p>确定删除「{deleting?.name}」？</p>
+        <p className={styles.muted}>确定删除「{deleting?.name}」？</p>
       </Dialog>
-    </section>
+    </div>
   );
 }

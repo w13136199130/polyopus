@@ -40,9 +40,9 @@ test("connections: connector create and probe", async ({ page }) => {
 
   // three sub-tabs, then delete through the row action
   await page.getByTestId("connector-subtab-builtin").click();
-  await expect(page.getByText("内置目录")).toBeVisible();
+  await expect(page.getByTestId("connector-catalog-row").first()).toBeVisible();
   await page.getByTestId("connector-subtab-custom").click();
-  await expect(page.getByRole("heading", { name: "自定义 MCP" })).toBeVisible();
+  await expect(page.getByTestId("mcp-add-card")).toBeVisible();
   await page.getByTestId("connector-subtab-enabled").click();
   await row.getByTestId("connector-delete").click();
   await page.getByRole("dialog", { name: "删除连接器" })

@@ -57,6 +57,7 @@
 .tab {
   border: 0;
   border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--text-3);
   padding: 8px 10px;

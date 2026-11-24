@@ -1,4 +1,5 @@
-/* Task cards (prototype `.task`): white card, bucket-colored left border. */
+/* Task cards (prototype `.task`): white card, bucket-colored left border,
+   identity line / title / actor row / decision strip / outcome foot. */
 .list {
   display: flex;
   flex-direction: column;
@@ -9,18 +10,19 @@
 .card {
   border: 1px solid var(--line);
   border-left: 3px solid var(--line-2);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   cursor: pointer;
+  box-shadow: var(--shadow-1);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
   min-width: 0;
 }
 
-.card:hover { border-color: var(--primary-border); box-shadow: var(--shadow-1); }
+.card:hover { border-color: var(--primary-border); box-shadow: var(--shadow-2); }
 
 .card:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
@@ -29,9 +31,13 @@
 .card_queued { border-left-color: var(--line-2); }
 .card_done { border-left-color: var(--green); }
 
-.selected {
-  background: var(--primary-soft);
+/* Prototype selection: white card, blue outline and a blue left bar. */
+.selected,
+.selected:hover {
+  background: var(--surface);
   border-color: var(--primary-border);
+  border-left-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary-border);
 }
 
 .top {
@@ -40,6 +46,7 @@
   gap: 6px;
   color: var(--text-4);
   font-size: 10.5px;
+  min-width: 0;
 }
 
 .source { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -55,17 +62,33 @@
   line-height: 15px;
 }
 
-.ref { font-family: var(--font-mono); font-size: 10px; }
+/* "#412 · acme/api": dark short id, muted source name */
+.ref {
+  flex: none;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sourceName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
 
 .spacer { flex: 1; }
 
 .time { flex: none; }
 
 .title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14.5px;
+  font-weight: 650;
   color: var(--text);
   line-height: 1.45;
+  letter-spacing: -0.1px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -76,14 +99,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  color: var(--text-3);
+  font-size: 12px;
+  color: var(--text-2);
   min-width: 0;
 }
 
 .avatar {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex: none;
   border-radius: 50%;
   background: var(--surface-3);
@@ -91,7 +114,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 9.5px;
   font-weight: 700;
 }
 
@@ -99,17 +122,17 @@
   padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  font-size: 9.5px;
-  line-height: 16px;
+  font-size: 10.5px;
+  line-height: 17px;
   color: var(--text-3);
 }
 
 .tag {
   flex: none;
   padding: 0 7px;
-  border-radius: 999px;
-  font-size: 9.5px;
-  line-height: 17px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  line-height: 18px;
   font-weight: 600;
 }
 
@@ -117,30 +140,33 @@
 .tagGreen { background: var(--green-soft); color: var(--green); }
 .tagNeutral { background: var(--surface-3); color: var(--text-3); }
 
+/* decision strip: pink band with the question and its actions */
 .question {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 8px;
-  border-radius: 6px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
   background: var(--red-soft);
-  border: 1px solid var(--red-border);
   color: var(--text-2);
-  font-size: 11px;
+  font-size: 12.5px;
   min-width: 0;
 }
 
-.warn { flex: none; color: var(--amber); }
+.warn { flex: none; margin-top: 2px; color: var(--text-2); }
 
+/* The question may need two lines on the narrow list column; never clip it
+   to a single truncated line. */
 .questionText {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-.acts { flex: none; display: flex; gap: 5px; }
+.acts { flex: none; align-self: center; display: flex; gap: 6px; }
 
 .progress {
   height: 5px;
@@ -159,9 +185,9 @@
 .foot {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--text-4);
-  font-size: 10.5px;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
   min-width: 0;
 }
 
@@ -169,4 +195,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .card { padding: 11px 12px; }
+  .title { font-size: 14px; }
 }

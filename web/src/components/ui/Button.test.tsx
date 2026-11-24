@@ -11,10 +11,12 @@ describe("Button", () => {
         <Button variant="secondary">次要</Button>
         <Button variant="danger">危险</Button>
         <Button variant="ghost">幽灵</Button>
+        <Button variant="outline">描边</Button>
+        <Button variant="outlineDanger">描边危险</Button>
         <Button size="sm">小号</Button>
       </>,
     );
-    for (const name of ["主要", "次要", "危险", "幽灵", "小号"]) {
+    for (const name of ["主要", "次要", "危险", "幽灵", "描边", "描边危险", "小号"]) {
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
   });

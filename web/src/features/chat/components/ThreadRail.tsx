@@ -242,9 +242,13 @@ export function ThreadRail({
                       <span className={styles.title}>
                         {thread.title || "未命名会话"}
                       </span>
+                      {/* Prototype rows are two lines: title + last message. */}
                       <span className={styles.meta}>
-                        {name ? <span className={styles.chip}>{name}</span> : null}
-                        {thread.pinned ? <span className={styles.pin}>置顶</span> : null}
+                        {thread.preview ? (
+                          <span className={styles.preview}>{thread.preview}</span>
+                        ) : name ? (
+                          <span className={styles.chip}>{name}</span>
+                        ) : null}
                       </span>
                     </button>
                     <div className={styles.itemSide}>

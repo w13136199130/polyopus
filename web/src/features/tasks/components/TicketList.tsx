@@ -2,6 +2,7 @@ import { Button, Empty, ErrorState, Loading } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import { pendingInbox, useAnswerAttention, useAttentions } from "@/lib/api/hooks";
 import type { AttentionItem, TicketRow } from "@/lib/api/wire";
+import { approvalQuestion, fmtCost, formatSummary } from "../format";
 import styles from "./TicketList.module.css";
 
 interface Props {
@@ -33,10 +34,6 @@ export function timeAgo(ts: number): string {
   return `${Math.floor(seconds / 86400)} 天前`;
 }
 
-export function fmtCost(micros?: number): string {
-  return `¥${((micros ?? 0) / 1_000_000).toFixed(2)}`;
-}
-
 function shortRef(ticketId: string): string {
   return `#${ticketId.replace(/^tk_/, "").slice(0, 4).toUpperCase()}`;
 }
@@ -46,11 +43,6 @@ function stateTag(bucket: string): [string, string] {
   if (bucket === "running") return ["运行中", styles.tagGreen];
   if (bucket === "done") return ["已完成", styles.tagGreen];
   return ["排队中", styles.tagNeutral];
-}
-
-function questionOf(attention: AttentionItem): string {
-  const payload = attention.payload as { summary?: string; question?: string };
-  return payload.summary ?? payload.question ?? "需要你的决定";
 }
 
 function TicketCard({
@@ -91,8 +83,12 @@ function TicketCard({
           <span className={styles.sourceTag}>{sourceTag(row.sourceKind)}</span>
           <span className={styles.ref} title={row.ticketId}>
             {shortRef(row.ticketId)}
-            {row.sourceName ? ` · ${row.sourceName}` : ""}
           </span>
+          {row.sourceName ? (
+            <span className={styles.sourceName} title={row.sourceName}>
+              · {row.sourceName}
+            </span>
+          ) : null}
         </span>
         <span className={styles.spacer} />
         <span className={styles.time}>{timeAgo(row.createdAt)}</span>
@@ -113,13 +109,15 @@ function TicketCard({
           onClick={(event) => event.stopPropagation()}
         >
           <span className={styles.warn} aria-hidden="true">⚠</span>
-          <span className={styles.questionText}>{questionOf(attention)}</span>
+          <span className={styles.questionText}>
+            {approvalQuestion(attention)}
+          </span>
           <span className={styles.acts}>
             {attention.kind === "approval" ? (
               <>
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant="outline"
                   data-testid="card-deny"
                   disabled={!canWrite || busy}
                   onClick={() => onAnswer(attention.attentionId, "deny")}
@@ -136,7 +134,7 @@ function TicketCard({
                 </Button>
               </>
             ) : (
-              <Button size="sm" onClick={() => onOpen(row.ticketId)}>
+              <Button size="sm" variant="outline" onClick={() => onOpen(row.ticketId)}>
                 查看详情
               </Button>
             )}
@@ -149,7 +147,9 @@ function TicketCard({
           <span className={styles.warn} aria-hidden="true">⚠</span>
           <span className={styles.questionText}>等待你处理决定</span>
           <span className={styles.acts}>
-            <Button size="sm" onClick={() => onOpen(row.ticketId)}>处理</Button>
+            <Button size="sm" variant="outline" onClick={() => onOpen(row.ticketId)}>
+              处理
+            </Button>
           </span>
         </div>
       ) : null}
@@ -160,7 +160,7 @@ function TicketCard({
             <i style={{ width: `${row.progress ?? 0}%` }} />
           </div>
           <div className={styles.foot}>
-            <span>{row.summary || "执行中"}</span>
+            <span>{formatSummary(row.summary) || "执行中"}</span>
             <span className={styles.spacer} />
             <span>{fmtCost(row.costMicros)}</span>
           </div>
@@ -169,7 +169,10 @@ function TicketCard({
 
       {!attention && row.bucket !== "running" ? (
         <div className={styles.foot}>
-          <span>{row.summary || (row.bucket === "done" ? "已结束" : "等待执行")}</span>
+          <span>
+            {formatSummary(row.summary, row.bucket === "done")
+              || (row.bucket === "done" ? "已结束" : row.bucket === "queued" ? "等待执行" : "等待你的决定")}
+          </span>
           <span className={styles.spacer} />
           {row.costMicros ? <span>{fmtCost(row.costMicros)}</span> : null}
         </div>

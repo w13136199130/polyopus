@@ -1,9 +1,8 @@
 .page {
-  padding: 16px 24px 32px;
+  padding: 20px 24px 28px;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  overflow-y: auto;
 }
 
 .panel {
@@ -12,8 +11,9 @@
   gap: var(--space-3);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  padding: var(--space-4);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: var(--shadow-1);
 }
 
 .panelHead {
@@ -25,7 +25,8 @@
 
 .panelHead h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
+  letter-spacing: -0.1px;
 }
 
 .hint {
@@ -35,7 +36,7 @@
 
 .form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: var(--space-3);
   align-items: end;
 }
@@ -50,12 +51,24 @@
 
 .form input,
 .form select {
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-s);
+  border-radius: 8px;
   color: var(--text);
   font-size: 13px;
-  padding: 7px 9px;
+  height: 34px;
+  padding: 0 10px;
+}
+
+.form input:focus,
+.form select:focus {
+  outline: 2px solid var(--primary-border);
+  outline-offset: 1px;
+}
+
+.form button[type="submit"] {
+  justify-self: start;
+  min-width: 120px;
 }
 
 .check {
@@ -79,10 +92,13 @@
   align-items: center;
   gap: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  padding: 10px 14px;
+  border-radius: 10px;
+  padding: 12px 14px;
   flex-wrap: wrap;
+  transition: border-color 0.12s ease;
 }
+
+.row:hover { border-color: var(--primary-border); }
 
 .rowMain {
   display: flex;
@@ -156,3 +172,10 @@
   background: rgba(200, 60, 60, 0.12);
   border: 1px solid rgba(200, 60, 60, 0.45);
 }
+
+@media (max-width: 960px) {
+  .page { padding: 14px 14px 24px; }
+}
+
+.dangerText { color: var(--red); }
+.dangerText:hover { color: var(--red); }

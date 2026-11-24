@@ -43,11 +43,12 @@ def test_admin_user_crud_and_roles(env: tuple[Path, TestClient]) -> None:
 
     created = client.post("/api/v1/users", json={
         "username": "bob", "display_name": "Bob", "password": "bob-password",
-        "roles": ["member"],
+        "email": "bob@example.com", "roles": ["member"],
     })
     assert created.status_code == 201, created.text
     bob_id = created.json()["userId"]
     assert created.json()["role"] == "member"
+    assert created.json()["email"] == "bob@example.com"
     audit_rows = client.get("/api/v1/admin/audit",
                             params={"action": "user.create"}).json()["items"]
     assert any(row["resourceId"] == bob_id for row in audit_rows)

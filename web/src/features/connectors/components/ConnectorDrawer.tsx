@@ -9,6 +9,7 @@ import {
   useUpdateConnector,
   useUpdateConnectorTool,
 } from "@/features/connectors/api";
+import { MCP_TEMPLATE } from "@/features/connectors/mcpConfig";
 import type { ConnectorCatalogRow, ConnectorInstanceRow } from "@/lib/api/wire";
 import styles from "./ConnectorDrawer.module.css";
 
@@ -24,6 +25,8 @@ interface Props {
   /** null = create mode; initialKind picks the catalog entry. */
   instance: ConnectorInstanceRow | null;
   initialKind: string;
+  /** Custom MCP create entry (HTTP / Stdio buttons); ignored when editing. */
+  initialTransport?: "http" | "stdio";
   catalog: ConnectorCatalogRow[];
   onClose: () => void;
   onNotice: (message: string) => void;
@@ -37,17 +40,23 @@ const CREDENTIALS: Record<string, Array<[key: string, label: string, secret?: bo
   imap: [["host", "IMAP Host"], ["username", "用户名"], ["password", "授权码 / 密码", true]],
 };
 
-const MCP_TEMPLATE = `{
-  "servers": {
-    "my-mcp": {
-      "type": "http",
-      "url": "https://mcp.example.com/mcp"
-    }
-  }
-}`;
-
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
+}
+
+function authText(value: string): string {
+  if (value === "oauth") return "OAuth";
+  if (value === "token") return "Token";
+  if (value === "imap") return "IMAP / 授权码";
+  return value;
+}
+
+function statusText(value: string): string {
+  if (value === "active") return "已连接";
+  if (value === "expired") return "已过期";
+  if (value === "disabled") return "已停用";
+  if (value === "error") return "连接异常";
+  return value;
 }
 
 function asServers(config: unknown): McpServer[] {
@@ -85,7 +94,7 @@ function serverConfig(servers: McpServer[]): Record<string, unknown> {
  * a visual server editor plus the raw JSON view.
  */
 export function ConnectorDrawer({
-  open, instance, initialKind, catalog, onClose, onNotice, onError,
+  open, instance, initialKind, initialTransport, catalog, onClose, onNotice, onError,
 }: Props) {
   const create = useCreateConnector();
   const update = useUpdateConnector();
@@ -112,17 +121,30 @@ export function ConnectorDrawer({
 
   useEffect(() => {
     if (!open) return;
-    setKind(instance?.kind ?? initialKind);
+    const editing = instance !== null;
+    const kind = instance?.kind ?? initialKind;
+    setKind(kind);
     setDisplayName(instance?.displayName ?? "");
     setDefaultOpen(instance?.defaultOpen ?? false);
     setShared(instance?.shared ?? false);
     setCreds({});
     setMcpMode("visual");
-    setServers([{ name: "my-mcp", type: "http", url: "", command: "" }]);
-    setConfigText((instance?.kind ?? initialKind) === "mcp" ? MCP_TEMPLATE : "");
+    // Existing credentials never come back from the API; start blank so an
+    // untouched save cannot overwrite the stored config.
+    setServers(
+      editing
+        ? []
+        : [{
+          name: "my-mcp",
+          type: initialTransport ?? "http",
+          url: "",
+          command: "",
+        }],
+    );
+    setConfigText(editing ? "" : kind === "mcp" ? MCP_TEMPLATE : "");
     setError(null);
     setConfirmDelete(false);
-  }, [open, instance, initialKind]);
+  }, [open, instance, initialKind, initialTransport]);
 
   const effectiveKind = instance?.kind ?? kind;
   const catalogRow = catalog.find((row) => row.kind === effectiveKind);
@@ -136,6 +158,10 @@ export function ConnectorDrawer({
   }
 
   function switchToVisual() {
+    if (!configText.trim()) {
+      setMcpMode("visual");
+      return;
+    }
     try {
       const parsed = JSON.parse(configText) as Record<string, unknown>;
       const next = asServers(parsed);
@@ -156,7 +182,17 @@ export function ConnectorDrawer({
           throw new Error("MCP JSON 配置无法解析");
         }
       }
-      const built = serverConfig(servers);
+      const named = servers.filter((server) => server.name.trim());
+      if (named.length === 0) return undefined;
+      for (const server of named) {
+        if (server.type === "http" && !server.url.trim()) {
+          throw new Error(`${server.name}: 缺少 URL`);
+        }
+        if (server.type === "stdio" && !server.command.trim()) {
+          throw new Error(`${server.name}: 缺少 Command`);
+        }
+      }
+      const built = serverConfig(named);
       const map = built.servers as Record<string, unknown>;
       return Object.keys(map).length ? built : undefined;
     }
@@ -267,7 +303,7 @@ export function ConnectorDrawer({
         title={instance ? instance.displayName : `添加${catalogRow?.name ?? "连接器"}`}
         description={
           instance
-            ? `${instance.kind} · ${instance.authKind} · ${instance.toolsCount} 个工具`
+            ? `${catalogRow?.name ?? instance.kind} · ${authText(instance.authKind)} · ${instance.toolsCount} 个工具`
             : "凭证加密保存且只写不读；测试连接只做本地配置校验。"
         }
         width={600}
@@ -331,11 +367,11 @@ export function ConnectorDrawer({
             <div className={styles.stateGrid}>
               <div>
                 <span>认证方式</span>
-                <b>{instance.authKind}</b>
+                <b>{authText(instance.authKind)}</b>
               </div>
               <div>
                 <span>状态</span>
-                <b>{instance.status}</b>
+                <b>{statusText(instance.status)}</b>
               </div>
               <div>
                 <span>工具</span>
@@ -430,6 +466,14 @@ export function ConnectorDrawer({
 
               {mcpMode === "visual" ? (
                 <div className={styles.servers}>
+                  {instance ? (
+                    <p className={styles.hint}>
+                      已保存的配置不会回显；添加 Server 后保存会覆盖原配置，直接保存则保持不变。
+                    </p>
+                  ) : null}
+                  {servers.length === 0 ? (
+                    <p className={styles.hint}>还没有 Server，点下面的按钮添加一个。</p>
+                  ) : null}
                   {servers.map((server, index) => (
                     <div key={index} className={styles.serverRow} data-testid="mcp-server-row">
                       <input
@@ -501,6 +545,11 @@ export function ConnectorDrawer({
                     className={styles.mono}
                     rows={12}
                     value={configText}
+                    placeholder={
+                      instance
+                        ? "留空保持已保存的配置；填写后保存会覆盖"
+                        : "粘贴 MCP 配置 JSON"
+                    }
                     onChange={(event) => setConfigText(event.target.value)}
                   />
                   <span className={styles.hint}>

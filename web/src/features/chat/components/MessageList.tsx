@@ -4,6 +4,8 @@ import { mergeHistory } from "../merge-history";
 import { summarizeTrace, traceFor, type TurnTrace } from "../message-trace";
 import type { AttentionItem, Message, TraceEvent } from "@/lib/api/wire";
 import { ApprovalCard } from "@/components/attention/ApprovalCard";
+import { MarkdownView } from "@/components/markdown/MarkdownView";
+import icons, { type IconName } from "@/layouts/icons";
 import { formatAnswers, parseAskContent, type AskQuestion } from "../ask-format";
 import styles from "./MessageList.module.css";
 
@@ -39,11 +41,11 @@ interface Props {
   ) => void;
 }
 
-const QUICK_PROMPTS: Array<[string, string, string]> = [
-  ["排查一个登录超时", "从问题描述开始，先读代码再改", "◤"],
-  ["整理本周发布记录", "从来源消息和工单汇总", "≡"],
-  ["回答发布流程问题", "先查知识库运维手册再回答", "◇"],
-  ["写一个导出接口", "从一句话需求创建任务", "＋"],
+const QUICK_PROMPTS: Array<[string, string, IconName]> = [
+  ["排查一个登录超时", "从问题描述开始，先读代码再改", "shield"],
+  ["整理本周发布记录", "从来源消息和工单汇总", "inbox"],
+  ["回答发布流程问题", "先查知识库运维手册再回答", "book"],
+  ["写一个导出接口", "从一句话需求创建任务", "puzzle"],
 ];
 
 interface Bubble {
@@ -196,26 +198,35 @@ function Steps({ trace }: { trace: TurnTrace }) {
   );
 }
 
+/** One compact row per tool call (prototype tool row), each expandable. */
 function ToolCard({ trace }: { trace: TurnTrace }) {
-  const last = trace.steps[trace.steps.length - 1];
-  if (!last) return null;
+  if (!trace.steps.length) return null;
   return (
-    <details className={styles.toolCard} data-testid="tool-card">
-      <summary className={styles.toolHead}>
-        <span className={styles.toolIcon} aria-hidden="true">▸</span>
-        <b>{last.name}</b>
-        <span className={styles.toolArg}>{last.args}</span>
-        <span className={styles.spacer} />
-        <span
-          className={`${styles.toolStatus} ${
-            last.status === "failed" ? styles.toolBad : styles.toolOk
-          }`}
-        >
-          {last.status === "failed" ? "失败" : last.status === "running" ? "运行中" : "完成"}
-        </span>
-      </summary>
-      <pre className={styles.toolBody}>{last.output || "（无输出）"}</pre>
-    </details>
+    <div className={styles.toolList} data-testid="tool-card">
+      {trace.steps.map((step) => (
+        <details key={step.id} className={styles.toolCard}>
+          <summary className={styles.toolHead}>
+            <span className={styles.toolIcon} aria-hidden="true">▸</span>
+            <b>{step.name}</b>
+            <span className={styles.toolArg}>{step.args}</span>
+            <span className={styles.spacer} />
+            {step.durationMs ? (
+              <span className={styles.toolTime}>{duration(step.durationMs)}</span>
+            ) : null}
+            <span
+              className={`${styles.toolStatus} ${
+                step.status === "failed"
+                  ? styles.toolBad
+                  : step.status === "running" ? styles.toolRun : styles.toolOk
+              }`}
+            >
+              {step.status === "failed" ? "失败" : step.status === "running" ? "运行中" : "完成"}
+            </span>
+          </summary>
+          <pre className={styles.toolBody}>{step.output || "（无输出）"}</pre>
+        </details>
+      ))}
+    </div>
   );
 }
 
@@ -257,70 +268,6 @@ function Citations({ trace }: { trace: TurnTrace }) {
         </span>
       ))}
     </div>
-  );
-}
-
-interface TextSegment {
-  kind: "text" | "code";
-  content: string;
-  lang?: string;
-}
-
-/** Minimal fenced-code renderer; keeps streaming text readable before a
- * closing fence arrives and never interprets HTML. */
-export function parseRichText(text: string): TextSegment[] {
-  const segments: TextSegment[] = [];
-  let textLines: string[] = [];
-  let codeLines: string[] | null = null;
-  let lang = "";
-
-  function flushText() {
-    if (!textLines.length) return;
-    segments.push({ kind: "text", content: textLines.join("\n") });
-    textLines = [];
-  }
-
-  for (const line of text.split("\n")) {
-    if (line.trimStart().startsWith("```")) {
-      if (codeLines === null) {
-        flushText();
-        codeLines = [];
-        lang = line.trimStart().slice(3).trim();
-      } else {
-        segments.push({ kind: "code", content: codeLines.join("\n"), lang });
-        codeLines = null;
-        lang = "";
-      }
-      continue;
-    }
-    if (codeLines !== null) codeLines.push(line);
-    else textLines.push(line);
-  }
-  if (codeLines !== null) {
-    segments.push({ kind: "code", content: codeLines.join("\n"), lang });
-  }
-  flushText();
-  return segments;
-}
-
-export function RichText({ text }: { text: string }) {
-  const segments = parseRichText(text);
-  if (segments.length === 1 && segments[0].kind === "text") {
-    return <>{segments[0].content}</>;
-  }
-  return (
-    <>
-      {segments.map((segment, index) =>
-        segment.kind === "text" ? (
-          <span key={index}>{segment.content}</span>
-        ) : (
-          <pre key={index} className={styles.codeBlock} data-testid="code-block">
-            <span className={styles.codeLang}>{segment.lang || "code"}</span>
-            <code>{segment.content}</code>
-          </pre>
-        ),
-      )}
-    </>
   );
 }
 
@@ -582,8 +529,15 @@ const AssistantRow = memo(function AssistantRow({
         </div>
         <Thinking text={bubble.reasoning} streaming={bubble.streaming} />
         <Steps trace={trace} />
-        <div className={`${styles.assistantText} ${bubble.streaming ? styles.streaming : ""}`}>
-          <RichText text={body} />
+        <div
+          className={`${styles.assistantText} ${bubble.streaming ? styles.streaming : ""}`}
+          data-testid="assistant-text"
+        >
+          {body.trim() ? (
+            <MarkdownView content={body} compact />
+          ) : bubble.streaming ? (
+            <span className={styles.streamingDot} aria-label="生成中" />
+          ) : null}
         </div>
         {!bubble.streaming && ask?.questions.length ? (
           <AskQuestions
@@ -648,12 +602,24 @@ export function MessageList({
 }: Props) {
   const rawBubbles = buildBubbles(messages, snapshot);
   const byTurn = useMemo(() => summarizeTrace(trace), [trace]);
-  // A paused first round can leave an empty assistant projection. Hide that
-  // placeholder, but keep an empty final row when the turn did produce tool
-  // steps/files/citations — otherwise a tool-only turn loses its file card.
+  // One turn can project more than one assistant row (paused round + final).
+  // Only the last row of a turn carries the steps/file cards.
+  const lastAssistantOfTurn = new Map<string, string>();
+  for (const bubble of rawBubbles) {
+    if (bubble.role === "assistant" && bubble.turnId) {
+      lastAssistantOfTurn.set(bubble.turnId, bubble.key);
+    }
+  }
+  // A paused round leaves an empty assistant projection (bare avatar + name):
+  // drop it. The only exception is the turn's last row when the turn produced
+  // tool steps, files or citations — a tool-only turn would otherwise lose
+  // its cards.
   const bubbles = rawBubbles.filter((bubble) => {
-    if (bubble.role !== "assistant" || bubble.content.trim() || bubble.streaming) {
+    if (bubble.role !== "assistant" || bubble.streaming || bubble.content.trim()) {
       return true;
+    }
+    if (bubble.turnId && lastAssistantOfTurn.get(bubble.turnId) !== bubble.key) {
+      return false;
     }
     const turnTrace = traceFor(byTurn, bubble.turnId);
     return turnTrace.steps.length > 0
@@ -661,14 +627,6 @@ export function MessageList({
       || turnTrace.citations.length > 0;
   });
   const last = bubbles[bubbles.length - 1];
-  // One turn can project more than one assistant row (paused round + final).
-  // Decorate only the last one so steps/file cards are not duplicated.
-  const lastAssistantOfTurn = new Map<string, string>();
-  for (const bubble of bubbles) {
-    if (bubble.role === "assistant" && bubble.turnId) {
-      lastAssistantOfTurn.set(bubble.turnId, bubble.key);
-    }
-  }
   const showFollowUps =
     !snapshot.turnId || snapshot.status === "finished" || snapshot.status === "idle";
   const hasAssistant = bubbles.some((bubble) => bubble.role === "assistant");
@@ -690,7 +648,9 @@ export function MessageList({
                   data-testid="quick-prompt"
                   onClick={() => onQuickPrompt?.(title)}
                 >
-                  <span className={styles.quickIc} aria-hidden="true">{icon}</span>
+                  <span className={styles.quickIc} aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d={icons[icon]} /></svg>
+                  </span>
                   <b>{title}</b>
                   <span>{hint}</span>
                 </button>

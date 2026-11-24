@@ -90,6 +90,7 @@
   border: 0;
   background: transparent;
   border-bottom: 2px solid transparent;
+  border-radius: 0;
   margin-bottom: -1px;
   display: flex;
   align-items: center;

@@ -230,3 +230,54 @@ def test_kb_context_uses_selected_bases(tmp_path: Path) -> None:
         conn, tenant_id="default", query="生产发布流程", kb_ids=[]
     ) is None
     conn.close()
+
+
+def test_thread_list_carries_latest_message_preview(client: TestClient) -> None:
+    thread_id = _create(client, "带预览的会话")
+    empty_id = _create(client, "还没有消息的会话")
+    conn = m.connect(client.app.state.settings.resolved_db_path())
+    try:
+        for seq, (role, content) in enumerate(
+            [("user", "第一问"), ("assistant", "  第一答\n第二行  "), ("system", "")], start=1
+        ):
+            conn.execute(
+                "INSERT INTO messages (tenant_id, message_id, thread_id, role,"
+                " content, status, seq, created_at, updated_at)"
+                " VALUES ('default', ?, ?, ?, ?, 'completed', ?, 1, 1)",
+                (f"msg_p{seq}", thread_id, role, content, seq),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    row = next(
+        item for item in client.get("/api/v1/threads").json()["items"]
+        if item["threadId"] == thread_id
+    )
+    assert row["preview"] == "第一答 第二行"
+    # a session without messages has no preview rather than a fake one
+    empty = next(
+        item for item in client.get("/api/v1/threads").json()["items"]
+        if item["threadId"] == empty_id
+    )
+    assert empty["preview"] is None
+
+
+def test_thread_preview_strips_markdown(client: TestClient) -> None:
+    thread_id = _create(client, "带格式的会话")
+    conn = m.connect(client.app.state.settings.resolved_db_path())
+    try:
+        conn.execute(
+            "INSERT INTO messages (tenant_id, message_id, thread_id, role,"
+            " content, status, seq, created_at, updated_at)"
+            " VALUES ('default', 'msg_md', ?, 'assistant', ?, 'completed', 1, 1, 1)",
+            (thread_id, "## 标题\n\n**重点** `code`\n\n| a | b |\n| --- | --- |\n"
+             "\n[链接](https://example.com)"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    row = next(
+        item for item in client.get("/api/v1/threads").json()["items"]
+        if item["threadId"] == thread_id
+    )
+    assert row["preview"] == "标题 重点 code a b 链接"

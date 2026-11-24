@@ -122,4 +122,6 @@
   .titleBlock { border-left: 0; padding-left: 0; }
   .titleBlock .stateTag { display: none; }
   [data-testid="dock-toggle"] { display: none; }
+  /* the header is too narrow for a labelled share button on phones */
+  .shareBtn { display: none; }
 }

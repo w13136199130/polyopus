@@ -67,6 +67,7 @@
 .modeTab {
   border: 0;
   border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   padding: 7px 9px;
   color: var(--text-3);

@@ -229,10 +229,21 @@ function BlockView({ block, index }: { block: Block; index: number }) {
   return <hr className={styles.rule} />;
 }
 
-export function MarkdownView({ content }: { content: string }) {
+/** `compact` steps the headings down one size so a chat answer reads as a
+ * message rather than as a document. */
+export function MarkdownView({
+  content,
+  compact = false,
+}: {
+  content: string;
+  compact?: boolean;
+}) {
   const blocks = parse(content);
   return (
-    <div className={styles.root} data-testid="markdown-view">
+    <div
+      className={`${styles.root} ${compact ? styles.compact : ""}`}
+      data-testid="markdown-view"
+    >
       {blocks.map((block, index) => (
         <Fragment key={index}>
           <BlockView block={block} index={index} />

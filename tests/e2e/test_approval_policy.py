@@ -319,3 +319,32 @@ def test_expired_approval_auto_denies_and_resumes(
         db, "SELECT payload_json FROM events WHERE type = 'approval.resolved'"
     )
     assert json.loads(events[-1][0])["decision"] == "expired"
+
+
+def test_expired_ticket_approval_also_closes_the_ticket(
+    env: tuple[Path, TestClient], tmp_path: Path
+) -> None:
+    """A ticket must not outlive its approval: expiry denies the turn AND
+    ends the ticket, otherwise it waits forever with no decision to make."""
+    db, client = env
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    ticket_id = _open_ticket(client, defaultScope=["workspace:default", "fs:write"])
+    assert _run_ticket(db, ticket_id, workspace) == "waiting"
+
+    conn = m.connect(db)
+    try:
+        conn.execute(
+            "UPDATE approvals SET expires_at = ? WHERE status = 'pending'",
+            (int(time.time()) - 1,),
+        )
+        conn.commit()
+        resumed = ticket_loop.expire_pending_approvals(conn)
+    finally:
+        conn.close()
+
+    assert resumed == 1
+    row = _rows(db, "SELECT state, bucket FROM tickets WHERE ticket_id = ?", ticket_id)[0]
+    assert (row["state"], row["bucket"]) == ("ended", "done")
+    report = _rows(db, "SELECT summary FROM reports WHERE ticket_id = ?", ticket_id)[-1]
+    assert "过期" in report["summary"]

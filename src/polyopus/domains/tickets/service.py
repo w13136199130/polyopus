@@ -155,6 +155,7 @@ def post_human_message(
 def finish_after_attention(
     conn: sqlite3.Connection, store: EventStore, ticket_id: str, *,
     decision: str,
+    expired: bool = False,
 ) -> str:
     """Close a ticket whose approval was answered inline (P2 交互还原).
 
@@ -168,8 +169,9 @@ def finish_after_attention(
     tenant = str(ticket["tenant_id"] or TENANT)
     thread_id = thread_of_ticket(conn, ticket_id)
     summary = (
-        f"审批已处理（{ '允许' if decision.startswith('approved') else '拒绝' }），"
-        "工单收尾"
+        "审批已过期，自动拒绝，工单收尾" if expired
+        else f"审批已处理（{ '允许' if decision.startswith('approved') else '拒绝' }），"
+             "工单收尾"
     )
     assignment = conn.execute(
         "SELECT assignment_id FROM assignments WHERE ticket_id = ? "

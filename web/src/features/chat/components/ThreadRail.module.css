@@ -86,7 +86,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  max-width: 118px;
+  max-width: 150px;
   padding: 4px 8px 4px 4px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -164,8 +164,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  border-radius: var(--radius-s);
-  padding: 7px 8px 7px 10px;
+  border-radius: 8px;
+  padding: 7px 8px 7px 12px;
   color: var(--text-2);
   cursor: pointer;
   min-width: 0;
@@ -174,8 +174,20 @@
 .item:hover { background: var(--surface-2); color: var(--text); }
 .item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
-.active { background: var(--primary-soft); color: var(--text); }
-.active:hover { background: var(--primary-soft); }
+.active,
+.active:hover { background: var(--primary-soft); color: var(--text); }
+
+/* Prototype selection: soft blue row with a left accent bar. */
+.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--primary);
+}
 
 .itemMain {
   flex: 1;
@@ -202,9 +214,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
-  font-weight: 550;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text);
+}
+
+.preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 11.5px;
 }
 
 .meta {

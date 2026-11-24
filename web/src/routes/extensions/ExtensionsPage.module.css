@@ -50,6 +50,7 @@
   border: 0;
   background: transparent;
   border-bottom: 2px solid transparent;
+  border-radius: 0;
   margin-bottom: -1px;
 }
 
@@ -202,6 +203,7 @@
 .subTab {
   border: 0;
   border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   padding: 7px 10px;
   color: var(--text-3);

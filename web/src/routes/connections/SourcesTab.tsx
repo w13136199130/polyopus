@@ -6,7 +6,6 @@
 
 import { useState } from "react";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
-import { PageShell } from "@/layouts/PageShell";
 import {
   sendTestWebhook,
   useCreateCronJob,
@@ -156,11 +155,7 @@ export function SourcesTab() {
   }
 
   return (
-    <PageShell
-      title="连接"
-      subtitle="v0.5 只支持 webhook 与 schedule 两类来源；密钥只在创建时显示一次。"
-    >
-      <div className={styles.page}>
+    <div className={styles.page}>
         {secretNotice ? (
           <div className={styles.secret} data-testid="source-secret-once">
             <strong>密钥只显示一次</strong>
@@ -176,8 +171,10 @@ export function SourcesTab() {
 
         <section className={styles.panel}>
           <div className={styles.panelHead}>
-            <h2>Webhook 来源</h2>
-            <span className={styles.hint}>外部系统向此地址推送事件，Gate 通过后建单。</span>
+            <h2>Webhook 通道</h2>
+            <span className={styles.hint}>
+              外部系统向此地址推送事件；Gate 通过后自动建单，密钥只在创建时显示一次。
+            </span>
           </div>
           <form className={styles.form} onSubmit={(event) => void submitWebhook(event)}>
             <label>
@@ -297,7 +294,8 @@ export function SourcesTab() {
                     </Button>
                     <Button
                       size="sm"
-                      variant="danger"
+                      variant="ghost"
+                      className={styles.dangerText}
                       data-testid="source-delete"
                       onClick={() =>
                         setPendingDelete({ kind: "source", id: source.sourceId, name: source.name })
@@ -400,7 +398,8 @@ export function SourcesTab() {
                     </Button>
                     <Button
                       size="sm"
-                      variant="danger"
+                      variant="ghost"
+                      className={styles.dangerText}
                       data-testid="cron-delete"
                       onClick={() =>
                         setPendingDelete({ kind: "cron", id: job.cronJobId, name: job.name })
@@ -414,7 +413,6 @@ export function SourcesTab() {
             </ul>
           )}
         </section>
-      </div>
 
       <Dialog
         open={pendingDelete !== null}
@@ -440,6 +438,6 @@ export function SourcesTab() {
       >
         <p>此操作不可撤销。</p>
       </Dialog>
-    </PageShell>
+    </div>
   );
 }

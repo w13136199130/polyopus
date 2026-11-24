@@ -33,6 +33,7 @@ def _user_view(row: sqlite3.Row) -> dict[str, Any]:
         "userId": row["user_id"],
         "username": row["username"],
         "displayName": row["display_name"] or row["username"],
+        "email": row["email"],
         "tenantId": row["tenant_id"],
         "status": row["status"],
         "isOwner": bool(row["is_owner"]),
@@ -80,6 +81,7 @@ def create_user(
     display_name: str | None,
     password: str,
     roles: list[str],
+    email: str | None = None,
     by: str = "system",
 ) -> dict[str, Any]:
     now = int(time.time())
@@ -87,13 +89,14 @@ def create_user(
     try:
         conn.execute(
             "INSERT INTO users (tenant_id, user_id, username, display_name,"
-            " password_hash, status, is_owner, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?)",
+            " email, password_hash, status, is_owner, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)",
             (tenant_id, user_id, username, display_name or username,
-             hash_password(password), now, now),
+             email, hash_password(password), now, now),
         )
     except sqlite3.IntegrityError as exc:
-        raise AppError("CONFLICT", details={"reason": "username_taken"}) from exc
+        reason = "email_taken" if "email" in str(exc).lower() else "username_taken"
+        raise AppError("CONFLICT", details={"reason": reason}) from exc
     conn.commit()
     rbac.set_roles(conn, tenant_id=tenant_id, user_id=user_id,
                    role_names=roles, by=by)

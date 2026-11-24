@@ -125,6 +125,34 @@
   border-top: 1px solid var(--line);
 }
 
+/* chat answers */
+.compact {
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.compact .h1 {
+  margin: 4px 0 8px;
+  font-size: 17px;
+}
+
+.compact .h2 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+}
+
+.compact .h3 {
+  margin: 12px 0 4px;
+  font-size: 13.5px;
+}
+
+.compact .p,
+.compact .list { margin: 0 0 8px; }
+
+.compact .code { font-size: 12px; }
+
+.compact > :first-child { margin-top: 0; }
+
 @media (max-width: 720px) {
   .root { font-size: 12.5px; }
   .h1 { font-size: 18px; }

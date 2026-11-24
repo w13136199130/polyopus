@@ -1,11 +1,8 @@
-import { useEffect, useState } from "react";
-import { Button, ErrorState, Loading } from "@/components/ui";
-import {
-  useBackupAuto,
-  useRunBackupAuto,
-  useStorageSnapshot,
-  useUpdateBackupAuto,
-} from "@/features/admin/api";
+/** Admin → 存储管理: storage backends (local now, remote v1.1). */
+
+import { useState } from "react";
+import { Button, Dialog, ErrorState, Loading } from "@/components/ui";
+import { useStorageSnapshot } from "@/features/admin/api";
 import styles from "./AdminConfig.module.css";
 
 function bytes(value: number): string {
@@ -20,183 +17,137 @@ function messageOf(error: unknown): string {
 }
 
 export function AdminStorageTab({
-  onNotice, onError, onOpenBackups,
+  onNotice, onError,
 }: {
   onNotice: (message: string) => void;
   onError: (message: string) => void;
-  onOpenBackups: () => void;
 }) {
   const snapshot = useStorageSnapshot();
-  const auto = useBackupAuto();
-  const updateAuto = useUpdateBackupAuto();
-  const runAuto = useRunBackupAuto();
-  const [form, setForm] = useState({
-    autoEnabled: false, intervalHours: "24", retentionCount: "7",
-    db: true, workspace: true, artifacts: true,
-  });
-
-  useEffect(() => {
-    if (!auto.data) return;
-    setForm({
-      autoEnabled: auto.data.autoEnabled,
-      intervalHours: String(auto.data.intervalHours),
-      retentionCount: String(auto.data.retentionCount),
-      db: auto.data.includes.db !== false,
-      workspace: auto.data.includes.workspace !== false,
-      artifacts: auto.data.includes.artifacts !== false,
-    });
-  }, [auto.data]);
-
-  function saveAuto() {
-    const interval = Number(form.intervalHours);
-    const retention = Number(form.retentionCount);
-    if (!Number.isFinite(interval) || interval <= 0
-      || !Number.isFinite(retention) || retention <= 0) {
-      onError("备份间隔与保留数量必须大于 0");
-      return;
-    }
-    updateAuto.mutate(
-      {
-        autoEnabled: form.autoEnabled,
-        intervalHours: interval,
-        retentionCount: retention,
-        includes: {
-          db: form.db, workspace: form.workspace, artifacts: form.artifacts,
-        },
-      },
-      {
-        onSuccess: () => onNotice("已保存自动备份设置"),
-        onError: (error) => onError(messageOf(error)),
-      },
-    );
-  }
-
+  const [detailOpen, setDetailOpen] = useState(false);
   const data = snapshot.data;
 
+  const extras = data
+    ? [
+      ...data.remoteBackends,
+      ...(data.remoteBackends.some((item) => item.kind === "docker")
+        ? []
+        : [{ kind: "docker", label: "Docker 沙箱", status: "v1.1" }]),
+    ].sort((left, right) =>
+      ["cos", "postgres", "docker", "s3"].indexOf(left.kind)
+      - ["cos", "postgres", "docker", "s3"].indexOf(right.kind))
+    : [{ kind: "docker", label: "Docker 沙箱", status: "v1.1" }];
+
+  function probeLocal() {
+    snapshot.refetch()
+      .then((result) => {
+        if (result.isError) onError(messageOf(result.error));
+        else onNotice("本地存储可用 · 已刷新容量");
+      })
+      .catch((error) => onError(messageOf(error)));
+  }
+
   return (
-    <section className={styles.panel}>
-      <div className={styles.head}>
-        <h2>存储</h2>
-        <span>v1.0 固定本地存储；远端后端随 v1.1 接入</span>
-        <span className={styles.spacer} />
-        <Button size="sm" variant="secondary" onClick={onOpenBackups}>
-          备份列表
-        </Button>
-      </div>
-
-      {snapshot.isLoading ? (
-        <Loading label="统计存储…" />
-      ) : snapshot.isError ? (
-        <ErrorState message="存储信息加载失败" onRetry={() => void snapshot.refetch()} />
-      ) : data ? (
-        <>
-          <div className={styles.storageGrid}>
-            {([
-              ["控制面数据库", data.db.bytes, data.db.path, ""],
-              ["数据目录", data.data.bytes, data.data.path, `${data.data.files} 文件`],
-              ["工作区", data.workspace.bytes, data.workspace.path, `${data.workspace.files} 文件`],
-              ["备份目录", data.backups.bytes, data.backups.path, `${data.backups.files} 文件`],
-            ] as const).map(([label, size, path, meta]) => (
-              <div key={label} className={styles.storageCard}>
-                <span>{label}</span>
-                <b>{bytes(size)}</b>
-                <code title={path}>{path}</code>
-                {meta ? <small>{meta}</small> : null}
-              </div>
-            ))}
-          </div>
-          <div className={styles.backends}>
-            <div className={styles.backendOn}>
-              <b>本地磁盘</b>
-              <span>SQLite + data 目录 + workspace</span>
-              <span className={`${styles.badge} ${styles.green}`}>当前</span>
-            </div>
-            {data.remoteBackends.map((backend) => (
-              <div key={backend.kind} className={styles.backendOff}>
-                <b>{backend.label}</b>
-                <span>对象存储 / 外部数据库</span>
-                <span className={`${styles.badge} ${styles.neutral}`}>{backend.status}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : null}
-
-      <div className={styles.subhead}>
-        <b>自动备份</b>
-        <span>服务端定时快照；保留数量超出后轮转删除</span>
-      </div>
-      {auto.isLoading ? (
-        <Loading label="载入备份设置…" />
-      ) : auto.isError ? (
-        <ErrorState message="备份设置加载失败" onRetry={() => void auto.refetch()} />
-      ) : (
-        <div className={styles.autoGrid}>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              data-testid="backup-auto-enabled"
-              checked={form.autoEnabled}
-              onChange={(event) => setForm({ ...form, autoEnabled: event.target.checked })}
-            />
-            启用自动备份
-          </label>
-          <label className={styles.field}>
-            间隔（小时）
-            <input
-              type="number"
-              min="1"
-              value={form.intervalHours}
-              onChange={(event) => setForm({ ...form, intervalHours: event.target.value })}
-            />
-          </label>
-          <label className={styles.field}>
-            保留数量
-            <input
-              type="number"
-              min="1"
-              value={form.retentionCount}
-              onChange={(event) => setForm({ ...form, retentionCount: event.target.value })}
-            />
-          </label>
-          <div className={styles.includes}>
-            <label className={styles.check}>
-              <input type="checkbox" checked={form.db}
-                onChange={(event) => setForm({ ...form, db: event.target.checked })} />
-              数据库
-            </label>
-            <label className={styles.check}>
-              <input type="checkbox" checked={form.workspace}
-                onChange={(event) => setForm({ ...form, workspace: event.target.checked })} />
-              工作区
-            </label>
-            <label className={styles.check}>
-              <input type="checkbox" checked={form.artifacts}
-                onChange={(event) => setForm({ ...form, artifacts: event.target.checked })} />
-              产物
-            </label>
-          </div>
-          <div className={styles.autoActions}>
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={runAuto.isPending}
-              onClick={() => runAuto.mutate(undefined, {
-                onSuccess: (result) => onNotice(`已创建备份 ${result.backupId}`),
-                onError: (error) => onError(messageOf(error)),
-              })}
-            >
-              立即备份
-            </Button>
-            <Button size="sm" loading={updateAuto.isPending} onClick={saveAuto}>
-              保存设置
-            </Button>
-          </div>
+    <div className={styles.page}>
+      <section className={styles.panel}>
+        <div className={styles.head}>
+          <h2>存储后端</h2>
+          <span>可供专家读写的工作区与产物</span>
+          <span className={styles.spacer} />
+          <span className={styles.muted}>v1.0 固定本地存储；远端后端随 v1.1 接入</span>
         </div>
-      )}
-      <p className={styles.muted}>
-        {data?.note ?? "备份包含 SQLite 快照、工作区 tar 与 artifacts 清单。"}
-      </p>
-    </section>
+
+        {snapshot.isLoading ? (
+          <Loading label="统计存储…" />
+        ) : snapshot.isError ? (
+          <ErrorState message="存储信息加载失败" onRetry={() => void snapshot.refetch()} />
+        ) : data ? (
+          <div className={styles.backendGrid}>
+            <article className={styles.backendCard} data-testid="storage-card">
+              <div className={styles.backendTop}>
+                <span className={styles.backendIcon}>本</span>
+                <div className={styles.backendBody}>
+                  <b>本地目录</b>
+                  <span title={data.data.path}>{data.data.path} · 读写</span>
+                </div>
+                <span className={`${styles.badge} ${styles.badgeGreen}`}>已配置</span>
+              </div>
+              <div className={styles.backendFoot}>
+                <Button size="sm" variant="outline" onClick={() => setDetailOpen(true)}>
+                  配置
+                </Button>
+                <Button size="sm" variant="ghost" onClick={probeLocal}>
+                  探测
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setDetailOpen(true)}>
+                  浏览
+                </Button>
+              </div>
+            </article>
+
+            {extras.map((backend) => (
+              <article key={backend.kind} className={styles.backendCard} data-testid="storage-card">
+                <div className={styles.backendTop}>
+                  <span className={`${styles.backendIcon} ${styles.backendMuted}`}>
+                    {backend.label.slice(0, 1)}
+                  </span>
+                  <div className={styles.backendBody}>
+                    <b>{backend.label}</b>
+                    <span>
+                      {backend.kind === "cos" ? "对象存储 · 远端"
+                        : backend.kind === "postgres" ? "外部数据库 · 结构化存储"
+                          : backend.kind === "docker" ? "隔离沙箱 · 临时文件"
+                            : "对象存储 · 远端"}
+                    </span>
+                  </div>
+                  <span className={`${styles.badge} ${styles.badgeNeutral}`} title="随 v1.1 接入">
+                    未配置
+                  </span>
+                </div>
+                <div className={styles.backendFoot}>
+                  <Button size="sm" variant="outline" disabled title="随 v1.1 接入">配置</Button>
+                  <Button size="sm" variant="ghost" disabled title="随 v1.1 接入">探测</Button>
+                  <Button size="sm" variant="ghost" disabled title="随 v1.1 接入">浏览</Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        <div className={`${styles.alert} ${styles.alertInfo}`}>
+          删除被专家引用的后端会被阻止：先在工作区里解绑。远端后端的凭证将加密保存且只写不读。
+        </div>
+      </section>
+
+      <Dialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        title="本地目录"
+        description="当前实例使用的 SQLite、数据目录、工作区与备份目录。"
+        width={680}
+        footer={<Button variant="secondary" onClick={() => setDetailOpen(false)}>关闭</Button>}
+      >
+        {data ? (
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead><tr><th>用途</th><th>路径</th><th style={{ textAlign: "right" }}>占用</th></tr></thead>
+              <tbody>
+                {([
+                  ["控制面数据库", data.db.path, data.db.bytes],
+                  ["数据目录", data.data.path, data.data.bytes],
+                  ["工作区", data.workspace.path, data.workspace.bytes],
+                  ["备份目录", data.backups.path, data.backups.bytes],
+                ] as const).map(([label, path, size]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <td className={styles.mono}>{path}</td>
+                    <td style={{ textAlign: "right" }}>{bytes(size)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </Dialog>
+    </div>
   );
 }

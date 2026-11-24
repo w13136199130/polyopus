@@ -17,7 +17,8 @@ import {
   useUpdateTicket,
 } from "../api";
 import type { TicketArtifact, TicketTimelineItem } from "@/lib/api/wire";
-import { fmtCost, timeAgo } from "./TicketList";
+import { fmtCost, formatFact, formatSummary } from "../format";
+import { timeAgo } from "./TicketList";
 import styles from "./TicketDetailPanel.module.css";
 
 interface Props {
@@ -52,8 +53,16 @@ function toneClass(item: TicketTimelineItem): string {
   }
   if (item.tone === "warn" || item.tone === "amber") return styles.dotAmber;
   if (item.tone === "success" || item.tone === "green") return styles.dotGreen;
+  if (item.tone === "neutral") return styles.dotHollow;
   return styles.dotBlue;
 }
+
+const REPORT_META: Record<string, [string, string]> = {
+  ready: ["已完成", styles.tagGreen],
+  failed: ["失败", styles.tagRed],
+  blocked: ["受阻", styles.tagRed],
+  waiting: ["等待中", styles.tagNeutral],
+};
 
 function timeOf(iso: string): string {
   const date = new Date(iso);
@@ -133,6 +142,7 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
   const attentionPending = data.bucket === "attention";
   const sourceLabel = data.sourceName
     ?? (data.sourceId ? data.sourceId.slice(0, 14) : "手动创建");
+  const sourceIdSet = Boolean(data.sourceId);
   const actor = data.actor?.name ?? "系统";
   const executor = data.executor === "builtin" || !data.executor
     ? "内置执行器"
@@ -140,11 +150,17 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
   const pendingAttention = pendingInbox(attentions.data?.items).find(
     (item) => item.ticketId === ticketId,
   );
-  const budgetCap = data.budget?.maxCostMicros;
+  const budgetCap = data.budget?.maxCostMicros ?? data.budget?.max_cost_micros;
   const budgetPct = budgetCap
     ? Math.min(100, Math.round(((data.costMicros ?? 0) / budgetCap) * 100))
     : 0;
   const facts = data.report?.facts ?? {};
+  const reportWaitingAfterEnd =
+    ended && data.report?.state === "waiting";
+  const [reportLabel, reportTone] = reportWaitingAfterEnd
+    ? ["已结束", styles.tagNeutral]
+    : REPORT_META[data.report?.state ?? "ready"]
+      ?? [data.report?.state ?? "—", styles.tagNeutral];
 
   function exportReport() {
     const payload = {
@@ -203,96 +219,101 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
           </Button>
         ) : null}
         <div className={styles.headMain}>
-          <h2 className={styles.title}>{data.title}</h2>
-          <div className={styles.chips}>
-            <span className={`${styles.tag} ${styles.tagOutline} ${styles.refChip}`}>
-              {data.ticketId}
-            </span>
+          <h2 className={styles.title} title={data.title}>{data.title}</h2>
+          <div className={styles.meta}>
             <span className={`${styles.tag} ${statusTone}`}>{statusLabel}</span>
-            <span className={`${styles.tag} ${styles.tagBlue}`}>{data.strength}</span>
-            <span className={`${styles.tag} ${styles.tagOutline}`}>
-              策略 v{data.policyVersion ?? 1}
-            </span>
-            <span className={`${styles.tag} ${styles.tagOutline}`}>{executor}</span>
-            <span className={styles.hint}>
+            <span className={styles.tag}>{data.strength}</span>
+            <span className={styles.tag}>策略 v{data.policyVersion ?? 1}</span>
+            <span className={styles.tag}>{executor}</span>
+            <span className={styles.metaText}>
               {sourceLabel} · @{actor} · {timeAgo(data.createdAt)}
             </span>
+            <code className={styles.idChip} title="任务 ID">{data.ticketId}</code>
           </div>
         </div>
+        {/* Actions follow the task state: an open task can be re-queued,
+            funded or cancelled; an ended one can be re-run, edited or
+            deleted. All six at once squeezed the title to a character per
+            line on narrower panes. */}
         <div className={styles.actions}>
-          <Button
-            size="sm"
-            variant="secondary"
-            data-testid="detail-reassign"
-            loading={reassign.isPending}
-            disabled={!canWrite || ended || attentionPending}
-            title={
-              attentionPending
-                ? "先处理待决审批，再重新派工"
-                : ended
-                  ? "任务已结束"
-                  : "结束当前执行并重新排队"
-            }
-            onClick={doReassign}
-          >
-            重新派工
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            data-testid="detail-budget"
-            disabled={!canWrite || ended}
-            onClick={() => setBudgetOpen(true)}
-          >
-            追加预算
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            data-testid="detail-rerun"
-            loading={rerun.isPending}
-            disabled={!canWrite || !ended}
-            title={ended ? "重新排队并执行此任务" : "任务结束后可再次运行"}
-            onClick={() => rerun.mutate(data.ticketId, {
-              onSuccess: () => setNotice("已重新排队，执行器会再次领取该任务。"),
-              onError: (error) => setNotice(`再次运行失败：${errorText(error)}`),
-            })}
-          >
-            再次运行
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            data-testid="detail-edit"
-            disabled={!canWrite || !ended}
-            title={ended ? "编辑标题与任务说明；再次运行会使用新说明" : "运行中不可编辑，请先取消任务"}
-            onClick={() => {
-              setEditTitle(data.title);
-              setEditInstruction(data.instruction ?? "");
-              setEditOpen(true);
-            }}
-          >
-            编辑
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            data-testid="drawer-stop"
-            disabled={!canWrite || ended}
-            onClick={() => setConfirmStop(true)}
-          >
-            取消任务
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="detail-delete"
-            disabled={!canWrite || !ended}
-            title={ended ? "删除此任务记录" : "先停止任务，再删除"}
-            onClick={() => setConfirmDelete(true)}
-          >
-            删除
-          </Button>
+          {ended ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="detail-rerun"
+                loading={rerun.isPending}
+                disabled={!canWrite}
+                title="重新排队并执行此任务"
+                onClick={() => rerun.mutate(data.ticketId, {
+                  onSuccess: () => setNotice("已重新排队，执行器会再次领取该任务。"),
+                  onError: (error) => setNotice(`再次运行失败：${errorText(error)}`),
+                })}
+              >
+                再次运行
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="detail-edit"
+                disabled={!canWrite}
+                title="编辑标题与任务说明；再次运行会使用新说明"
+                onClick={() => {
+                  setEditTitle(data.title);
+                  setEditInstruction(data.instruction ?? "");
+                  setEditOpen(true);
+                }}
+              >
+                编辑
+              </Button>
+              <Button
+                size="sm"
+                variant="outlineDanger"
+                data-testid="detail-delete"
+                disabled={!canWrite}
+                title="删除此任务记录"
+                onClick={() => setConfirmDelete(true)}
+              >
+                删除
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="detail-reassign"
+                loading={reassign.isPending}
+                disabled={!canWrite || attentionPending}
+                title={
+                  attentionPending
+                    ? "先处理待决审批，再重新派工"
+                    : "结束当前执行并重新排队"
+                }
+                onClick={doReassign}
+              >
+                重新派工
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="detail-budget"
+                disabled={!canWrite}
+                onClick={() => setBudgetOpen(true)}
+              >
+                追加预算
+              </Button>
+              <Button
+                size="sm"
+                variant="outlineDanger"
+                data-testid="drawer-stop"
+                disabled={!canWrite}
+                onClick={() => setConfirmStop(true)}
+              >
+                取消任务
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -331,21 +352,6 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
         <div className={styles.panelHead}>
           <b>任务内容</b>
           <span className={styles.panelSub}>执行器收到的指令</span>
-          <span className={styles.spacer} />
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="instruction-edit"
-            disabled={!canWrite || !ended}
-            title={ended ? "编辑任务说明" : "运行中不可编辑"}
-            onClick={() => {
-              setEditTitle(data.title);
-              setEditInstruction(data.instruction ?? "");
-              setEditOpen(true);
-            }}
-          >
-            编辑
-          </Button>
         </div>
         <p className={styles.instruction}>
           {data.instruction || "无任务说明"}
@@ -357,9 +363,7 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
           <b>授权范围</b>
           <span className={styles.panelSub}>Mandate · 不可变</span>
           <span className={styles.spacer} />
-          <span className={`${styles.tag} ${styles.tagOutline}`}>
-            policy v{data.policyVersion ?? 1}
-          </span>
+          <span className={styles.tag}>policy v{data.policyVersion ?? 1}</span>
         </div>
         <dl className={styles.dl}>
           <dt>scope</dt>
@@ -375,34 +379,46 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
           </dd>
           <dt>发起人</dt>
           <dd>
-            {sourceLabel}:{actor}
+            {sourceIdSet ? (
+              <span className={styles.mutedInline}>{sourceLabel} · </span>
+            ) : null}
+            <span className={styles.actorChip}>{actor}</span>
           </dd>
           <dt>预算</dt>
           <dd>
-            {fmtCost(data.costMicros)} / {budgetCap ? fmtCost(budgetCap) : "未设置"}
+            {budgetCap ? (
+              <>
+                <b className={styles.costNow}>{fmtCost(data.costMicros)}</b>
+                <span className={styles.mutedInline}>/ {fmtCost(budgetCap)}</span>
+              </>
+            ) : (
+              <span className={styles.mutedInline}>未设置上限</span>
+            )}
           </dd>
         </dl>
-        <div className={styles.budgetBar} aria-hidden="true" data-testid="budget-bar">
-          <i
-            className={`${styles.budgetFill} ${
-              budgetPct >= 80 ? styles.budgetWarn : ""
-            }`}
-            style={{ width: `${budgetCap ? budgetPct : 0}%` }}
-          />
-        </div>
-        <div className={styles.budgetMeta}>
-          <span>{budgetCap ? `已用 ${budgetPct}%` : "未设置上限"}</span>
-          {budgetPct >= 80 && data.state !== "ended" ? (
-            <span className={styles.budgetAlert}>接近或已超预算</span>
-          ) : null}
-        </div>
+        {budgetCap ? (
+          <div className={styles.budgetMeter}>
+            <div className={styles.budgetBar} data-testid="budget-bar">
+              <i
+                className={budgetPct >= 80 ? styles.budgetFillWarn : styles.budgetFill}
+                style={{ width: `${budgetPct}%` }}
+              />
+            </div>
+            <div className={styles.budgetMeta}>
+              <span>已用 {budgetPct}%</span>
+              {budgetPct >= 80 && data.state !== "ended" ? (
+                <span className={styles.budgetAlert}>接近或已超预算</span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className={styles.panelCard}>
         <div className={styles.panelHead}>
           <b>任务线</b>
           <span className={styles.panelSub}>
-            Trigger → Gate → Eval → Ticket → Assign → Execution → Report → Attention
+            Trigger → Eval → Ticket → Assign → Report → Attention
           </span>
         </div>
         {timeline.isLoading ? (
@@ -417,15 +433,18 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
               <li key={item.id} className={styles.tlItem}>
                 <span className={styles.tlTime}>{timeOf(item.at)}</span>
                 <span className={`${styles.dot} ${toneClass(item)}`} />
-                <div className={styles.tlMain}>
-                  <div className={styles.tlTitle}>
-                    <span className={styles.kind}>{KIND_LABEL[item.kind] ?? item.kind}</span>
-                    <span>{item.title}</span>
-                  </div>
+                <span className={styles.tlKind}>
+                  {KIND_LABEL[item.kind] ?? item.kind}
+                </span>
+                <span
+                  className={styles.tlText}
+                  title={[item.title, item.description].filter(Boolean).join(" · ")}
+                >
+                  {item.title}
                   {item.description ? (
-                    <div className={styles.tlDesc}>{item.description}</div>
+                    <span className={styles.tlDesc}> · {item.description}</span>
                   ) : null}
-                </div>
+                </span>
               </li>
             ))}
           </ul>
@@ -433,25 +452,26 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
       </section>
 
       {data.report ? (
-        <section className={styles.panelCard}>
+        <section className={styles.panelCard} data-testid="ticket-report">
           <div className={styles.panelHead}>
             <b>报告</b>
-            <span className={`${styles.tag} ${styles.tagOutline}`}>
-              {data.report.state}
-            </span>
+            <span className={`${styles.tag} ${reportTone}`}>{reportLabel}</span>
           </div>
-          <p className={styles.report}>{data.report.summary}</p>
+          <p className={styles.report}>
+            {formatSummary(data.report.summary, data.state === "ended")}
+          </p>
           {Object.keys(facts).length ? (
-            <ul className={styles.facts}>
-              {Object.entries(facts).map(([key, value]) => (
-                <li key={key}>
-                  <code>{key}</code>
-                  <span>
-                    {typeof value === "object" ? JSON.stringify(value) : String(value)}
+            <div className={styles.facts}>
+              {Object.entries(facts).map(([key, value]) => {
+                const fact = formatFact(key, value);
+                return (
+                  <span key={key} className={styles.fact}>
+                    <span>{fact.label}</span>
+                    <b>{fact.value}</b>
                   </span>
-                </li>
-              ))}
-            </ul>
+                );
+              })}
+            </div>
           ) : null}
         </section>
       ) : null}
@@ -470,26 +490,32 @@ export function TicketDetailPanel({ ticketId, onBack, onDeleted }: Props) {
             {data.artifacts.map((item) => (
               <li key={item.artifactId}>
                 <span className={styles.artifactIcon} aria-hidden="true">▤</span>
-                <span className={styles.artifactName}>{item.kind} · {item.ref}</span>
-                <span className={styles.spacer} />
-                <span className={styles.muted}>{sizeLabel(item.size)}</span>
+                <span className={styles.artifactName} title={item.ref}>
+                  {item.kind === "file" ? item.ref : `${item.kind} · ${item.ref}`}
+                </span>
+                {item.size ? (
+                  <span className={styles.artifactSize}>{sizeLabel(item.size)}</span>
+                ) : null}
                 {item.kind === "file" ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                  <button
+                    type="button"
+                    className={styles.artifactLink}
                     data-testid="artifact-preview"
                     onClick={() => setPreviewArtifact(item)}
                   >
                     预览
-                  </Button>
+                  </button>
                 ) : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p className={styles.muted}>
-            还没有产物。若任务只返回文本，报告内容见上方；需要文件时请在指令中明确要求写入工作区。
-          </p>
+          <div className={styles.artifactsEmpty}>
+            <p>还没有产物</p>
+            <span>
+              只返回文本的任务不产生文件；需要文件时，在任务说明里写明要写入的文件名。
+            </span>
+          </div>
         )}
       </section>
 

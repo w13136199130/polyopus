@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
  *
  * Stable assertions instead:
  *  - wait for the worker to idle, seed 2, watch the DONE bucket grow by 2
- *  - inline detail shows the ready Report (scope/budget/执行 completed)
+ *  - inline detail shows the ready Report (scope/budget/执行完成)
  *  - stop flow via a ticket paused at the policy gate (deterministic pause):
  *    FakeModel's write intent parks the ticket in 待决 -> stop -> done
  */
@@ -126,7 +126,7 @@ test("tasks: auto-execution fills the done bucket, detail shows the report", asy
   const detail = page.getByTestId("ticket-detail");
   await expect(detail).toBeVisible();
   await expect(detail).toContainText("workspace:default");
-  await expect(detail).toContainText("completed");
+  await expect(detail).toContainText("执行完成");
   await expect(detail).toContainText("Gate");
   await expect(detail).toContainText("Eval");
   expect(page.url()).toMatch(/ticketId=/);
@@ -164,7 +164,8 @@ test("tasks: policy-gated ticket parks in 待决, stop moves it to done", async 
   await card.click();
   const detail = page.getByTestId("ticket-detail");
   await expect(detail).toContainText(ticket!);
-  await expect(detail.getByTestId("budget-bar")).toBeVisible();
+  // no ceiling yet: the mandate says so instead of drawing an empty meter
+  await expect(detail).toContainText("未设置上限");
   await page.getByTestId("drawer-stop").click();
   const confirm = page.getByRole("dialog", { name: "取消任务" });
   await confirm.getByRole("button", { name: "确认取消" }).click();
@@ -275,6 +276,7 @@ test("tasks: add budget from inline detail", async ({ page }) => {
   await expect(detail).toContainText("已追加预算 ¥2.00", { timeout: 15_000 });
   await expect(detail).toContainText("¥2.00", { timeout: 15_000 });
   await expect(detail).toContainText("追加预算");
+  await expect(detail.getByTestId("budget-bar")).toBeVisible();
 });
 
 test("tasks: executed write registers an artifact and previews it", async ({ page }) => {
