@@ -185,6 +185,25 @@ def test_parent_delegates_to_published_child(tmp_path: Path) -> None:
     assert "子智能体 · 分析员" in names
     assert "子智能体 · fs.read" in names
 
+    # Regression: the assistant tool-call ids must match the tool results.
+    # Real OpenAI-compatible providers reject the next round otherwise.
+    saved = conn.execute(
+        "SELECT messages_json FROM subagent_runs WHERE parent_turn_id = ?",
+        (turn_id,),
+    ).fetchone()
+    assert saved is not None
+    child_messages = json.loads(saved[0])
+    call_ids = [
+        call["id"]
+        for message in child_messages if message["role"] == "assistant"
+        for call in message.get("tool_calls") or []
+    ]
+    tool_ids = [
+        message["tool_call_id"]
+        for message in child_messages if message["role"] == "tool"
+    ]
+    assert call_ids == tool_ids
+
     usage = conn.execute(
         "SELECT model, input_tokens, output_tokens FROM usage_ledger"
         " WHERE turn_id = ? ORDER BY id", (turn_id,),

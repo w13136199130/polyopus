@@ -908,9 +908,12 @@ async def _drive_child(
             role="assistant",
             content=text,
             reasoning_content=reasoning or None,
+            # The tool result is keyed by the SAME id we put on the assistant
+            # tool call; providers reject a tool message that answers an id the
+            # assistant never emitted (`_sub` namespacing avoids parent clashes).
             tool_calls=tuple(
                 gateway_types.ToolCallMessagePart(
-                    id=call.id or f"sub{state.rounds}_{index}",
+                    id=f"{state.parent_call_id}_sub{state.rounds}_{index}",
                     name=call.name,
                     arguments_json=call.arguments_json,
                 )
