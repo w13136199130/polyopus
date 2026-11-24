@@ -74,6 +74,22 @@ describe("message-trace", () => {
     expect(traceFor(trace, "tu_1").mode).toBe("plan");
   });
 
+  it("shows a subagent summary and its task instead of raw JSON", () => {
+    const args = '{"agent_id":"ag_1","task":"读取 notes.txt 并总结"}';
+    const trace = summarizeTrace([
+      event(1, "tool.started", {
+        tool_call_id: "tc_s", name: "子智能体 · 分析员", args_preview: args,
+      }),
+      event(2, "tool.completed", {
+        tool_call_id: "tc_s",
+        output: { agentName: "分析员", summary: "结论：notes.txt 写着 alpha" },
+      }),
+    ]);
+    const turn = traceFor(trace, "tu_1");
+    expect(turn.steps[0].args).toBe("读取 notes.txt 并总结");
+    expect(turn.steps[0].output).toBe("结论：notes.txt 写着 alpha");
+  });
+
   it("formatArgs prefers the path and trims unknown payloads", () => {
     expect(formatArgs("fs.read", '{"path":"a.txt"}')).toBe("a.txt");
     expect(formatArgs("shell.exec", `{"cmd":"${"x".repeat(120)}"}`)).toHaveLength(81);

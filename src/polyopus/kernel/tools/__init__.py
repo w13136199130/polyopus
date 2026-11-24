@@ -19,11 +19,17 @@ from polyopus.kernel.tools.policy import (
     ToolRuntime,
     default_rules,
 )
+from polyopus.kernel.tools.subagent import (
+    SUBAGENT_SPEC,
+    SUBAGENT_TOOL,
+    SUBAGENT_WIRE,
+)
 
 WIRE_NAMES = {
     "fs_read": FS_READ_SPEC.name,
     "fs_write": FS_WRITE_SPEC.name,
     "demo_sleep": DEMO_SLEEP_SPEC.name,
+    SUBAGENT_WIRE: SUBAGENT_TOOL,
 }
 
 # gateway specs (model-visible) keyed by internal name
@@ -42,6 +48,9 @@ POLICY_SPECS = {
         FS_WRITE_SPEC.name, "high", True, required_scope="fs:write"
     ),
     DEMO_SLEEP_SPEC.name: ToolPolicySpec(DEMO_SLEEP_SPEC.name, "low", False),
+    # Delegation itself is read-only: the child only gets fs.read. It is only
+    # advertised when the thread selected at least one published subagent.
+    SUBAGENT_TOOL: ToolPolicySpec(SUBAGENT_TOOL, "low", False),
 }
 
 
@@ -70,6 +79,9 @@ __all__ = [
     "POLICY_SPECS",
     "PolicyEngine",
     "Rule",
+    "SUBAGENT_SPEC",
+    "SUBAGENT_TOOL",
+    "SUBAGENT_WIRE",
     "ToolError",
     "ToolPolicySpec",
     "ToolResult",

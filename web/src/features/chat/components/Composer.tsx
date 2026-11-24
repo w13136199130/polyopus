@@ -462,6 +462,7 @@ export function Composer({
                     <label key={agent.agentId} className={styles.checkRow}>
                       <input
                         type="checkbox"
+                        data-testid="subagent-option"
                         checked={subagentIds.includes(agent.agentId)}
                         onChange={() => onToggleSubagent(agent.agentId)}
                       />
@@ -473,7 +474,7 @@ export function Composer({
                   ))
                 )}
                 <p className={styles.menuHint}>
-                  编排与委派能力随 v1.1 子智能体运行时开放；当前记录选择便于复用。
+                  选中的子智能体会收到只读委派任务；子智能体不能写文件或再次委派。
                 </p>
               </div>
             ) : null}

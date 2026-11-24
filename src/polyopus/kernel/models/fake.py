@@ -39,6 +39,7 @@ class FakeModel:
         self.delay_seconds = delay_seconds
         self.calls: list[str] = []
         self._async_started = False
+        self._delegate_started = False
 
     def capabilities(self, model: str) -> ModelCaps:
         return ModelCaps()
@@ -50,7 +51,33 @@ class FakeModel:
     _WRITE_INTENT = re.compile(r"写|保存|write|save", re.IGNORECASE)
     _FILENAME = re.compile(r"[\w.-]+\.(?:txt|md|yml|yaml|py|json)")
     _ASYNC_INTENT = re.compile(r"异步|async", re.IGNORECASE)
+    _DELEGATE_INTENT = re.compile(r"委派|子智能体|delegate", re.IGNORECASE)
     _SECONDS = re.compile(r"(\d+(?:\.\d+)?)\s*(?:秒|s\b|sec(?:onds?)?)", re.I)
+
+    def _delegate_call(self, req: ModelRequest) -> ToolCallDelta | None:
+        """Simulate a parent that delegates once when the session selected a
+        subagent (v1.1 demo/e2e path). The model picks the first enum value."""
+        if self._delegate_started:
+            return None
+        spec = next((tool for tool in req.tools if tool.name == "subagent.delegate"), None)
+        if spec is None:
+            return None
+        prompt = self._prompt_of(req)
+        if not self._DELEGATE_INTENT.search(prompt):
+            return None
+        schema = spec.parameters_json_schema or {}
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        agent_schema = properties.get("agent_id") if isinstance(properties, dict) else None
+        enum = agent_schema.get("enum") if isinstance(agent_schema, dict) else None
+        if not isinstance(enum, list) or not enum:
+            return None
+        self._delegate_started = True
+        return ToolCallDelta(
+            id="tc_fake_delegate", name="subagent_delegate",
+            arguments_json=json.dumps(
+                {"agent_id": str(enum[0]), "task": prompt}, ensure_ascii=False
+            ),
+        )
 
     def _sleep_call(self, req: ModelRequest) -> ToolCallDelta | None:
         """Simulate an async tool call (V05-17): "异步 10 秒" -> demo.sleep.
@@ -91,7 +118,11 @@ class FakeModel:
     async def stream(self, req: ModelRequest) -> AsyncIterator[ModelDelta]:
         prompt = self._prompt_of(req)
         self.calls.append(prompt)
-        write = self._sleep_call(req) or self._write_call(req)
+        write = (
+            self._delegate_call(req)
+            or self._sleep_call(req)
+            or self._write_call(req)
+        )
         if write is not None:
             yield write
             yield UsageDelta(input_tokens=len(prompt.split()), output_tokens=1)

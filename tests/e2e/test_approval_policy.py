@@ -346,5 +346,7 @@ def test_expired_ticket_approval_also_closes_the_ticket(
     assert resumed == 1
     row = _rows(db, "SELECT state, bucket FROM tickets WHERE ticket_id = ?", ticket_id)[0]
     assert (row["state"], row["bucket"]) == ("ended", "done")
-    report = _rows(db, "SELECT summary FROM reports WHERE ticket_id = ?", ticket_id)[-1]
+    report = _rows(
+        db, "SELECT summary FROM reports WHERE ticket_id = ? ORDER BY id", ticket_id
+    )[-1]
     assert "过期" in report["summary"]

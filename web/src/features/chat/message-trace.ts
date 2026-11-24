@@ -65,12 +65,30 @@ function pathOf(raw: unknown): string | null {
   return match ? match[1] : null;
 }
 
-/** Human-readable argument label: fs.read/write show the path, others trim. */
+/** Human-readable argument label: fs.read/write show the path, subagent
+ * calls show the task, others trim. */
 export function formatArgs(_name: string, raw: unknown): string {
   const path = pathOf(raw);
   if (path) return path;
   const text = typeof raw === "string" ? raw : compact(raw, 80);
+  if (_name.startsWith("子智能体")) {
+    try {
+      const parsed = JSON.parse(text) as { task?: unknown };
+      if (typeof parsed.task === "string") return compact(parsed.task, 80);
+    } catch {
+      /* args_preview may be truncated */
+    }
+    const match = text.match(/"task"\s*:\s*"([^"]*)"/);
+    if (match) return compact(match[1], 80);
+  }
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+}
+
+/** Delegation output is a structured result; show the child's summary. */
+function summaryOf(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const summary = (value as Record<string, unknown>).summary;
+  return typeof summary === "string" ? summary : null;
 }
 
 /**
@@ -149,7 +167,7 @@ export function summarizeTrace(
       const step = entry.step;
       step.status = event.type === "tool.completed" ? "ok" : "failed";
       step.output = event.type === "tool.completed"
-        ? compact(payload.output)
+        ? summaryOf(payload.output) ?? compact(payload.output)
         : compact(payload.message ?? payload.code ?? "工具执行失败");
       const seconds = event.ts - entry.startedAt;
       if (seconds > 0) step.durationMs = seconds * 1000;

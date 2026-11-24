@@ -28,6 +28,7 @@ from polyopus.kernel.models import gateway as gateway_types
 from polyopus.kernel.tools import (
     GATEWAY_SPECS,
     POLICY_SPECS,
+    SUBAGENT_TOOL,
     Decision,
     PolicyEngine,
     Rule,
@@ -66,6 +67,13 @@ class EngineConfig:
     workspace: Path | None = None
     max_tool_rounds: int = 2
     policy_rules: tuple[Rule, ...] = ()  # empty -> default_rules()
+    # v1.1 single-level delegation: cap how many children one turn may spawn
+    # and how many model rounds each child gets (read-only tools only).
+    max_delegations: int = 3
+    subagent_max_rounds: int = 2
+    # Test/dev hook: force the gateway used for child agents. Production
+    # resolves the child's own model through the registry.
+    subagent_model: gateway_types.ModelGateway | None = None
 
 
 def _now() -> int:
@@ -340,6 +348,372 @@ def _record_file_artifact(
     except (OSError, sqlite3.Error):
         # Artifact registration is advisory; the tool itself already succeeded.
         return
+
+
+async def _collect_child_round(
+    gateway: gateway_types.ModelGateway,
+    request: gateway_types.ModelRequest,
+) -> tuple[str, str, list[gateway_types.ToolCallDelta], int, int, int, int | None]:
+    """Consume one child model round without touching the parent message stream.
+
+    The child's text is returned to the parent as a tool result, so it must not
+    emit `message.delta` events on the parent turn.
+    """
+    text: list[str] = []
+    reasoning: list[str] = []
+    calls: list[gateway_types.ToolCallDelta] = []
+    input_tokens = output_tokens = cached_tokens = 0
+    first_token_ms: int | None = None
+    started = time.monotonic()
+    async for delta in gateway.stream(request):
+        if isinstance(delta, gateway_types.TextDelta):
+            if first_token_ms is None:
+                first_token_ms = int((time.monotonic() - started) * 1000)
+            text.append(delta.text)
+        elif isinstance(delta, gateway_types.ReasoningDelta):
+            reasoning.append(delta.text)
+        elif isinstance(delta, gateway_types.ToolCallDelta):
+            calls.append(delta)
+        elif isinstance(delta, gateway_types.UsageDelta):
+            input_tokens += delta.input_tokens
+            output_tokens += delta.output_tokens
+            cached_tokens += delta.cached_tokens
+    return (
+        "".join(text), "".join(reasoning), calls,
+        input_tokens, output_tokens, cached_tokens, first_token_ms,
+    )
+
+
+async def _delegate_to_subagent(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    parent_turn_id: str,
+    run_id: str,
+    call_id: str,
+    parent_agent_id: str | None,
+    arguments_json: str,
+    parent_user: str,
+    workspace: Path | None,
+    registry: agents_registry.Registry,
+    cfg: EngineConfig,
+) -> dict[str, object]:
+    """Run one published child agent with read-only tools and return its result.
+
+    Depth is one by construction: the child tool list never contains the
+    delegation tool, and validation rejects self/unknown/unpublished agents.
+    """
+    args = _args_of(arguments_json)
+    agent_id = str(args.get("agent_id") or "").strip()
+    task = str(args.get("task") or "").strip()
+    if not agent_id or not task:
+        raise ToolError("TOOL_ARGS_INVALID", "agent_id and task are required")
+    if agent_id == (parent_agent_id or ""):
+        raise ToolError("SUBAGENT_SELF", "不能把子任务委派给当前专家自己")
+
+    session = _thread_settings(conn, thread_id)
+    selected = session.get("subagentIds")
+    if not isinstance(selected, list) or agent_id not in {str(item) for item in selected}:
+        raise ToolError("SUBAGENT_NOT_SELECTED", "该子智能体未被本会话选中")
+
+    from polyopus.domains.agents import service as agents_service
+
+    agent = agents_service.get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
+    if agent.get("status") != "published":
+        raise ToolError("SUBAGENT_NOT_PUBLISHED", "子智能体尚未发布")
+
+    child_model = str(agent.get("model") or "").strip() or None
+    resolved = registry.resolve(child_model)
+    gateway: gateway_types.ModelGateway
+    if cfg.subagent_model is not None:
+        gateway = cfg.subagent_model
+    elif resolved.fake:
+        gateway = FakeModel(
+            chunk_words=cfg.chunk_words, delay_seconds=cfg.delay_seconds
+        )
+    else:
+        gateway = resolved.gateway
+
+    child_prompt = str(agent.get("systemPrompt") or "").strip()
+    system_prompt = (
+        f"你是子智能体「{agent['name']}」。\n{child_prompt}\n\n"
+        "你只负责完成主智能体交办的子任务。你只能读取工作区文件（fs.read），"
+        "不能写文件、不能调用其他子智能体、不能请求审批。"
+        "完成后用简洁中文返回：结论、依据（文件路径/行号）、未解决项。不要寒暄。"
+    )
+    context = parent_user.strip()
+    user_content = (
+        f"主任务：{context[:2000]}\n\n子任务：{task}"
+        if context else f"子任务：{task}"
+    )
+    messages: list[gateway_types.ChatMessage] = [
+        gateway_types.ChatMessage(role="system", content=system_prompt),
+        gateway_types.ChatMessage(role="user", content=user_content),
+    ]
+    child_tools = (
+        (GATEWAY_SPECS["fs.read"],) if workspace is not None else ()
+    )
+
+    store.append(
+        thread_id,
+        "subagent.started",
+        {
+            "tool_call_id": call_id,
+            "agent_id": agent_id,
+            "agent_name": str(agent["name"]),
+            "task": task[:500],
+            "model": resolved.model,
+        },
+        tenant_id=tenant_id, turn_id=parent_turn_id, run_id=run_id,
+    )
+    used_tools: list[str] = []
+    rounds = 0
+    input_tokens = output_tokens = cached_tokens = 0
+    first_token_ms: int | None = None
+    final_text = ""
+    while rounds <= cfg.subagent_max_rounds:
+        rounds += 1
+        request = gateway_types.ModelRequest(
+            model=resolved.model,
+            messages=tuple(messages),
+            max_output_tokens=2048,
+            tools=child_tools,
+            tenant_id=tenant_id,
+        )
+        text, reasoning, calls, in_tok, out_tok, cache_tok, first = (
+            await _collect_child_round(gateway, request)
+        )
+        input_tokens += in_tok
+        output_tokens += out_tok
+        cached_tokens += cache_tok
+        if first_token_ms is None and first is not None:
+            first_token_ms = first
+        if not calls:
+            final_text = text
+            break
+        messages.append(
+            gateway_types.ChatMessage(
+                role="assistant",
+                content=text,
+                reasoning_content=reasoning or None,
+                tool_calls=tuple(
+                    gateway_types.ToolCallMessagePart(
+                        id=call.id or f"sub_{rounds}_{index}",
+                        name=call.name,
+                        arguments_json=call.arguments_json,
+                    )
+                    for index, call in enumerate(calls)
+                ),
+            )
+        )
+        for index, call in enumerate(calls):
+            child_call_id = f"{call_id}_sub{rounds}_{index}"
+            internal = internal_name(call.name)
+            if internal == "fs.read" and workspace is not None:
+                store.append(
+                    thread_id,
+                    "tool.started",
+                    {
+                        "tool_call_id": child_call_id,
+                        "name": "子智能体 · fs.read",
+                        "tool_key": "fs.read",
+                        "source": "builtin",
+                        "risk": "low",
+                        "args_digest": str(len(call.arguments_json)),
+                        "args_preview": call.arguments_json[:200],
+                    },
+                    tenant_id=tenant_id,
+                    turn_id=parent_turn_id, run_id=run_id,
+                )
+                try:
+                    read_result = dispatch("fs.read", workspace, call.arguments_json)
+                    output_json = json.dumps(read_result.output, ensure_ascii=False)
+                    store.append(
+                        thread_id,
+                        "tool.completed",
+                        {
+                            "tool_call_id": child_call_id,
+                            "output": read_result.output,
+                            "source": "builtin",
+                        },
+                        tenant_id=tenant_id,
+                        turn_id=parent_turn_id, run_id=run_id,
+                    )
+                    used_tools.append("fs.read")
+                except (ToolError, AppError, OSError, RuntimeError) as exc:
+                    code = exc.code if isinstance(exc, (ToolError, AppError)) else "TOOL_FAILED"
+                    output_json = json.dumps(
+                        {"error": code, "message": str(exc)}, ensure_ascii=False
+                    )
+                    store.append(
+                        thread_id,
+                        "tool.failed",
+                        {
+                            "tool_call_id": child_call_id,
+                            "code": code,
+                            "message": str(exc),
+                            "retryable": False,
+                            "source": "builtin",
+                        },
+                        tenant_id=tenant_id,
+                        turn_id=parent_turn_id, run_id=run_id,
+                    )
+            else:
+                output_json = json.dumps(
+                    {
+                        "error": "TOOL_DENIED",
+                        "message": "子智能体只能只读调查（fs.read），不能写文件或继续委派",
+                    },
+                    ensure_ascii=False,
+                )
+            messages.append(
+                gateway_types.ChatMessage(
+                    role="tool",
+                    content=output_json[:4000],
+                    tool_call_id=call.id or child_call_id,
+                )
+            )
+
+    if not final_text.strip():
+        final_text = "（子智能体没有返回文本）"
+
+    _record_usage(
+        conn, store,
+        tenant_id=tenant_id, thread_id=thread_id, turn_id=parent_turn_id,
+        model=resolved.model,
+        input_tokens=input_tokens, output_tokens=output_tokens,
+        cached_tokens=cached_tokens, first_token_ms=first_token_ms,
+    )
+    result: dict[str, object] = {
+        "agentId": agent_id,
+        "agentName": str(agent["name"]),
+        "summary": final_text[:6000],
+        "rounds": rounds,
+        "tools": used_tools,
+        "usage": {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_tokens": cached_tokens,
+            "model": resolved.model,
+        },
+    }
+    store.append(
+        thread_id,
+        "subagent.completed",
+        {
+            "tool_call_id": call_id,
+            "agent_id": agent_id,
+            "agent_name": str(agent["name"]),
+            "summary": final_text[:1000],
+            "usage": result["usage"],
+            "tools": used_tools,
+            "rounds": rounds,
+        },
+        tenant_id=tenant_id, turn_id=parent_turn_id, run_id=run_id,
+    )
+    return result
+
+
+async def _execute_delegation(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    turn_id: str,
+    run_id: str,
+    call_id: str,
+    tool_round: int,
+    arguments_json: str,
+    parent_user: str,
+    parent_agent_id: str | None,
+    workspace: Path | None,
+    registry: agents_registry.Registry,
+    cfg: EngineConfig,
+) -> tuple[str, bool]:
+    """Wrap a delegation with tool.started/completed events + a steps row."""
+    args = _args_of(arguments_json)
+    agent_id = str(args.get("agent_id") or "").strip()
+    row = conn.execute(
+        "SELECT name FROM agents WHERE tenant_id = ? AND agent_id = ?",
+        (tenant_id, agent_id),
+    ).fetchone()
+    display = f"子智能体 · {row[0]}" if row is not None else "子智能体"
+    store.append(
+        thread_id,
+        "tool.started",
+        {
+            "tool_call_id": call_id,
+            "name": display,
+            "tool_key": SUBAGENT_TOOL,
+            "source": "builtin",
+            "risk": "low",
+            "args_digest": str(len(arguments_json)),
+            "args_preview": arguments_json[:200],
+        },
+        tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+    )
+    started = _now()
+    try:
+        output = await _delegate_to_subagent(
+            conn, store,
+            tenant_id=tenant_id, thread_id=thread_id,
+            parent_turn_id=turn_id, run_id=run_id, call_id=call_id,
+            parent_agent_id=parent_agent_id,
+            arguments_json=arguments_json, parent_user=parent_user,
+            workspace=workspace, registry=registry, cfg=cfg,
+        )
+        output_json = json.dumps(output, ensure_ascii=False)
+        store.append(
+            thread_id,
+            "tool.completed",
+            {"tool_call_id": call_id, "output": output, "source": "builtin"},
+            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+        )
+        ok = True
+    except (ToolError, AppError, OSError, RuntimeError) as exc:
+        code = exc.code if isinstance(exc, (ToolError, AppError)) else "SUBAGENT_FAILED"
+        message = str(exc)
+        output_json = json.dumps(
+            {"error": code, "message": message}, ensure_ascii=False
+        )
+        store.append(
+            thread_id,
+            "tool.failed",
+            {
+                "tool_call_id": call_id,
+                "code": code,
+                "message": message,
+                "retryable": False,
+                "source": "builtin",
+            },
+            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+        )
+        store.append(
+            thread_id,
+            "subagent.failed",
+            {"tool_call_id": call_id, "agent_id": agent_id,
+             "code": code, "message": message},
+            tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+        )
+        ok = False
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO steps
+          (tenant_id, step_id, run_id, idx, kind, status, input_json,
+           output_json, started_at, finished_at)
+        VALUES (?, ?, ?, ?, 'tool', 'completed', ?, ?, ?, ?)
+        """,
+        (tenant_id, f"st_{run_id}_sub{call_id[-6:]}", run_id, tool_round,
+         arguments_json[:500], output_json[:4000], started, _now()),
+    )
+    conn.commit()
+    from polyopus.platform.observability import metrics
+
+    metrics.tool_call(display, "ok" if ok else "failed")
+    return output_json, ok
 
 
 def _execute_call(
@@ -697,6 +1071,7 @@ async def run_turn(
     )
 
     tool_round = 0
+    delegations = 0
     while True:
         request = gateway_types.ModelRequest(
             model=resolved.model,
@@ -783,7 +1158,33 @@ async def run_turn(
 
             if spec is not None and decision.effect == "allow":
                 gateway_spec = runtime_tool.gateway if runtime_tool else None
-                if (
+                if internal == SUBAGENT_TOOL:
+                    if delegations >= cfg.max_delegations:
+                        output_json = _refuse_call(
+                            conn, store,
+                            call_id=call_id, internal=internal,
+                            code="delegation_limit",
+                            message=f"单轮最多委派 {cfg.max_delegations} 次",
+                            risk=risk, run_id=run_id, thread_id=thread_id,
+                            turn_id=turn_id, tenant_id=tenant_id,
+                            tool_round=tool_round,
+                            arguments_json=call.arguments_json,
+                            display_name=tool_label, source=tool_source,
+                        )
+                    else:
+                        delegations += 1
+                        output_json, _ok = await _execute_delegation(
+                            conn, store,
+                            tenant_id=tenant_id, thread_id=thread_id,
+                            turn_id=turn_id, run_id=run_id,
+                            call_id=call_id, tool_round=tool_round,
+                            arguments_json=call.arguments_json,
+                            parent_user=user_content,
+                            parent_agent_id=quota_agent,
+                            workspace=cfg.workspace, registry=registry,
+                            cfg=cfg,
+                        )
+                elif (
                     runtime_tool is not None
                     and runtime_tool.connector is None
                     and gateway_spec is not None
@@ -997,7 +1398,18 @@ def resume_after_approval(
             )
         else:
             gateway_spec = runtime_tool.gateway if runtime_tool else None
-            if (
+            if internal == SUBAGENT_TOOL:
+                output_json, _ok = asyncio.run(_execute_delegation(
+                    conn, store,
+                    tenant_id=tenant_id, thread_id=thread_id,
+                    turn_id=turn_id, run_id=run_id,
+                    call_id=call_id, tool_round=99,
+                    arguments_json=arguments_json,
+                    parent_user=user_content,
+                    parent_agent_id=_agent_of(conn, thread_id),
+                    workspace=workspace, registry=registry, cfg=cfg,
+                ))
+            elif (
                 runtime_tool is not None
                 and runtime_tool.connector is None
                 and gateway_spec is not None
@@ -1292,6 +1704,51 @@ def _runtime_tools(
         out[binding.tool_key] = _RuntimeTool(
             binding.tool_key, spec, policy, binding,
         )
+
+    # v1.1 委派：只有会话显式选了「已发布」子智能体时才把工具交给模型。
+    selected_agents = session.get("subagentIds")
+    if isinstance(selected_agents, list) and selected_agents:
+        wanted = [str(item) for item in selected_agents if str(item) != (agent_id or "")]
+        if wanted:
+            marks = ",".join("?" for _ in wanted)
+            rows = conn.execute(
+                "SELECT agent_id, name, COALESCE(description, '') AS description"
+                " FROM agents WHERE tenant_id = ? AND deleted_at IS NULL"
+                f" AND status = 'published' AND agent_id IN ({marks})"
+                " ORDER BY name",
+                (tenant_id, *wanted),
+            ).fetchall()
+            if rows:
+                lines = [
+                    f"- {row['name']}（{row['agent_id']}）：{row['description'] or '无描述'}"
+                    for row in rows
+                ]
+                spec = gateway_types.ToolSpec(
+                    name=SUBAGENT_TOOL,
+                    description=(
+                        "把子任务委派给下列已选子智能体之一。子智能体只能只读调查"
+                        "（可读工作区文件），不能写文件、不能再次委派；返回结论后"
+                        "由你整合成最终回答。\n" + "\n".join(lines)
+                    ),
+                    parameters_json_schema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "enum": [str(row["agent_id"]) for row in rows],
+                                "description": "目标子智能体 ID",
+                            },
+                            "task": {
+                                "type": "string",
+                                "description": "交给子智能体的具体子任务",
+                            },
+                        },
+                        "required": ["agent_id", "task"],
+                    },
+                )
+                out[SUBAGENT_TOOL] = _RuntimeTool(
+                    SUBAGENT_TOOL, spec, POLICY_SPECS[SUBAGENT_TOOL],
+                )
     return out
 
 
