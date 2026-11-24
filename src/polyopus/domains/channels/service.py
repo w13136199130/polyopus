@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -317,15 +319,9 @@ def probe(
     return result
 
 
-def send_text(
-    conn: sqlite3.Connection,
-    *,
-    tenant_id: str,
-    channel_id: str,
-    chat_id: str,
-    text: str,
-) -> dict[str, Any]:
-    row = _channel(conn, tenant_id, channel_id)
+def _deliver_text(
+    row: sqlite3.Row, *, chat_id: str, text: str,
+) -> tuple[bool, str, str | None]:
     token = _tenant_token(row)
     try:
         response = httpx.post(
@@ -341,30 +337,167 @@ def send_text(
         )
         payload = response.json()
     except (httpx.HTTPError, ValueError) as exc:
-        _record_message(
-            conn, tenant_id=tenant_id, channel_id=channel_id,
-            direction="outbound", external_id="out_" + secrets.token_hex(8),
-            thread_id=None, ticket_id=None, actor_id=None, actor_kind="bot",
-            payload={"chat_id": chat_id, "text": text},
-            status="failed", error_code=str(exc),
-        )
-        raise AppError("CHANNEL_SEND_FAILED", details={"reason": str(exc)}) from exc
+        return False, "", str(exc)
     ok = int(payload.get("code") or 0) == 0
     message_id = str((payload.get("data") or {}).get("message_id") or "")
+    return ok, message_id, None if ok else str(payload.get("msg") or "send failed")
+
+
+def send_text(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    channel_id: str,
+    chat_id: str,
+    text: str,
+    ticket_id: str | None = None,
+    thread_id: str | None = None,
+) -> dict[str, Any]:
+    row = _channel(conn, tenant_id, channel_id)
+    ok, message_id, error = _deliver_text(row, chat_id=chat_id, text=text)
     _record_message(
         conn, tenant_id=tenant_id, channel_id=channel_id,
         direction="outbound",
         external_id=message_id or "out_" + secrets.token_hex(8),
-        thread_id=None, ticket_id=None, actor_id=None, actor_kind="bot",
-        payload={"chat_id": chat_id, "text": text, "response": payload},
+        thread_id=thread_id, ticket_id=ticket_id, actor_id=None, actor_kind="bot",
+        payload={"chat_id": chat_id, "text": text},
         status="sent" if ok else "failed",
-        error_code=None if ok else str(payload.get("msg") or "send failed"),
+        error_code=error,
     )
     if not ok:
-        raise AppError("CHANNEL_SEND_FAILED", details={
-            "reason": payload.get("msg") or "send failed",
-        })
+        raise AppError("CHANNEL_SEND_FAILED", details={"reason": error or "send failed"})
     return {"ok": True, "messageId": message_id}
+
+
+def enqueue_text(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    channel_id: str,
+    chat_id: str,
+    text: str,
+    ticket_id: str | None = None,
+    thread_id: str | None = None,
+) -> str:
+    """Queue one outbound text; the channel worker delivers it later."""
+    message_id = "cm_" + secrets.token_hex(8)
+    conn.execute(
+        "INSERT INTO channel_messages"
+        " (message_id, tenant_id, channel_id, direction, external_id,"
+        "  thread_id, ticket_id, actor_id, actor_kind, payload_json, status,"
+        "  error_code, created_at)"
+        " VALUES (?, ?, ?, 'outbound', ?, ?, ?, NULL, 'bot', ?, 'queued', NULL, ?)",
+        (
+            message_id, tenant_id, channel_id, "out_" + secrets.token_hex(8),
+            thread_id, ticket_id,
+            json.dumps({"chat_id": chat_id, "text": text}, ensure_ascii=False),
+            _now(),
+        ),
+    )
+    conn.commit()
+    return message_id
+
+
+def enqueue_ticket_reply(
+    conn: sqlite3.Connection,
+    *,
+    ticket_id: str,
+    state: str,
+    summary: str = "",
+) -> str | None:
+    """Send the ticket's latest assistant answer back to the origin chat."""
+    inbound = conn.execute(
+        """
+        SELECT tenant_id, channel_id, thread_id, payload_json
+        FROM channel_messages
+        WHERE direction = 'inbound' AND ticket_id = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (ticket_id,),
+    ).fetchone()
+    if inbound is None:
+        return None
+    try:
+        payload = json.loads(str(inbound["payload_json"] or "{}"))
+        chat_id = str(
+            ((payload.get("event") or {}).get("message") or {}).get("chat_id") or ""
+        )
+    except ValueError:
+        chat_id = ""
+    if not chat_id:
+        return None
+    thread_id = inbound["thread_id"]
+    answer = ""
+    if thread_id:
+        answer_row = conn.execute(
+            "SELECT content FROM messages WHERE thread_id = ? AND role = 'assistant'"
+            " AND content <> '' ORDER BY seq DESC LIMIT 1",
+            (thread_id,),
+        ).fetchone()
+        if answer_row is not None:
+            answer = str(answer_row[0] or "").strip()
+    label = {
+        "ready": "完成", "blocked": "待处理", "failed": "失败",
+        "denied": "已拒绝", "cancelled": "已取消",
+    }.get(state, state)
+    body = answer or summary
+    text = f"任务{label}：{body}" if body else f"任务{label}。"
+    return enqueue_text(
+        conn, tenant_id=str(inbound["tenant_id"]),
+        channel_id=str(inbound["channel_id"]), chat_id=chat_id,
+        text=text[:4000], ticket_id=ticket_id,
+        thread_id=thread_id,
+    )
+
+
+def deliver_queued(conn: sqlite3.Connection, *, limit: int = 10) -> int:
+    """Deliver queued outbound rows; returns how many reached Feishu."""
+    rows = conn.execute(
+        "SELECT * FROM channel_messages WHERE direction = 'outbound'"
+        " AND status = 'queued' ORDER BY id LIMIT ?", (max(1, limit),),
+    ).fetchall()
+    delivered = 0
+    for queued in rows:
+        channel = conn.execute(
+            "SELECT * FROM channels WHERE tenant_id = ? AND channel_id = ?",
+            (queued["tenant_id"], queued["channel_id"]),
+        ).fetchone()
+        if channel is None or str(channel["status"]) != "active":
+            conn.execute(
+                "UPDATE channel_messages SET status = 'failed', error_code = ?"
+                " WHERE id = ?",
+                ("channel missing" if channel is None else "channel disabled",
+                 queued["id"]),
+            )
+            conn.commit()
+            continue
+        try:
+            payload = json.loads(str(queued["payload_json"] or "{}"))
+        except ValueError:
+            payload = {}
+        chat_id = str(payload.get("chat_id") or "")
+        text = str(payload.get("text") or "")
+        if not chat_id or not text:
+            conn.execute(
+                "UPDATE channel_messages SET status = 'failed', error_code = ?"
+                " WHERE id = ?", ("missing chat_id/text", queued["id"]),
+            )
+            conn.commit()
+            continue
+        ok, message_id, error = _deliver_text(channel, chat_id=chat_id, text=text)
+        conn.execute(
+            "UPDATE channel_messages SET status = ?, error_code = ?,"
+            " external_id = CASE WHEN ? <> '' THEN ? ELSE external_id END"
+            " WHERE id = ?",
+            (
+                "sent" if ok else "failed", error,
+                message_id, message_id, queued["id"],
+            ),
+        )
+        conn.commit()
+        if ok:
+            delivered += 1
+    return delivered
 
 
 def _record_message(
@@ -424,6 +557,143 @@ def _event_token(body: dict[str, Any]) -> str:
     )
 
 
+def _workspace() -> Path:
+    from polyopus.config import load_settings
+
+    return load_settings().workspace_dir
+
+
+def _parse_command(text: str) -> tuple[str, str | None] | None:
+    cleaned = re.sub(r"^(?:@\S+\s+)+", "", text.strip())
+    parts = cleaned.split()
+    if not parts:
+        return None
+    decision = {
+        "/approve": "approved",
+        "/reject": "denied",
+        "/批准": "approved",
+        "/拒绝": "denied",
+    }.get(parts[0].lower())
+    if decision is None:
+        return None
+    return decision, parts[1] if len(parts) > 1 else None
+
+
+def _latest_ticket_for_chat(
+    conn: sqlite3.Connection, *, tenant_id: str, channel_id: str, chat_id: str,
+) -> sqlite3.Row | None:
+    return cast(sqlite3.Row | None, conn.execute(
+        """
+        SELECT ticket_id, thread_id FROM channel_messages
+        WHERE tenant_id = ? AND channel_id = ? AND direction = 'inbound'
+          AND ticket_id IS NOT NULL
+          AND json_extract(payload_json, '$.event.message.chat_id') = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (tenant_id, channel_id, chat_id),
+    ).fetchone())
+
+
+def _handle_command(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    row: sqlite3.Row,
+    *,
+    tenant_id: str,
+    channel_id: str,
+    chat_id: str,
+    actor: str,
+    text: str,
+    body: dict[str, Any],
+    external_id: str,
+) -> dict[str, Any]:
+    parsed = _parse_command(text)
+    assert parsed is not None
+    decision, target = parsed
+    inserted = _record_message(
+        conn, tenant_id=tenant_id, channel_id=channel_id,
+        direction="inbound", external_id=external_id,
+        thread_id=None, ticket_id=None, actor_id=actor, actor_kind="user",
+        payload=body, status="command",
+    )
+    if not inserted:
+        return {"duplicate": True, "externalId": external_id}
+
+    found = _latest_ticket_for_chat(
+        conn, tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
+    )
+    if found is None:
+        enqueue_text(
+            conn, tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
+            text="当前没有待处理审批。",
+        )
+        return {"ignored": "no_ticket"}
+
+    ticket_id = str(found["ticket_id"])
+    thread_id = str(found["thread_id"] or "")
+    pending = conn.execute(
+        "SELECT attention_id, source_id, turn_id FROM attentions"
+        " WHERE tenant_id = ? AND ticket_id = ? AND status = 'pending'"
+        " AND source_type = 'approval' ORDER BY id DESC",
+        (tenant_id, ticket_id),
+    ).fetchall()
+    attention = None
+    if target:
+        attention = next(
+            (item for item in pending if str(item["attention_id"]) == target), None,
+        )
+    elif pending:
+        attention = pending[0]
+    if attention is None:
+        enqueue_text(
+            conn, tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
+            text=f"没有匹配的待处理审批{f'：{target}' if target else '。'}",
+            ticket_id=ticket_id, thread_id=thread_id or None,
+        )
+        return {"ignored": "no_attention", "ticketId": ticket_id}
+
+    from polyopus.domains.attention import service as attention_svc
+    from polyopus.domains.tickets import service as tickets
+    from polyopus.workers import engine
+
+    try:
+        attention_svc.resolve(
+            conn, store, tenant_id=tenant_id, thread_id=thread_id,
+            approval_id=str(attention["source_id"]), decision=decision,
+            by=actor,
+        )
+        status = engine.resume_after_approval(
+            conn, store, str(attention["turn_id"]), owner="channel",
+            decision=decision,
+            config=engine.EngineConfig(workspace=_workspace()),
+        )
+        ack = (
+            "已批准，还有一个审批待处理。"
+            if decision == "approved" and status == "waiting_approval"
+            else "已批准，任务继续。" if decision == "approved"
+            else "已拒绝，任务结束。"
+        )
+        enqueue_text(
+            conn, tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
+            text=ack, ticket_id=ticket_id, thread_id=thread_id or None,
+        )
+        if status != "waiting_approval":
+            tickets.finish_after_attention(
+                conn, store, ticket_id, decision=decision,
+            )
+    except Exception as exc:  # noqa: BLE001 - reply with a readable failure
+        enqueue_text(
+            conn, tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
+            text=f"审批处理失败：{exc}", ticket_id=ticket_id,
+            thread_id=thread_id or None,
+        )
+    return {
+        "ticketId": ticket_id,
+        "attentionId": attention["attention_id"],
+        "decision": decision,
+    }
+
+
 def handle_event(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -474,6 +744,13 @@ def handle_event(
             payload=body, status="ignored", error_code="no_mention",
         )
         return {"ignored": "no_mention"}
+
+    if _parse_command(text) is not None:
+        return _handle_command(
+            conn, store, row,
+            tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
+            actor=actor, text=text, body=body, external_id=external_id,
+        )
 
     inserted = _record_message(
         conn, tenant_id=tenant_id, channel_id=channel_id,

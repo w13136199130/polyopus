@@ -182,6 +182,16 @@ def finish_after_attention(
         str(assignment["assignment_id"]) if assignment else "as_inline",
         thread_id, "ready", summary, facts={},
     )
+    try:
+        from polyopus.domains.channels import service as channels
+
+        channels.enqueue_ticket_reply(
+            conn, ticket_id=ticket_id,
+            state="ready" if decision.startswith("approved") else "denied",
+            summary=summary,
+        )
+    except Exception:  # noqa: BLE001 - IM delivery is advisory
+        pass
     now = _now()
     conn.execute(
         "UPDATE assignments SET state = 'ended', ended_at = ? "
@@ -604,6 +614,15 @@ def _enqueue_reply(
     except Exception as exc:  # noqa: BLE001 - log and move on
         tlog.log(tlog.get_logger("polyopus.tickets"), 30, "outbound.enqueue_failed",
                  ticket_id=ticket_id, report_id=report_id, error=str(exc))
+    try:
+        from polyopus.domains.channels import service as channels
+
+        channels.enqueue_ticket_reply(
+            conn, ticket_id=ticket_id, state=state, summary=summary,
+        )
+    except Exception as exc:  # noqa: BLE001 - IM delivery is advisory
+        tlog.log(tlog.get_logger("polyopus.tickets"), 30, "channel.reply_failed",
+                 ticket_id=ticket_id, error=str(exc))
 
 
 def _record_report(

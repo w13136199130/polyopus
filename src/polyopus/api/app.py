@@ -72,6 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         stops: list[threading.Event] = []
         if effective.embedded_worker:
+            from polyopus.workers.channels_loop import start_embedded as start_channels
             from polyopus.workers.data_jobs_loop import start_embedded as start_jobs
             from polyopus.workers.outbox_loop import start_embedded as start_outbox
             from polyopus.workers.scheduler_loop import start_embedded as start_scheduler
@@ -83,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             stops.append(start_outbox(effective.resolved_db_path))
             stops.append(start_scheduler(effective.resolved_db_path))
             stops.append(start_jobs(effective.resolved_db_path))
+            stops.append(start_channels(effective.resolved_db_path))
         try:
             yield
         finally:

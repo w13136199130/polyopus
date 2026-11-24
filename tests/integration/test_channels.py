@@ -13,8 +13,11 @@ from fastapi.testclient import TestClient
 from polyopus.api.app import create_app
 from polyopus.config import Settings
 from polyopus.domains.channels import service as channels
+from polyopus.domains.tickets import service as tickets
 from polyopus.platform.db import migrator as m
 from polyopus.platform.db.seed import ensure_admin
+from polyopus.platform.events.store import EventStore
+from polyopus.workers import engine
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / "migrations"
@@ -210,3 +213,169 @@ def test_delete_disables_channel_and_pauses_source(
         json=_message_body(),
     )
     assert event.status_code >= 400
+
+
+class FakeFeishu:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        sent = self.sent
+
+        class Response:
+            def __init__(self, payload: dict) -> None:
+                self._payload = payload
+
+            def json(self) -> dict:
+                return self._payload
+
+        def fake_post(url: str, **kwargs: object) -> Response:
+            if "tenant_access_token" in url:
+                return Response({"code": 0, "tenant_access_token": "tok"})
+            body = kwargs.get("json") or {}
+            content = body.get("content") if isinstance(body, dict) else "{}"
+            try:
+                sent.append(json.loads(str(content)).get("text", ""))
+            except ValueError:
+                sent.append("")
+            return Response({"code": 0, "data": {"message_id": f"om_out_{len(sent)}"}})
+
+        monkeypatch.setattr(channels.httpx, "post", fake_post)
+
+
+def _open_ticket(client: TestClient, channel_id: str, text: str,
+                 message_id: str) -> str:
+    response = client.post(
+        f"/api/v1/channels/feishu/{channel_id}/events",
+        json=_message_body(message_id=message_id, text=text),
+    )
+    assert response.status_code == 200, response.text
+    ticket_id = response.json()["ticketId"]
+    assert ticket_id
+    return str(ticket_id)
+
+
+def test_terminal_ticket_reply_is_queued_and_delivered(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 总结一下这次发布", "om_done",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        state = tickets.run_assignment(
+            conn, store, ticket_id, content="总结一下这次发布",
+            engine_config=engine.EngineConfig(workspace=ws),
+        )
+        assert state in ("ready", "completed", "done", "blocked")
+        queued = conn.execute(
+            "SELECT count(*) FROM channel_messages WHERE direction='outbound'"
+            " AND status='queued' AND ticket_id = ?", (ticket_id,),
+        ).fetchone()[0]
+        assert queued == 1
+        fake = FakeFeishu()
+        fake.install(monkeypatch)
+        channels.deliver_queued(conn)
+        assert fake.sent and "任务完成" in fake.sent[0]
+        assert "总结一下这次发布" in fake.sent[0]
+    finally:
+        conn.close()
+
+
+def test_approve_command_resumes_ticket_and_replies(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_write",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        command = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_message_body(message_id="om_approve", text="/approve"),
+        )
+        assert command.status_code == 200, command.text
+        assert command.json()["decision"] == "approved"
+        row = conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,)
+        ).fetchone()
+        assert row[0] == "ended"
+        assert (ws / "out.txt").is_file()
+
+        fake = FakeFeishu()
+        fake.install(monkeypatch)
+        channels.deliver_queued(conn, limit=10)
+        assert any("已批准" in text for text in fake.sent)
+        assert any("任务完成" in text for text in fake.sent)
+    finally:
+        conn.close()
+
+
+def test_reject_command_denies_and_replies(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_write2",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        command = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_message_body(message_id="om_reject", text="/reject"),
+        )
+        assert command.status_code == 200, command.text
+        assert command.json()["decision"] == "denied"
+        assert not (ws / "out.txt").exists()
+
+        fake = FakeFeishu()
+        fake.install(monkeypatch)
+        channels.deliver_queued(conn, limit=10)
+        assert any("已拒绝" in text for text in fake.sent)
+    finally:
+        conn.close()
+
+
+def test_command_without_pending_attention_replies(
+    env: tuple[Path, TestClient], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    response = client.post(
+        f"/api/v1/channels/feishu/{created['channelId']}/events",
+        json=_message_body(message_id="om_none", text="/approve"),
+    )
+    assert response.status_code == 200
+    assert response.json()["ignored"] == "no_ticket"
+    conn = m.connect(db)
+    try:
+        fake = FakeFeishu()
+        fake.install(monkeypatch)
+        channels.deliver_queued(conn)
+        assert fake.sent == ["当前没有待处理审批。"]
+    finally:
+        conn.close()
