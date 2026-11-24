@@ -104,6 +104,8 @@ class FakeModel:
         path without a real model)."""
         if not any(t.name == "fs.write" for t in req.tools):
             return None
+        if any(message.role == "tool" for message in req.messages):
+            return None  # a tool already ran: summarize instead of writing again
         prompt = self._prompt_of(req)
         if not self._WRITE_INTENT.search(prompt):
             return None

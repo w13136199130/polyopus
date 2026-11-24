@@ -114,14 +114,16 @@ def _resolve_and_resume(
     # it per tmp_path; the engine would otherwise fall back to global settings)
     workspace = Path(request.app.state.settings.workspace_dir)
     workspace.mkdir(parents=True, exist_ok=True)
-    engine.resume_after_approval(
+    resumed = engine.resume_after_approval(
         conn, store, turn_id, decision=actual,
         config=engine.EngineConfig(workspace=workspace),
     )
     # 交互还原 (prototype task-q): an approval answered on a TICKET turn must
     # also close the ticket — the resume path never re-enters the assignment
     # tail, so without this the ticket parks in `attention` orphaned.
-    if row["ticket_id"]:
+    # A delegated child may have paused on ANOTHER approval: leave the ticket
+    # open for that one instead of closing it early.
+    if row["ticket_id"] and resumed != "waiting_approval":
         from polyopus.domains.tickets import service as tickets
 
         try:

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 
 from polyopus.domains.agents import service as agents
+from polyopus.domains.attention import service as attention
 from polyopus.domains.conversations import service as conversations
 from polyopus.kernel.models import gateway as gt
 from polyopus.platform.db import migrator as m
@@ -368,4 +370,232 @@ def test_parent_stop_cancels_a_running_child(tmp_path: Path) -> None:
         ).fetchall()
     }
     assert "subagent.cancelled" in types
+    conn.close()
+
+
+class WritingChild:
+    """Calls fs.write once; after the tool result it summarizes."""
+
+    def __init__(self) -> None:
+        self.requests: list[gt.ModelRequest] = []
+        self.tool_output = ""
+
+    def capabilities(self, model: str) -> gt.ModelCaps:
+        return gt.ModelCaps()
+
+    async def stream(self, req: gt.ModelRequest) -> AsyncIterator[gt.ModelDelta]:
+        self.requests.append(req)
+        has_tool_result = any(message.role == "tool" for message in req.messages)
+        if not has_tool_result:
+            assert any(tool.name == "fs.write" for tool in req.tools)
+            yield gt.ToolCallDelta(
+                id="tc_child_write", name="fs_write",
+                arguments_json=json.dumps(
+                    {"path": "out.txt", "content": "alpha"}
+                ),
+            )
+            yield gt.UsageDelta(input_tokens=6, output_tokens=1)
+            yield gt.FinishDelta(reason="tool_calls")
+            return
+        for message in reversed(req.messages):
+            if message.role == "tool":
+                self.tool_output = message.content
+                break
+        yield gt.TextDelta(text="子结论：写入流程结束")
+        yield gt.UsageDelta(input_tokens=8, output_tokens=3)
+        yield gt.FinishDelta(reason="stop")
+
+
+def _pending_approval(conn, turn_id: str) -> str:
+    row = conn.execute(
+        "SELECT approval_id FROM approvals WHERE turn_id = ? AND status = 'pending'"
+        " ORDER BY id DESC LIMIT 1", (turn_id,),
+    ).fetchone()
+    assert row is not None
+    return str(row[0])
+
+
+def _write_flow(tmp_path: Path) -> tuple[Path, sqlite3.Connection, str, str]:
+    conn = _env(tmp_path)
+    parent_id = _agent(
+        conn, name="主专家", prompt="你负责拆解任务。", model="parent-model",
+        publish=True,
+    )
+    child_id = _agent(
+        conn, name="写入专家", prompt="你负责写文件。", model="child-model",
+        publish=True,
+    )
+    thread_id = _thread(conn, parent_id, [child_id])
+    store = EventStore(conn)
+    turn_id, _ = conversations.post_turn(
+        conn, store, tenant_id="default", owner_id="u",
+        thread_id=thread_id, content="请委派子智能体写一个文件",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    cfg = engine.EngineConfig(
+        workspace=ws, subagent_model=WritingChild(), subagent_max_rounds=3,
+    )
+    status = asyncio.run(engine.run_turn(
+        conn, store, turn_id, owner="test",
+        model=DelegatingParent(child_id), config=cfg,
+    ))
+    assert status == "waiting_approval"
+    approval_id = _pending_approval(conn, turn_id)
+    return ws, conn, turn_id, approval_id
+
+
+def test_child_write_waits_then_executes_after_approval(tmp_path: Path) -> None:
+    ws, conn, turn_id, approval_id = _write_flow(tmp_path)
+    assert not (ws / "out.txt").exists()
+    row = conn.execute(
+        "SELECT status, approval_id, pending_json FROM subagent_runs"
+        " WHERE parent_turn_id = ?", (turn_id,),
+    ).fetchone()
+    assert row is not None
+    assert row["status"] == "waiting_approval"
+    assert row["approval_id"] == approval_id
+    assert row["pending_json"]
+    assert conn.execute(
+        "SELECT status FROM turns WHERE turn_id = ?", (turn_id,)
+    ).fetchone()[0] == "waiting_approval"
+
+    thread_id = str(conn.execute(
+        "SELECT thread_id FROM turns WHERE turn_id = ?", (turn_id,)
+    ).fetchone()[0])
+    store = EventStore(conn)
+    attention.resolve(
+        conn, store, tenant_id="default", thread_id=thread_id,
+        approval_id=approval_id, decision="approved", by="u",
+    )
+    status = engine.resume_after_approval(
+        conn, store, turn_id, owner="test", decision="approved",
+        config=engine.EngineConfig(
+            workspace=ws, subagent_model=WritingChild(), subagent_max_rounds=3,
+        ),
+    )
+    assert status == "completed"
+    assert (ws / "out.txt").read_text(encoding="utf-8") == "alpha"
+    assert conn.execute(
+        "SELECT status FROM subagent_runs WHERE parent_turn_id = ?", (turn_id,)
+    ).fetchone()[0] == "completed"
+    types = {
+        row[0] for row in conn.execute(
+            "SELECT type FROM events WHERE turn_id = ?", (turn_id,)
+        ).fetchall()
+    }
+    assert {"subagent.waiting", "subagent.completed"} <= types
+    conn.close()
+
+
+def test_child_write_denial_lets_the_child_finish(tmp_path: Path) -> None:
+    ws, conn, turn_id, approval_id = _write_flow(tmp_path)
+    thread_id = str(conn.execute(
+        "SELECT thread_id FROM turns WHERE turn_id = ?", (turn_id,)
+    ).fetchone()[0])
+    store = EventStore(conn)
+    attention.resolve(
+        conn, store, tenant_id="default", thread_id=thread_id,
+        approval_id=approval_id, decision="denied", by="u",
+    )
+    status = engine.resume_after_approval(
+        conn, store, turn_id, owner="test", decision="denied",
+        config=engine.EngineConfig(
+            workspace=ws, subagent_model=WritingChild(), subagent_max_rounds=3,
+        ),
+    )
+    assert status == "completed"
+    assert not (ws / "out.txt").exists()
+    failed = conn.execute(
+        "SELECT payload_json FROM events WHERE turn_id = ? AND type = 'tool.failed'",
+        (turn_id,),
+    ).fetchall()
+    assert any("approval_denied" in row[0] for row in failed)
+    conn.close()
+
+
+class TwoWriteChild:
+    """Writes two files in separate rounds; each write parks for approval."""
+
+    def capabilities(self, model: str) -> gt.ModelCaps:
+        return gt.ModelCaps()
+
+    async def stream(self, req: gt.ModelRequest) -> AsyncIterator[gt.ModelDelta]:
+        tool_count = sum(1 for message in req.messages if message.role == "tool")
+        if tool_count == 0:
+            yield gt.ToolCallDelta(
+                id="tc_w1", name="fs_write",
+                arguments_json=json.dumps({"path": "one.txt", "content": "1"}),
+            )
+            yield gt.UsageDelta(input_tokens=4, output_tokens=1)
+            yield gt.FinishDelta(reason="tool_calls")
+            return
+        if tool_count == 1:
+            yield gt.ToolCallDelta(
+                id="tc_w2", name="fs_write",
+                arguments_json=json.dumps({"path": "two.txt", "content": "2"}),
+            )
+            yield gt.UsageDelta(input_tokens=6, output_tokens=1)
+            yield gt.FinishDelta(reason="tool_calls")
+            return
+        yield gt.TextDelta(text="两次写入都完成了")
+        yield gt.UsageDelta(input_tokens=8, output_tokens=4)
+        yield gt.FinishDelta(reason="stop")
+
+
+def test_child_can_pause_twice_without_finishing_the_parent(tmp_path: Path) -> None:
+    conn = _env(tmp_path)
+    parent_id = _agent(
+        conn, name="主专家", prompt="你负责拆解任务。", model="parent-model",
+        publish=True,
+    )
+    child_id = _agent(
+        conn, name="双写专家", prompt="你负责写两个文件。", model="child-model",
+        publish=True,
+    )
+    thread_id = _thread(conn, parent_id, [child_id])
+    store = EventStore(conn)
+    turn_id, _ = conversations.post_turn(
+        conn, store, tenant_id="default", owner_id="u",
+        thread_id=thread_id, content="请委派子智能体写两个文件",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    cfg = engine.EngineConfig(
+        workspace=ws, subagent_model=TwoWriteChild(), subagent_max_rounds=4,
+    )
+    assert asyncio.run(engine.run_turn(
+        conn, store, turn_id, owner="test",
+        model=DelegatingParent(child_id), config=cfg,
+    )) == "waiting_approval"
+    first = _pending_approval(conn, turn_id)
+    attention.resolve(
+        conn, store, tenant_id="default", thread_id=thread_id,
+        approval_id=first, decision="approved", by="u",
+    )
+    assert engine.resume_after_approval(
+        conn, store, turn_id, owner="test", decision="approved",
+        config=engine.EngineConfig(
+            workspace=ws, subagent_model=TwoWriteChild(), subagent_max_rounds=4,
+        ),
+    ) == "waiting_approval"
+    assert (ws / "one.txt").is_file()
+    assert not (ws / "two.txt").exists()
+    assert conn.execute(
+        "SELECT status FROM turns WHERE turn_id = ?", (turn_id,)
+    ).fetchone()[0] == "waiting_approval"
+
+    second = _pending_approval(conn, turn_id)
+    assert second != first
+    attention.resolve(
+        conn, store, tenant_id="default", thread_id=thread_id,
+        approval_id=second, decision="approved", by="u",
+    )
+    assert engine.resume_after_approval(
+        conn, store, turn_id, owner="test", decision="approved",
+        config=engine.EngineConfig(
+            workspace=ws, subagent_model=TwoWriteChild(), subagent_max_rounds=4,
+        ),
+    ) == "completed"
+    assert (ws / "two.txt").read_text(encoding="utf-8") == "2"
     conn.close()

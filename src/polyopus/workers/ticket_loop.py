@@ -175,15 +175,16 @@ def expire_pending_approvals(conn: sqlite3.Connection) -> int:
         if turn is None or str(turn[0]) != "waiting_approval":
             continue  # stopped/finished turns are not resurrected
         try:
-            engine.resume_after_approval(
+            status = engine.resume_after_approval(
                 conn, store, turn_id, decision="denied",
                 config=engine.EngineConfig(workspace=_workspace()),
             )
             resumed += 1
             ticket_id = item.get("ticketId")
-            if ticket_id:
+            if ticket_id and status != "waiting_approval":
                 # The resume path never re-enters the assignment tail, so the
                 # ticket would stay parked in `attention` with nothing pending.
+                # A child delegation may have parked on a NEW approval instead.
                 tickets.finish_after_attention(
                     conn, store, ticket_id, decision="denied", expired=True,
                 )

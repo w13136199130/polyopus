@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 const PASSWORD = "chat-e2e";
 
@@ -101,4 +103,53 @@ test("subagents: expert defaults save and inherit into a new chat", async ({ pag
   await page.getByTestId("new-chat").click();
   await page.waitForURL(/threadId=/);
   await expect(page.getByTestId("composer-subagents")).toContainText("1");
+});
+
+
+/** v1.1: a child write bubbles an approval into the parent conversation. */
+test("subagents: child write waits for approval, then writes", async ({ page }) => {
+  await login(page);
+
+  const stamp = Date.now();
+  const name = `E2E Writer ${stamp}`;
+  const created = await page.request.post("/api/v1/agents", {
+    data: { name, systemPrompt: "你负责写文件。" },
+  });
+  expect(created.ok()).toBe(true);
+  const agent = await created.json();
+  expect((await page.request.post(
+    `/api/v1/agents/${agent.agentId}/publish`,
+  )).ok()).toBe(true);
+
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  await page.getByTestId("composer-subagents").click();
+  const option = page.locator("label", { hasText: name })
+    .getByTestId("subagent-option");
+  const saved = page.waitForResponse(
+    (response) => response.request().method() === "PATCH"
+      && response.url().includes("/api/v1/threads/"),
+  );
+  await option.click();
+  await saved;
+
+  const filename = `e2e-subwrite-${stamp}.md`;
+  await page.getByLabel("消息输入框").fill(
+    `请委派子智能体写一个文件到 ${filename}`,
+  );
+  await page.getByLabel("消息输入框").press("Enter");
+
+  const approval = page.getByTestId("approval-card").first();
+  await expect(approval).toBeVisible({ timeout: 20_000 });
+  await expect(approval).toContainText("子智能体");
+  await expect(approval).toContainText("fs.write");
+  await approval.getByRole("button", { name: "仅本次允许" }).click();
+
+  const card = page.getByTestId("tool-card").filter({ hasText: name });
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(card).toContainText("子智能体 · fs.write");
+
+  const target = path.resolve(process.cwd(), "..", "data", "e2e-chat-ws", filename);
+  await expect.poll(() => fs.existsSync(target), { timeout: 20_000 }).toBe(true);
+  fs.rmSync(target, { force: true });
 });

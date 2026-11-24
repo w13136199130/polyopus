@@ -52,6 +52,10 @@ class _Cancelled(Exception):
     """The turn was cancelled by a human while streaming."""
 
 
+class _DelegationPaused(Exception):
+    """A child write needs a human decision; the parent turn is parked."""
+
+
 def _cancel_requested(conn: sqlite3.Connection, turn_id: str) -> bool:
     row = conn.execute(
         "SELECT status FROM turns WHERE turn_id = ?", (turn_id,)
@@ -395,6 +399,588 @@ async def _collect_child_round(
     )
 
 
+@dataclass
+class _ChildState:
+    delegation_id: str
+    tenant_id: str
+    thread_id: str
+    parent_turn_id: str
+    parent_run_id: str
+    parent_call_id: str
+    parent_args_json: str
+    agent_id: str
+    agent_name: str
+    child_model: str
+    task: str
+    parent_user: str
+    messages: list[gateway_types.ChatMessage]
+    owner: str = "engine"
+    pending: dict[str, object] | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    first_token_ms: int | None = None
+    tools_used: list[str] = field(default_factory=list)
+    rounds: int = 0
+    approval_id: str | None = None
+    ticket_id: str | None = None
+    status: str = "running"
+
+
+def _dump_child_messages(messages: list[gateway_types.ChatMessage]) -> str:
+    return json.dumps(
+        [
+            {
+                "role": message.role,
+                "content": message.content,
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "name": call.name,
+                        "arguments_json": call.arguments_json,
+                    }
+                    for call in message.tool_calls
+                ],
+                "tool_call_id": message.tool_call_id,
+                "reasoning_content": message.reasoning_content,
+            }
+            for message in messages
+        ],
+        ensure_ascii=False,
+    )
+
+
+def _load_child_messages(raw: str) -> list[gateway_types.ChatMessage]:
+    rows = json.loads(raw or "[]")
+    messages: list[gateway_types.ChatMessage] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        calls = tuple(
+            gateway_types.ToolCallMessagePart(
+                id=str(call.get("id") or ""),
+                name=str(call.get("name") or ""),
+                arguments_json=str(call.get("arguments_json") or "{}"),
+            )
+            for call in row.get("tool_calls") or []
+            if isinstance(call, dict)
+        )
+        messages.append(gateway_types.ChatMessage(
+            role=row.get("role") or "user",
+            content=str(row.get("content") or ""),
+            tool_calls=calls,
+            tool_call_id=row.get("tool_call_id"),
+            reasoning_content=row.get("reasoning_content"),
+        ))
+    return messages
+
+
+def _persist_child(conn: sqlite3.Connection, state: _ChildState) -> None:
+    now = _now()
+    usage = {
+        "input_tokens": state.input_tokens,
+        "output_tokens": state.output_tokens,
+        "cached_tokens": state.cached_tokens,
+        "first_token_ms": state.first_token_ms,
+    }
+    conn.execute(
+        """
+        INSERT INTO subagent_runs
+          (delegation_id, tenant_id, thread_id, parent_turn_id, parent_run_id,
+           parent_call_id, parent_args_json, agent_id, agent_name, child_model,
+           task, parent_user, messages_json, pending_json, usage_json,
+           tools_json, rounds, approval_id, status, ticket_id, created_at,
+           updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(delegation_id) DO UPDATE SET
+          messages_json = excluded.messages_json,
+          pending_json = excluded.pending_json,
+          usage_json = excluded.usage_json,
+          tools_json = excluded.tools_json,
+          rounds = excluded.rounds,
+          approval_id = excluded.approval_id,
+          status = excluded.status,
+          updated_at = excluded.updated_at
+        """,
+        (
+            state.delegation_id, state.tenant_id, state.thread_id,
+            state.parent_turn_id, state.parent_run_id, state.parent_call_id,
+            state.parent_args_json, state.agent_id, state.agent_name,
+            state.child_model, state.task, state.parent_user,
+            _dump_child_messages(state.messages),
+            json.dumps(state.pending, ensure_ascii=False)
+            if state.pending is not None else None,
+            json.dumps(usage, ensure_ascii=False),
+            json.dumps(state.tools_used, ensure_ascii=False),
+            state.rounds, state.approval_id, state.status, state.ticket_id,
+            now, now,
+        ),
+    )
+    conn.commit()
+
+
+def _load_child(row: sqlite3.Row) -> _ChildState:
+    usage = json.loads(str(row["usage_json"] or "{}"))
+    return _ChildState(
+        delegation_id=str(row["delegation_id"]),
+        tenant_id=str(row["tenant_id"]),
+        thread_id=str(row["thread_id"]),
+        parent_turn_id=str(row["parent_turn_id"]),
+        parent_run_id=str(row["parent_run_id"]),
+        parent_call_id=str(row["parent_call_id"]),
+        parent_args_json=str(row["parent_args_json"]),
+        agent_id=str(row["agent_id"]),
+        agent_name=str(row["agent_name"]),
+        child_model=str(row["child_model"]),
+        task=str(row["task"]),
+        parent_user=str(row["parent_user"]),
+        messages=_load_child_messages(str(row["messages_json"])),
+        pending=json.loads(str(row["pending_json"]))
+        if row["pending_json"] else None,
+        input_tokens=int(usage.get("input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        cached_tokens=int(usage.get("cached_tokens") or 0),
+        first_token_ms=usage.get("first_token_ms"),
+        tools_used=list(json.loads(str(row["tools_json"] or "[]"))),
+        rounds=int(row["rounds"] or 0),
+        approval_id=row["approval_id"],
+        ticket_id=row["ticket_id"],
+        status=str(row["status"]),
+    )
+
+
+def _child_tool_specs(
+    conn: sqlite3.Connection, *, tenant_id: str, parent_agent_id: str | None,
+    workspace: Path | None,
+) -> tuple[gateway_types.ToolSpec, ...]:
+    if workspace is None:
+        return ()
+    from polyopus.domains.tools import service as tools_svc
+
+    keys = [
+        key for key in ("fs.read", "fs.write")
+        if tools_svc.effective_enabled(
+            conn, tenant_id=tenant_id, agent_id=parent_agent_id,
+            tool_key=key,
+        )
+    ]
+    return tuple(GATEWAY_SPECS[key] for key in keys)
+
+
+def _child_gate(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    parent_agent_id: str | None,
+    session: dict[str, object],
+    ticket_id: str | None,
+    cfg: EngineConfig,
+    internal: str,
+    args: dict[str, object],
+) -> Decision:
+    from polyopus.domains.policy import service as policy_service
+    from polyopus.domains.tools import service as tools_svc
+
+    rules = (
+        list(cfg.policy_rules) if cfg.policy_rules
+        else list(policy_service.resolve_rules(conn, tenant_id)[0])
+    )
+    auto_tools, auto_max = _auto_approve_of(conn, tenant_id, ticket_id)
+    session_approved = session.get("approvedTools")
+    if isinstance(session_approved, list) and session_approved:
+        auto_tools = tuple(dict.fromkeys(
+            (*auto_tools, *(str(item) for item in session_approved))
+        ))
+        auto_max = "high"
+    if str(session.get("approvalPolicy") or "ask") == "auto":
+        auto_tools = ("fs.read", "fs.write")
+        auto_max = "high"
+    engine = PolicyEngine(
+        rules, auto_approve=auto_tools, auto_approve_max_risk=auto_max,
+    )
+    spec = POLICY_SPECS[internal]
+    decision = engine.evaluate(spec, args)
+    if (
+        decision.effect != "deny"
+        and spec.required_scope
+        and ticket_id
+        and not _scope_covers(conn, str(ticket_id), spec.required_scope)
+    ):
+        decision = Decision(
+            "deny", decision.matched,
+            f"scope_violation: {spec.required_scope} not in mandate scope",
+        )
+    if decision.effect != "deny" and not tools_svc.effective_enabled(
+        conn, tenant_id=tenant_id, agent_id=parent_agent_id,
+        tool_key=internal,
+    ):
+        decision = Decision("deny", decision.matched, "tool_disabled")
+    return decision
+
+
+def _execute_child_tool(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    state: _ChildState,
+    *,
+    call: dict[str, object],
+    internal: str,
+    arguments_json: str,
+    risk: str,
+    workspace: Path | None,
+) -> str:
+    call_id = str(call.get("call_id") or "")
+    display = f"子智能体 · {internal}"
+    store.append(
+        state.thread_id,
+        "tool.started",
+        {
+            "tool_call_id": call_id,
+            "name": display,
+            "tool_key": internal,
+            "source": "subagent",
+            "risk": risk,
+            "args_digest": str(len(arguments_json)),
+            "args_preview": arguments_json[:200],
+        },
+        tenant_id=state.tenant_id,
+        turn_id=state.parent_turn_id, run_id=state.parent_run_id,
+    )
+    try:
+        if workspace is None:
+            raise ToolError("TOOL_WORKSPACE", "工作区未配置，无法执行内置工具")
+        result = dispatch(internal, workspace, arguments_json)
+        output = result.output
+        if internal == "fs.write":
+            rel_path = str(output.get("path") or "")
+            if rel_path:
+                _record_file_artifact(
+                    conn, tenant_id=state.tenant_id, thread_id=state.thread_id,
+                    turn_id=state.parent_turn_id, run_id=state.parent_run_id,
+                    workspace=workspace, rel_path=rel_path,
+                )
+        output_json = json.dumps(output, ensure_ascii=False)
+        store.append(
+            state.thread_id,
+            "tool.completed",
+            {"tool_call_id": call_id, "output": output, "source": "subagent"},
+            tenant_id=state.tenant_id,
+            turn_id=state.parent_turn_id, run_id=state.parent_run_id,
+        )
+        if internal not in state.tools_used:
+            state.tools_used.append(internal)
+        return output_json
+    except (ToolError, AppError, OSError, RuntimeError) as exc:
+        code = exc.code if isinstance(exc, (ToolError, AppError)) else "TOOL_FAILED"
+        output_json = json.dumps(
+            {"error": code, "message": str(exc)}, ensure_ascii=False
+        )
+        store.append(
+            state.thread_id,
+            "tool.failed",
+            {
+                "tool_call_id": call_id,
+                "code": code,
+                "message": str(exc),
+                "retryable": False,
+                "source": "subagent",
+            },
+            tenant_id=state.tenant_id,
+            turn_id=state.parent_turn_id, run_id=state.parent_run_id,
+        )
+        return output_json
+
+
+def _pause_child(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    state: _ChildState,
+    *,
+    call: dict[str, object],
+    internal: str,
+    arguments_json: str,
+    risk: str,
+) -> None:
+    approval_id, _ = attention.request(
+        conn, store,
+        tenant_id=state.tenant_id, thread_id=state.thread_id,
+        turn_id=state.parent_turn_id, run_id=state.parent_run_id,
+        step_idx=state.rounds,
+        ticket_id=state.ticket_id,
+        req=attention.ApprovalRequest(
+            tool=internal,
+            tool_label=f"子智能体 · {internal}",
+            source="subagent",
+            args_preview=arguments_json[:200],
+            risk=risk,
+            summary=f"子智能体「{state.agent_name}」请求执行 {internal}",
+            args_json=arguments_json,
+            reasoning="",
+        ),
+    )
+    state.approval_id = approval_id
+    state.status = "waiting_approval"
+    _persist_child(conn, state)
+    _set_turn_status(conn, state.parent_turn_id, "waiting_approval")
+    conn.execute(
+        "UPDATE runs SET status = 'waiting' WHERE run_id = ?",
+        (state.parent_run_id,),
+    )
+    lease.release(conn, state.parent_run_id, state.owner)
+    conn.commit()
+    store.append(
+        state.thread_id,
+        "subagent.waiting",
+        {
+            "tool_call_id": call.get("call_id"),
+            "agent_id": state.agent_id,
+            "agent_name": state.agent_name,
+            "tool": internal,
+            "approval_id": approval_id,
+        },
+        tenant_id=state.tenant_id,
+        turn_id=state.parent_turn_id, run_id=state.parent_run_id,
+    )
+
+
+def _deny_child_tool(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    state: _ChildState,
+    *,
+    call: dict[str, object],
+    internal: str,
+    arguments_json: str,
+    code: str,
+    message: str,
+) -> str:
+    return _refuse_call(
+        conn, store,
+        call_id=str(call.get("call_id") or ""),
+        internal=internal, code=code, message=message, risk="high",
+        run_id=state.parent_run_id, thread_id=state.thread_id,
+        turn_id=state.parent_turn_id, tenant_id=state.tenant_id,
+        tool_round=state.rounds, arguments_json=arguments_json,
+        display_name=f"子智能体 · {internal}", source="subagent",
+    )
+
+
+async def _process_child_pending(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    state: _ChildState,
+    *,
+    session: dict[str, object],
+    parent_agent_id: str | None,
+    workspace: Path | None,
+    cfg: EngineConfig,
+    decision: str | None = None,
+) -> bool:
+    """Process queued child tool calls; True means the child paused for approval."""
+    pending = state.pending or {}
+    calls = pending.get("calls") if isinstance(pending, dict) else None
+    if not isinstance(calls, list) or not calls:
+        state.pending = None
+        return False
+    index = int(str(pending.get("index") or 0))
+    while index < len(calls):
+        call = calls[index] if isinstance(calls[index], dict) else {}
+        internal = internal_name(str(call.get("name") or ""))
+        arguments_json = str(call.get("arguments_json") or "{}")
+        args = _args_of(arguments_json)
+        if decision is not None:
+            if decision in ("approved", "approved_session"):
+                verdict = _child_gate(
+                    conn, tenant_id=state.tenant_id,
+                    parent_agent_id=parent_agent_id, session=session,
+                    ticket_id=state.ticket_id, cfg=cfg,
+                    internal=internal, args=args,
+                )
+                if verdict.effect == "deny":
+                    output_json = _deny_child_tool(
+                        conn, store, state, call=call, internal=internal,
+                        arguments_json=arguments_json,
+                        code="policy_denied",
+                        message=f"规则变更后拒绝：{verdict.reason}",
+                    )
+                else:
+                    output_json = _execute_child_tool(
+                        conn, store, state, call=call, internal=internal,
+                        arguments_json=arguments_json,
+                        risk=str(POLICY_SPECS[internal].risk),
+                        workspace=workspace,
+                    )
+            else:
+                output_json = _deny_child_tool(
+                    conn, store, state, call=call, internal=internal,
+                    arguments_json=arguments_json,
+                    code="approval_denied", message="用户拒绝了该操作",
+                )
+            decision = None
+        else:
+            verdict = _child_gate(
+                conn, tenant_id=state.tenant_id,
+                parent_agent_id=parent_agent_id, session=session,
+                ticket_id=state.ticket_id, cfg=cfg,
+                internal=internal, args=args,
+            )
+            if verdict.effect == "ask":
+                state.pending = {"calls": calls, "index": index}
+                _pause_child(
+                    conn, store, state, call=call, internal=internal,
+                    arguments_json=arguments_json,
+                    risk=str(POLICY_SPECS[internal].risk),
+                )
+                return True
+            if verdict.effect == "deny":
+                output_json = _deny_child_tool(
+                    conn, store, state, call=call, internal=internal,
+                    arguments_json=arguments_json,
+                    code="policy_denied", message=verdict.reason,
+                )
+            else:
+                output_json = _execute_child_tool(
+                    conn, store, state, call=call, internal=internal,
+                    arguments_json=arguments_json,
+                    risk=str(POLICY_SPECS[internal].risk),
+                    workspace=workspace,
+                )
+        state.messages.append(gateway_types.ChatMessage(
+            role="tool",
+            content=output_json[:4000],
+            tool_call_id=str(call.get("call_id") or ""),
+        ))
+        index += 1
+        state.pending = {"calls": calls, "index": index}
+    state.pending = None
+    return False
+
+
+async def _drive_child(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    state: _ChildState,
+    *,
+    gateway: gateway_types.ModelGateway,
+    tools: tuple[gateway_types.ToolSpec, ...],
+    session: dict[str, object],
+    parent_agent_id: str | None,
+    workspace: Path | None,
+    cfg: EngineConfig,
+    decision: str | None = None,
+) -> dict[str, object] | None:
+    """Run or resume the child loop; None means it paused for an approval."""
+    final_text = ""
+    while state.rounds <= cfg.subagent_max_rounds:
+        if state.pending:
+            paused = await _process_child_pending(
+                conn, store, state,
+                session=session, parent_agent_id=parent_agent_id,
+                workspace=workspace, cfg=cfg, decision=decision,
+            )
+            decision = None
+            if paused:
+                return None
+            continue
+        state.rounds += 1
+        request = gateway_types.ModelRequest(
+            model=state.child_model,
+            messages=tuple(state.messages),
+            max_output_tokens=2048,
+            tools=tools,
+            tenant_id=state.tenant_id,
+        )
+        text, reasoning, calls, in_tok, out_tok, cache_tok, first = (
+            await _collect_child_round(
+                gateway, request,
+                conn=conn, parent_turn_id=state.parent_turn_id,
+            )
+        )
+        state.input_tokens += in_tok
+        state.output_tokens += out_tok
+        state.cached_tokens += cache_tok
+        if state.first_token_ms is None and first is not None:
+            state.first_token_ms = first
+        if not calls:
+            final_text = text
+            break
+        state.messages.append(gateway_types.ChatMessage(
+            role="assistant",
+            content=text,
+            reasoning_content=reasoning or None,
+            tool_calls=tuple(
+                gateway_types.ToolCallMessagePart(
+                    id=call.id or f"sub{state.rounds}_{index}",
+                    name=call.name,
+                    arguments_json=call.arguments_json,
+                )
+                for index, call in enumerate(calls)
+            ),
+        ))
+        state.pending = {
+            "calls": [
+                {
+                    "call_id": (
+                        f"{state.parent_call_id}_sub{state.rounds}_{index}"
+                    ),
+                    "name": call.name,
+                    "arguments_json": call.arguments_json,
+                }
+                for index, call in enumerate(calls)
+            ],
+            "index": 0,
+        }
+        paused = await _process_child_pending(
+            conn, store, state,
+            session=session, parent_agent_id=parent_agent_id,
+            workspace=workspace, cfg=cfg,
+        )
+        if paused:
+            return None
+    if not final_text.strip():
+        final_text = "（子智能体没有返回文本）"
+    state.status = "completed"
+    _persist_child(conn, state)
+    usage = {
+        "input_tokens": state.input_tokens,
+        "output_tokens": state.output_tokens,
+        "cached_tokens": state.cached_tokens,
+        "model": state.child_model,
+    }
+    _record_usage(
+        conn, store,
+        tenant_id=state.tenant_id, thread_id=state.thread_id,
+        turn_id=state.parent_turn_id, model=state.child_model,
+        input_tokens=state.input_tokens, output_tokens=state.output_tokens,
+        cached_tokens=state.cached_tokens,
+        first_token_ms=state.first_token_ms,
+    )
+    result: dict[str, object] = {
+        "agentId": state.agent_id,
+        "agentName": state.agent_name,
+        "summary": final_text[:6000],
+        "rounds": state.rounds,
+        "tools": state.tools_used,
+        "usage": usage,
+    }
+    store.append(
+        state.thread_id,
+        "subagent.completed",
+        {
+            "tool_call_id": state.parent_call_id,
+            "agent_id": state.agent_id,
+            "agent_name": state.agent_name,
+            "summary": final_text[:1000],
+            "usage": usage,
+            "tools": state.tools_used,
+            "rounds": state.rounds,
+        },
+        tenant_id=state.tenant_id,
+        turn_id=state.parent_turn_id, run_id=state.parent_run_id,
+    )
+    return result
+
+
 async def _delegate_to_subagent(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -404,18 +990,16 @@ async def _delegate_to_subagent(
     parent_turn_id: str,
     run_id: str,
     call_id: str,
+    owner: str,
     parent_agent_id: str | None,
     arguments_json: str,
     parent_user: str,
     workspace: Path | None,
     registry: agents_registry.Registry,
     cfg: EngineConfig,
+    ticket_id: str | None = None,
 ) -> dict[str, object]:
-    """Run one published child agent with read-only tools and return its result.
-
-    Depth is one by construction: the child tool list never contains the
-    delegation tool, and validation rejects self/unknown/unpublished agents.
-    """
+    """Start a published child agent; may raise _DelegationPaused."""
     args = _args_of(arguments_json)
     agent_id = str(args.get("agent_id") or "").strip()
     task = str(args.get("task") or "").strip()
@@ -450,23 +1034,40 @@ async def _delegate_to_subagent(
     child_prompt = str(agent.get("systemPrompt") or "").strip()
     system_prompt = (
         f"你是子智能体「{agent['name']}」。\n{child_prompt}\n\n"
-        "你只负责完成主智能体交办的子任务。你只能读取工作区文件（fs.read），"
-        "不能写文件、不能调用其他子智能体、不能请求审批。"
-        "完成后用简洁中文返回：结论、依据（文件路径/行号）、未解决项。不要寒暄。"
+        "你只负责完成主智能体交办的子任务。可读取工作区文件（fs.read）；"
+        "写入文件（fs.write）需要主会话人工批准，被拒绝时不要重复尝试。"
+        "不能调用其他子智能体。完成后用简洁中文返回：结论、依据（文件路径/行号）、"
+        "未解决项。不要寒暄。"
     )
     context = parent_user.strip()
     user_content = (
         f"主任务：{context[:2000]}\n\n子任务：{task}"
         if context else f"子任务：{task}"
     )
-    messages: list[gateway_types.ChatMessage] = [
-        gateway_types.ChatMessage(role="system", content=system_prompt),
-        gateway_types.ChatMessage(role="user", content=user_content),
-    ]
-    child_tools = (
-        (GATEWAY_SPECS["fs.read"],) if workspace is not None else ()
+    tools = _child_tool_specs(
+        conn, tenant_id=tenant_id, parent_agent_id=parent_agent_id,
+        workspace=workspace,
     )
-
+    state = _ChildState(
+        delegation_id="sg_" + secrets.token_hex(8),
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        parent_turn_id=parent_turn_id,
+        parent_run_id=run_id,
+        parent_call_id=call_id,
+        parent_args_json=arguments_json,
+        agent_id=agent_id,
+        agent_name=str(agent["name"]),
+        child_model=resolved.model,
+        task=task,
+        parent_user=parent_user,
+        messages=[
+            gateway_types.ChatMessage(role="system", content=system_prompt),
+            gateway_types.ChatMessage(role="user", content=user_content),
+        ],
+        owner=owner,
+        ticket_id=ticket_id,
+    )
     store.append(
         thread_id,
         "subagent.started",
@@ -479,155 +1080,57 @@ async def _delegate_to_subagent(
         },
         tenant_id=tenant_id, turn_id=parent_turn_id, run_id=run_id,
     )
-    used_tools: list[str] = []
-    rounds = 0
-    input_tokens = output_tokens = cached_tokens = 0
-    first_token_ms: int | None = None
-    final_text = ""
-    while rounds <= cfg.subagent_max_rounds:
-        rounds += 1
-        request = gateway_types.ModelRequest(
-            model=resolved.model,
-            messages=tuple(messages),
-            max_output_tokens=2048,
-            tools=child_tools,
-            tenant_id=tenant_id,
-        )
-        text, reasoning, calls, in_tok, out_tok, cache_tok, first = (
-            await _collect_child_round(
-                gateway, request,
-                conn=conn, parent_turn_id=parent_turn_id,
-            )
-        )
-        input_tokens += in_tok
-        output_tokens += out_tok
-        cached_tokens += cache_tok
-        if first_token_ms is None and first is not None:
-            first_token_ms = first
-        if not calls:
-            final_text = text
-            break
-        messages.append(
-            gateway_types.ChatMessage(
-                role="assistant",
-                content=text,
-                reasoning_content=reasoning or None,
-                tool_calls=tuple(
-                    gateway_types.ToolCallMessagePart(
-                        id=call.id or f"sub_{rounds}_{index}",
-                        name=call.name,
-                        arguments_json=call.arguments_json,
-                    )
-                    for index, call in enumerate(calls)
-                ),
-            )
-        )
-        for index, call in enumerate(calls):
-            child_call_id = f"{call_id}_sub{rounds}_{index}"
-            internal = internal_name(call.name)
-            if internal == "fs.read" and workspace is not None:
-                store.append(
-                    thread_id,
-                    "tool.started",
-                    {
-                        "tool_call_id": child_call_id,
-                        "name": "子智能体 · fs.read",
-                        "tool_key": "fs.read",
-                        "source": "builtin",
-                        "risk": "low",
-                        "args_digest": str(len(call.arguments_json)),
-                        "args_preview": call.arguments_json[:200],
-                    },
-                    tenant_id=tenant_id,
-                    turn_id=parent_turn_id, run_id=run_id,
-                )
-                try:
-                    read_result = dispatch("fs.read", workspace, call.arguments_json)
-                    output_json = json.dumps(read_result.output, ensure_ascii=False)
-                    store.append(
-                        thread_id,
-                        "tool.completed",
-                        {
-                            "tool_call_id": child_call_id,
-                            "output": read_result.output,
-                            "source": "builtin",
-                        },
-                        tenant_id=tenant_id,
-                        turn_id=parent_turn_id, run_id=run_id,
-                    )
-                    used_tools.append("fs.read")
-                except (ToolError, AppError, OSError, RuntimeError) as exc:
-                    code = exc.code if isinstance(exc, (ToolError, AppError)) else "TOOL_FAILED"
-                    output_json = json.dumps(
-                        {"error": code, "message": str(exc)}, ensure_ascii=False
-                    )
-                    store.append(
-                        thread_id,
-                        "tool.failed",
-                        {
-                            "tool_call_id": child_call_id,
-                            "code": code,
-                            "message": str(exc),
-                            "retryable": False,
-                            "source": "builtin",
-                        },
-                        tenant_id=tenant_id,
-                        turn_id=parent_turn_id, run_id=run_id,
-                    )
-            else:
-                output_json = json.dumps(
-                    {
-                        "error": "TOOL_DENIED",
-                        "message": "子智能体只能只读调查（fs.read），不能写文件或继续委派",
-                    },
-                    ensure_ascii=False,
-                )
-            messages.append(
-                gateway_types.ChatMessage(
-                    role="tool",
-                    content=output_json[:4000],
-                    tool_call_id=call.id or child_call_id,
-                )
-            )
-
-    if not final_text.strip():
-        final_text = "（子智能体没有返回文本）"
-
-    _record_usage(
-        conn, store,
-        tenant_id=tenant_id, thread_id=thread_id, turn_id=parent_turn_id,
-        model=resolved.model,
-        input_tokens=input_tokens, output_tokens=output_tokens,
-        cached_tokens=cached_tokens, first_token_ms=first_token_ms,
+    result = await _drive_child(
+        conn, store, state,
+        gateway=gateway, tools=tools, session=session,
+        parent_agent_id=parent_agent_id, workspace=workspace, cfg=cfg,
     )
-    result: dict[str, object] = {
-        "agentId": agent_id,
-        "agentName": str(agent["name"]),
-        "summary": final_text[:6000],
-        "rounds": rounds,
-        "tools": used_tools,
-        "usage": {
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "cached_tokens": cached_tokens,
-            "model": resolved.model,
-        },
-    }
-    store.append(
-        thread_id,
-        "subagent.completed",
-        {
-            "tool_call_id": call_id,
-            "agent_id": agent_id,
-            "agent_name": str(agent["name"]),
-            "summary": final_text[:1000],
-            "usage": result["usage"],
-            "tools": used_tools,
-            "rounds": rounds,
-        },
-        tenant_id=tenant_id, turn_id=parent_turn_id, run_id=run_id,
-    )
+    if result is None:
+        raise _DelegationPaused
     return result
+
+
+def _resume_child_delegation(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    row: sqlite3.Row,
+    *,
+    decision: str,
+    owner: str,
+    registry: agents_registry.Registry,
+    cfg: EngineConfig,
+) -> dict[str, object] | None:
+    """Continue a parked child; None means it paused again."""
+    import asyncio
+
+    state = _load_child(row)
+    state.owner = owner
+    state.approval_id = None
+    state.status = "running"
+    session = _thread_settings(conn, state.thread_id)
+    resolved = registry.resolve(state.child_model)
+    gateway: gateway_types.ModelGateway
+    if cfg.subagent_model is not None:
+        gateway = cfg.subagent_model
+    elif resolved.fake:
+        gateway = FakeModel(
+            chunk_words=cfg.chunk_words, delay_seconds=cfg.delay_seconds
+        )
+    else:
+        gateway = resolved.gateway
+    workspace = cfg.workspace or _workspace_default()
+    parent_agent_id = _agent_of(conn, state.thread_id)
+    tools = _child_tool_specs(
+        conn, tenant_id=state.tenant_id,
+        parent_agent_id=parent_agent_id,
+        workspace=workspace,
+    )
+    return asyncio.run(_drive_child(
+        conn, store, state,
+        gateway=gateway, tools=tools, session=session,
+        parent_agent_id=parent_agent_id,
+        workspace=workspace, cfg=cfg, decision=decision,
+    ))
 
 
 async def _execute_delegation(
@@ -646,6 +1149,8 @@ async def _execute_delegation(
     workspace: Path | None,
     registry: agents_registry.Registry,
     cfg: EngineConfig,
+    owner: str = "engine",
+    ticket_id: str | None = None,
 ) -> tuple[str, bool]:
     """Wrap a delegation with tool.started/completed events + a steps row."""
     args = _args_of(arguments_json)
@@ -675,6 +1180,7 @@ async def _execute_delegation(
             conn, store,
             tenant_id=tenant_id, thread_id=thread_id,
             parent_turn_id=turn_id, run_id=run_id, call_id=call_id,
+            owner=owner, ticket_id=ticket_id,
             parent_agent_id=parent_agent_id,
             arguments_json=arguments_json, parent_user=parent_user,
             workspace=workspace, registry=registry, cfg=cfg,
@@ -1201,8 +1707,13 @@ async def run_turn(
                                 parent_user=user_content,
                                 parent_agent_id=quota_agent,
                                 workspace=cfg.workspace, registry=registry,
-                                cfg=cfg,
+                                cfg=cfg, owner=owner,
+                                ticket_id=str(ticket_id) if ticket_id else None,
                             )
+                        except _DelegationPaused:
+                            # The child write is parked as an approval bound to
+                            # this turn; the delegate tool stays "running".
+                            return "waiting_approval"
                         except _Cancelled:
                             _cancel_turn(
                                 conn, store, tenant_id=tenant_id,
@@ -1395,7 +1906,60 @@ def resume_after_approval(
         session=session,
     )
 
-    if decision in ("approved", "approved_session"):
+    # A child write paused the parent turn. Resume the child state machine
+    # first; its result becomes the delegate tool's output.
+    delegation_row = conn.execute(
+        "SELECT * FROM subagent_runs WHERE tenant_id = ? AND approval_id = ?"
+        " AND status = 'waiting_approval' LIMIT 1",
+        (tenant_id, str(approval["approval_id"])),
+    ).fetchone()
+    delegation_output: str | None = None
+    if delegation_row is not None:
+        try:
+            child_output = _resume_child_delegation(
+                conn, store, delegation_row,
+                decision=decision, owner=owner,
+                registry=registry, cfg=cfg,
+            )
+        except (ToolError, AppError, OSError, RuntimeError) as exc:
+            code = exc.code if isinstance(exc, (ToolError, AppError)) else "SUBAGENT_FAILED"
+            child_output = None
+            output = {"error": code, "message": str(exc)}
+            delegation_output = json.dumps(output, ensure_ascii=False)
+            store.append(
+                thread_id, "tool.failed",
+                {"tool_call_id": str(delegation_row["parent_call_id"]),
+                 "code": code, "message": str(exc), "retryable": False,
+                 "source": "subagent"},
+                tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+            )
+            store.append(
+                thread_id, "subagent.failed",
+                {"tool_call_id": str(delegation_row["parent_call_id"]),
+                 "agent_id": str(delegation_row["agent_id"]),
+                 "code": code, "message": str(exc)},
+                tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+            )
+        if delegation_output is None and child_output is None:
+            # The child paused again: a new approval is now pending and the
+            # parent turn is parked in waiting_approval.
+            return "waiting_approval"
+        if delegation_output is None and child_output is not None:
+            delegation_output = json.dumps(child_output, ensure_ascii=False)
+            store.append(
+                thread_id, "tool.completed",
+                {"tool_call_id": str(delegation_row["parent_call_id"]),
+                 "output": child_output, "source": "subagent"},
+                tenant_id=tenant_id, turn_id=turn_id, run_id=run_id,
+            )
+        call_id = str(delegation_row["parent_call_id"])
+        arguments_json = str(delegation_row["parent_args_json"])
+        wire_name = SUBAGENT_TOOL
+        request_data = {}
+
+    if delegation_output is not None:
+        output_json = delegation_output
+    elif decision in ("approved", "approved_session"):
         # execution-time re-evaluation (ADR-011); deny still wins over approval.
         # V05-12: the re-check runs against the CURRENT active bundle — an
         # approval granted minutes ago must not survive a stricter publish.
@@ -1435,6 +1999,8 @@ def resume_after_approval(
                     parent_user=user_content,
                     parent_agent_id=_agent_of(conn, thread_id),
                     workspace=workspace, registry=registry, cfg=cfg,
+                    owner=owner,
+                    ticket_id=str(turn["ticket_id"]) if turn["ticket_id"] else None,
                 ))
             elif (
                 runtime_tool is not None

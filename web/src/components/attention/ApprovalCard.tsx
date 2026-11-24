@@ -83,6 +83,7 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { tool, toolKey, source, preview, risk } = summarize(attention);
   const mcp = source === "mcp";
+  const subagent = source === "subagent";
   const argument = argumentOf(preview);
   const expiring = attention.expiresAt * 1000 <= Date.now();
 
@@ -105,6 +106,9 @@ export function ApprovalCard({ attention, busy, onAnswer }: Props) {
               <span className={styles.sep}>·</span>
               <code>{argument}</code>
             </>
+          ) : null}
+          {subagent ? (
+            <span className={styles.chip}>子智能体</span>
           ) : null}
           {mcp ? (
             <span className={`${styles.chip} ${risk === "low" ? "" : styles.chipAmber}`}>
