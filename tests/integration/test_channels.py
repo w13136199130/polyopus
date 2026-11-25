@@ -329,10 +329,13 @@ class FakeFeishu:
                 return Response({"code": 0, "tenant_access_token": "tok"})
             body = kwargs.get("json") or {}
             content = body.get("content") if isinstance(body, dict) else "{}"
-            try:
-                sent.append(json.loads(str(content)).get("text", ""))
-            except ValueError:
-                sent.append("")
+            if body.get("msg_type") == "interactive":
+                sent.append(str(content))
+            else:
+                try:
+                    sent.append(json.loads(str(content)).get("text", ""))
+                except ValueError:
+                    sent.append("")
             return Response({"code": 0, "data": {"message_id": f"om_out_{len(sent)}"}})
 
         monkeypatch.setattr(channels.httpx, "post", fake_post)
@@ -348,6 +351,26 @@ def _open_ticket(client: TestClient, channel_id: str, text: str,
     ticket_id = response.json()["ticketId"]
     assert ticket_id
     return str(ticket_id)
+
+
+def _card_body(
+    attention_id: str, decision: str = "approved",
+    operator: str = "ou_alice", token: str = "verify-me",
+) -> dict:
+    return {
+        "schema": "2.0",
+        "header": {
+            "event_type": "card.action.trigger", "token": token,
+            "event_id": "evt_card",
+        },
+        "event": {
+            "operator": {"open_id": operator},
+            "action": {
+                "tag": "button",
+                "value": {"decision": decision, "attentionId": attention_id},
+            },
+        },
+    }
 
 
 def test_terminal_ticket_reply_is_queued_and_delivered(
@@ -444,14 +467,16 @@ def test_waiting_ticket_queues_approval_hint(
             " WHERE direction = 'outbound' AND status = 'queued' AND ticket_id = ?",
             (ticket_id,),
         ).fetchall()
-        texts = [json.loads(str(row[0])).get("text", "") for row in rows]
-        assert any("需要审批" in text and "/approve" in text for text in texts)
-        assert any("fs.write" in text for text in texts)
+        payloads = [json.loads(str(row[0])) for row in rows]
+        cards = [item["card"] for item in payloads if isinstance(item.get("card"), dict)]
+        assert cards, payloads
+        dump = json.dumps(cards, ensure_ascii=False)
+        assert "需要你确认" in dump and "fs.write" in dump and "批准" in dump
 
         fake = FakeFeishu()
         fake.install(monkeypatch)
         channels.deliver_queued(conn)
-        assert any("需要审批" in text for text in fake.sent)
+        assert any("需要你确认" in text for text in fake.sent)
     finally:
         conn.close()
 
@@ -594,5 +619,86 @@ def test_listed_approver_can_approve_another_users_ticket(
             "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,)
         ).fetchone()[0]
         assert state == "ended"
+    finally:
+        conn.close()
+
+
+def test_card_action_approves_and_resumes(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_card",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["toast"]["type"] == "success"
+        assert (ws / "out.txt").is_file()
+        state = conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0]
+        assert state == "ended"
+
+        fake = FakeFeishu()
+        fake.install(monkeypatch)
+        channels.deliver_queued(conn, limit=10)
+        assert any("任务完成" in text for text in fake.sent)
+    finally:
+        conn.close()
+
+
+def test_card_action_rejects_non_approver(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_card_deny",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id, operator="ou_mallory"),
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["toast"]["type"] == "error"
+        status = conn.execute(
+            "SELECT status FROM attentions WHERE attention_id = ?", (attention_id,),
+        ).fetchone()[0]
+        assert status == "pending"
+        assert not (ws / "out.txt").exists()
     finally:
         conn.close()

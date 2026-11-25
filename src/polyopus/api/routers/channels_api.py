@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlite3 import Connection
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, BackgroundTasks, Body, Depends
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from polyopus.api.deps import get_db, get_store, require_permission
@@ -144,6 +144,7 @@ def probe_channel(
 def feishu_events(
     kind: str,
     channel_id: str,
+    background: BackgroundTasks,
     body: dict[str, Any] = Body(default_factory=dict),
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
@@ -159,4 +160,5 @@ def feishu_events(
         raise AppError("CHANNEL_NOT_FOUND", details={"channelId": channel_id})
     return service.handle_event(
         conn, store, tenant_id=str(row[0]), channel_id=channel_id, body=body,
+        schedule=background.add_task,
     )
