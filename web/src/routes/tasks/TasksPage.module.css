@@ -205,3 +205,9 @@
     border: 0;
   }
 }
+
+@media (max-width: 480px) {
+  .tabs { padding: 10px 12px 0; gap: 0; }
+  .tab { padding: 8px 7px 10px; gap: 4px; font-size: 12px; }
+  .count { min-width: 16px; padding: 0 4px; font-size: 9.5px; line-height: 15px; }
+}

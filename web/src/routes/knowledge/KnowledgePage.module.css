@@ -521,3 +521,7 @@
   gap: 2px;
   flex-wrap: wrap;
 }
+
+.kbEmpty {
+  padding: 56px 0;
+}

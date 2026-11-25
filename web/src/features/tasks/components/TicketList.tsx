@@ -98,7 +98,7 @@ function TicketCard({
 
       <div className={styles.meta}>
         <span className={styles.avatar}>{(actor[0] ?? "?").toUpperCase()}</span>
-        <span>{actor}</span>
+        <span className={styles.actor}>{actor}</span>
         <span className={styles.executor}>{row.executor === "builtin" ? "内置" : (row.executor ?? "内置")}</span>
         <span className={`${styles.tag} ${tone}`}>{label}</span>
       </div>

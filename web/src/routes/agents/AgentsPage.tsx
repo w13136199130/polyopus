@@ -1,6 +1,6 @@
 /** Experts page (P1-4): card grid + sectioned edit drawer, prototype style. */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
@@ -29,6 +29,7 @@ export function AgentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [template, setTemplate] = useState("");
   const [newName, setNewName] = useState("");
+  const nameRef = useRef<HTMLInputElement | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingSection, setEditingSection] = useState<"basic" | "test">("basic");
   const [pendingPublish, setPendingPublish] = useState<AgentRow | null>(null);
@@ -151,6 +152,7 @@ export function AgentsPage() {
             ))}
           </select>
           <input
+            ref={nameRef}
             data-testid="agent-name"
             required
             maxLength={100}
@@ -174,7 +176,14 @@ export function AgentsPage() {
         ) : query.isError ? (
           <ErrorState message="专家加载失败" onRetry={() => void query.refetch()} />
         ) : agents.length === 0 ? (
-          <Empty title="暂无专家" hint="从模板创建一个，或直接输入名称新建。" />
+          <Empty
+            title="暂无专家"
+            hint="从模板创建一个，或直接输入名称新建。"
+            action={canWrite ? {
+              label: "从空白创建",
+              onClick: () => nameRef.current?.focus(),
+            } : undefined}
+          />
         ) : (
           <div className={styles.grid}>
             {agents.map((agent) => (

@@ -187,19 +187,23 @@ export function UsagePage() {
                 <span>按调用日期汇总</span>
               </div>
               <div className={styles.chart} data-testid="usage-chart">
-                {data.byDay.slice(-30).map((row) => {
-                  const tokens = row.inputTokens + row.outputTokens;
-                  return (
-                    <div
-                      key={row.key}
-                      className={styles.barCol}
-                      title={`${row.key} · ${tokens} tokens`}
-                    >
-                      <i style={{ height: `${Math.max(3, (tokens / maxDayTokens) * 100)}%` }} />
-                      <span>{row.key.slice(5)}</span>
-                    </div>
-                  );
-                })}
+                {data.byDay
+                  .slice()
+                  .sort((a, b) => a.key.localeCompare(b.key))
+                  .slice(-30)
+                  .map((row) => {
+                    const tokens = row.inputTokens + row.outputTokens;
+                    return (
+                      <div
+                        key={row.key}
+                        className={styles.barCol}
+                        title={`${row.key} · ${tokens} tokens`}
+                      >
+                        <i style={{ height: `${Math.max(3, (tokens / maxDayTokens) * 100)}%` }} />
+                        <span>{row.key.slice(5)}</span>
+                      </div>
+                    );
+                  })}
               </div>
             </section>
 

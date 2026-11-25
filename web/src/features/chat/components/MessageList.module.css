@@ -462,6 +462,8 @@
 /* welcome */
 .welcome {
   margin: auto;
+  width: 100%;
+  max-width: 620px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -489,8 +491,10 @@
 
 .quickGrid {
   margin-top: var(--space-4);
+  width: 100%;
+  max-width: 564px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 276px));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -685,3 +689,10 @@
 }
 .toolChildHead b { font-weight: 600; }
 .toolChildHead span { color: var(--text-4); }
+
+@media (max-width: 640px) {
+  .welcome { padding: var(--space-4) 12px; gap: 6px; }
+  .welcome h2 { font-size: 18px; }
+  .welcome p { font-size: 12.5px; line-height: 1.5; }
+  .quickGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+}

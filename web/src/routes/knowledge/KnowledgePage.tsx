@@ -79,6 +79,7 @@ export function KnowledgePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const kbNameRef = useRef<HTMLInputElement | null>(null);
 
   const previewQuery = useQuery({
     queryKey: ["knowledge-preview", previewId],
@@ -230,9 +231,7 @@ export function KnowledgePage() {
         {error ? <div className={styles.error}>{error}</div> : null}
 
         <div className={styles.kbRow}>
-          {kbsQuery.isLoading ? <Loading label="载入知识库…" /> : kbs.length === 0 ? (
-            <span className={styles.muted}>暂无知识库</span>
-          ) : kbs.map((kb) => (
+          {kbsQuery.isLoading ? <Loading label="载入知识库…" /> : kbs.length === 0 ? null : kbs.map((kb) => (
             <button
               key={kb.kbId}
               type="button"
@@ -246,6 +245,7 @@ export function KnowledgePage() {
           ))}
           <form className={styles.newKb} onSubmit={(event) => void submitKb(event)}>
             <input
+              ref={kbNameRef}
               data-testid="kb-name"
               required
               maxLength={120}
@@ -264,6 +264,19 @@ export function KnowledgePage() {
             </Button>
           </form>
         </div>
+
+        {!kbsQuery.isLoading && kbs.length === 0 ? (
+          <div className={styles.kbEmpty}>
+            <Empty
+              title="还没有知识库"
+              hint="创建后上传 Markdown，对话里会按标题切片检索并带引用。"
+              action={canWrite ? {
+                label: "创建知识库",
+                onClick: () => kbNameRef.current?.focus(),
+              } : undefined}
+            />
+          </div>
+        ) : null}
 
         {kbId ? (
           <>

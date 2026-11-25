@@ -118,7 +118,16 @@
   font-weight: 700;
 }
 
+.actor {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .executor {
+  flex: none;
+  white-space: nowrap;
   padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -129,6 +138,7 @@
 
 .tag {
   flex: none;
+  white-space: nowrap;
   padding: 0 7px;
   border-radius: 4px;
   font-size: 10.5px;
