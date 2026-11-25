@@ -45,4 +45,14 @@ test("notifications: unread badge, page list, mark read", async ({ page }) => {
   await expect(page.getByText("没有未读通知")).toBeVisible();
   await page.getByRole("button", { name: "查看全部通知" }).click();
   await expect(page.getByTestId("notification-page-item").first()).toBeVisible();
+
+  // "待我决定" is the shared inbox entry from both the page and the bell
+  await expect(page.getByTestId("notifications-inbox")).toContainText("待我决定");
+  await page.getByTestId("notification-bell").click();
+  await expect(page.getByTestId("bell-inbox")).toContainText("待我决定");
+  await page.getByTestId("bell-inbox").click();
+  await page.waitForURL("**/tasks?bucket=attention");
+  await expect(page.getByTestId("bucket-attention")).toHaveAttribute(
+    "aria-selected", "true",
+  );
 });

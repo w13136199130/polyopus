@@ -94,3 +94,35 @@
 }
 
 .allLink:hover { border-color: var(--primary-border); color: var(--primary); }
+
+.inboxLink {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.inboxLink:hover { border-color: var(--primary-border); }
+
+.inboxCount {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.inboxCountHot { background: var(--red-soft); color: var(--red); }
+
+.inboxGo { margin-left: auto; color: var(--primary); }

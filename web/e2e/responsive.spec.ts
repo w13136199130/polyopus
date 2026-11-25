@@ -80,7 +80,7 @@ test("mobile: bottom navigation replaces the rail", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(0);
 
   // mobile tasks: list -> detail -> back, without a second column
-  await page.getByTestId("new-ticket").click();
+  await page.getByTestId("new-ticket-mobile").click();
   await page.getByTestId("new-ticket-title").fill(`移动端任务 ${Date.now()}`);
   await page.getByTestId("new-ticket-submit").click();
   await page.waitForURL(/ticketId=/);

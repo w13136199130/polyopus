@@ -206,9 +206,11 @@ export function TasksPage() {
             </p>
           </div>
           <div className={styles.actions}>
-            <Link to="/automation" className={styles.linkBtn}>
-              ◷ 自动化
-            </Link>
+            <span className={styles.desktopOnly}>
+              <Link to="/automation" className={styles.linkBtn}>
+                ◷ 自动化
+              </Link>
+            </span>
             <Button
               size="sm"
               variant="secondary"
@@ -222,16 +224,31 @@ export function TasksPage() {
             >
               ⚲ 筛选{activeFilterCount ? ` · ${activeFilterCount}` : ""}
             </Button>
-            <Button
-              size="sm"
-              data-testid="new-ticket"
-              disabled={!canWrite}
-              onClick={() => setCreating(true)}
-            >
-              ＋ 新建任务
-            </Button>
+            <span className={styles.desktopOnly}>
+              <Button
+                size="sm"
+                data-testid="new-ticket"
+                disabled={!canWrite}
+                onClick={() => setCreating(true)}
+              >
+                ＋ 新建任务
+              </Button>
+            </span>
           </div>
         </header>
+
+        <div className={styles.mobileActions}>
+          <Link to="/automation" className={styles.linkBtn}>◷ 自动化</Link>
+          <Button
+            size="sm"
+            data-testid="new-ticket-mobile"
+            disabled={!canWrite}
+            className={styles.mobileCreate}
+            onClick={() => setCreating(true)}
+          >
+            ＋ 新建任务
+          </Button>
+        </div>
 
         <div className={styles.tabs} role="tablist" aria-label="任务桶">
           {BUCKETS.map(([bucket, label]) => (

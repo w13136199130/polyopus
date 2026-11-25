@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import type { NotificationRow } from "@/lib/api/wire";
+import { pendingInbox, useAttentions } from "@/lib/api/hooks";
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
@@ -20,6 +21,8 @@ export function NotificationBell() {
   const query = useNotifications();
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
+  const attentions = useAttentions();
+  const pending = pendingInbox(attentions.data?.items).length;
   const unread = query.data?.unreadCount ?? 0;
   const items = query.data?.items ?? [];
 
@@ -48,6 +51,21 @@ export function NotificationBell() {
       </button>
       {open ? (
         <div className={styles.panel} role="dialog" aria-label="通知列表">
+          <button
+            type="button"
+            className={styles.inboxLink}
+            data-testid="bell-inbox"
+            onClick={() => {
+              setOpen(false);
+              navigate("/tasks?bucket=attention");
+            }}
+          >
+            <span>待我决定</span>
+            <b className={`${styles.inboxCount} ${pending ? styles.inboxCountHot : ""}`}>
+              {pending}
+            </b>
+            <span className={styles.inboxGo}>去处理 →</span>
+          </button>
           <div className={styles.head}>
             <span>{unread} 条未读</span>
             <button

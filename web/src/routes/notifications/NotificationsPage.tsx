@@ -10,6 +10,7 @@ import { useNavigate } from "react-router";
 import { Button, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import type { NotificationRow } from "@/lib/api/wire";
+import { pendingInbox, useAttentions } from "@/lib/api/hooks";
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
@@ -52,6 +53,8 @@ export function NotificationsPage() {
   const query = useNotifications({ limit: 100 });
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
+  const attentions = useAttentions();
+  const pending = pendingInbox(attentions.data?.items).length;
   const [filter, setFilter] = useState<Filter>("all");
   const [permission, setPermission] = useState<Permission>(permissionNow);
   const [notice, setNotice] = useState<string | null>(null);
@@ -139,6 +142,26 @@ export function NotificationsPage() {
           </button>
         ) : null}
         {banner()}
+
+        <div className={styles.inboxBar} data-testid="notifications-inbox">
+          <div className={styles.inboxCopy}>
+            <b>待我决定</b>
+            <span>
+              {pending > 0
+                ? `${pending} 项审批或问题等待处理`
+                : "没有待你决定的事项；处理完会回到通知流"}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="notifications-inbox-open"
+            disabled={pending === 0}
+            onClick={() => navigate("/tasks?bucket=attention")}
+          >
+            去任务页处理
+          </Button>
+        </div>
 
         <div className={styles.toolbar}>
           <div className={styles.tabs} role="tablist" aria-label="通知筛选">

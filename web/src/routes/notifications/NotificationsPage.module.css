@@ -167,3 +167,39 @@
   .item { flex-wrap: wrap; }
   .actions { width: 100%; justify-content: flex-end; }
 }
+
+.inboxBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+
+.inboxCopy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.inboxCopy b { color: var(--text); font-size: 13.5px; }
+
+.inboxCopy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inboxBar > :last-child { margin-left: auto; flex: none; }
+
+@media (max-width: 560px) {
+  .inboxBar { align-items: flex-start; flex-direction: column; }
+  .inboxBar > :last-child { margin-left: 0; }
+  .inboxCopy span { white-space: normal; }
+}
