@@ -187,7 +187,10 @@ def finish_after_attention(
 
         channels.enqueue_ticket_reply(
             conn, ticket_id=ticket_id,
-            state="ready" if decision.startswith("approved") else "denied",
+            state=(
+                "expired" if expired
+                else "ready" if decision.startswith("approved") else "denied"
+            ),
             summary=summary,
         )
     except Exception:  # noqa: BLE001 - IM delivery is advisory

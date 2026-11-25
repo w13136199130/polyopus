@@ -381,6 +381,25 @@ def _deliver(
     return ok, message_id, None if ok else str(payload.get("msg") or "send failed")
 
 
+def _update_card(
+    row: sqlite3.Row, *, message_id: str, card: dict[str, Any],
+) -> tuple[bool, str | None]:
+    """Edit a card message the bot already sent (needs config.update_multi)."""
+    token = _tenant_token(row)
+    try:
+        response = httpx.patch(
+            f"{_base_url()}/open-apis/im/v1/messages/{message_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": json.dumps(card, ensure_ascii=False)},
+            timeout=15,
+        )
+        payload = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        return False, str(exc)
+    ok = int(payload.get("code") or 0) == 0
+    return ok, None if ok else str(payload.get("msg") or "update failed")
+
+
 def send_text(
     conn: sqlite3.Connection,
     *,
@@ -445,9 +464,20 @@ def enqueue_card(
     card: dict[str, Any],
     ticket_id: str | None = None,
     thread_id: str | None = None,
+    kind: str = "card",
+    update_message_id: str = "",
 ) -> str:
-    """Queue one interactive card; the channel worker delivers it later."""
+    """Queue one interactive card; the channel worker delivers it later.
+
+    `kind` marks approval cards so a finished ticket can turn the card the
+    user just clicked into the result card instead of adding a second one.
+    When `update_message_id` is set the worker edits that message in place
+    and only falls back to a new message if Feishu refuses the update.
+    """
     message_id = "cm_" + secrets.token_hex(8)
+    payload: dict[str, Any] = {"chat_id": chat_id, "card": card, "kind": kind}
+    if update_message_id:
+        payload["update_message_id"] = update_message_id
     conn.execute(
         "INSERT INTO channel_messages"
         " (message_id, tenant_id, channel_id, direction, external_id,"
@@ -457,7 +487,7 @@ def enqueue_card(
         (
             message_id, tenant_id, channel_id, "out_" + secrets.token_hex(8),
             thread_id, ticket_id,
-            json.dumps({"chat_id": chat_id, "card": card}, ensure_ascii=False),
+            json.dumps(payload, ensure_ascii=False),
             _now(),
         ),
     )
@@ -495,6 +525,23 @@ def _chat_id_of(payload_json: object) -> str:
         return ""
 
 
+def _approval_parts(payload: dict[str, Any]) -> tuple[str, str, str]:
+    """(tool label, tool key, args preview) from an approval attention payload."""
+    actions = payload.get("actions")
+    first = (
+        actions[0]
+        if isinstance(actions, list) and actions and isinstance(actions[0], dict)
+        else {}
+    )
+    label = str(
+        payload.get("tool_label") or payload.get("tool")
+        or first.get("tool_label") or first.get("tool") or "工具操作"
+    )
+    tool_key = str(first.get("tool") or payload.get("tool") or "")
+    preview = str(first.get("args_preview") or "")
+    return label, tool_key, preview
+
+
 def enqueue_approval_request(
     conn: sqlite3.Connection, *, ticket_id: str,
 ) -> str | None:
@@ -517,23 +564,15 @@ def enqueue_approval_request(
         payload = json.loads(str(pending["payload_json"] or "{}"))
     except ValueError:
         payload = {}
-    actions = payload.get("actions")
-    first = (
-        actions[0]
-        if isinstance(actions, list) and actions and isinstance(actions[0], dict)
-        else {}
-    )
-    label = str(
-        payload.get("tool_label") or payload.get("tool")
-        or first.get("tool_label") or first.get("tool") or "工具操作"
-    )
+    label, tool_key, preview = _approval_parts(payload)
     title_row = conn.execute(
         "SELECT title FROM tickets WHERE ticket_id = ?", (ticket_id,),
     ).fetchone()
     card = cardkit.approval_card(
         ticket_title=str(title_row[0] if title_row is not None else "任务"),
         tool_label=label,
-        args_preview=str(first.get("args_preview") or ""),
+        tool_key=tool_key,
+        args_preview=preview,
         attention_id=str(pending["attention_id"]),
         ticket_id=ticket_id,
     )
@@ -541,7 +580,7 @@ def enqueue_approval_request(
         conn, tenant_id=str(inbound["tenant_id"]),
         channel_id=str(inbound["channel_id"]), chat_id=chat_id,
         card=card, ticket_id=ticket_id,
-        thread_id=inbound["thread_id"],
+        thread_id=inbound["thread_id"], kind="approval",
     )
 
 
@@ -570,12 +609,45 @@ def enqueue_ticket_reply(
         if answer_row is not None:
             answer = str(answer_row[0] or "").strip()
     body = answer or summary
-    card = cardkit.result_card(state=state, summary=body)
+    title_row = conn.execute(
+        "SELECT title FROM tickets WHERE ticket_id = ?", (ticket_id,),
+    ).fetchone()
+    card = cardkit.result_card(
+        state=state, summary=body,
+        ticket_title=str(title_row[0] if title_row is not None else ""),
+    )
+    # One task, one card: whatever the user just clicked becomes the result.
+    approval = conn.execute(
+        "SELECT id, message_id, external_id, status FROM channel_messages"
+        " WHERE direction = 'outbound' AND ticket_id = ?"
+        " AND status IN ('queued', 'sent')"
+        " AND json_extract(payload_json, '$.kind') = 'approval'"
+        " ORDER BY id DESC LIMIT 1",
+        (ticket_id,),
+    ).fetchone()
+    if approval is not None and str(approval["status"]) == "queued":
+        conn.execute(
+            "UPDATE channel_messages SET payload_json = ? WHERE id = ?",
+            (
+                json.dumps(
+                    {"chat_id": chat_id, "card": card, "kind": "result"},
+                    ensure_ascii=False,
+                ),
+                approval["id"],
+            ),
+        )
+        conn.commit()
+        return str(approval["message_id"])
+    update_message_id = (
+        str(approval["external_id"] or "").strip()
+        if approval is not None else ""
+    )
     return enqueue_card(
         conn, tenant_id=str(inbound["tenant_id"]),
         channel_id=str(inbound["channel_id"]), chat_id=chat_id,
         card=card, ticket_id=ticket_id,
-        thread_id=thread_id,
+        thread_id=thread_id, kind="result",
+        update_message_id=update_message_id,
     )
 
 
@@ -608,6 +680,41 @@ def deliver_queued(conn: sqlite3.Connection, *, limit: int = 10) -> int:
         text = str(payload.get("text") or "")
         raw_card = payload.get("card")
         card = raw_card if isinstance(raw_card, dict) else None
+        target = str(payload.get("update_message_id") or "")
+        if target and card is not None:
+            ok, error = _update_card(channel, message_id=target, card=card)
+            if ok:
+                conn.execute(
+                    "UPDATE channel_messages SET status = 'sent', error_code = NULL,"
+                    " payload_json = ? WHERE id = ?",
+                    (
+                        json.dumps(
+                            {"chat_id": chat_id, "card": card, "kind": "result"},
+                            ensure_ascii=False,
+                        ),
+                        queued["id"],
+                    ),
+                )
+                conn.commit()
+                delivered += 1
+                continue
+            tlog.log(
+                logger, 30, "channel.card_update_failed",
+                channel_id=queued["channel_id"], message_id=target, error=error,
+            )
+            # Card could not be edited (older message or missing update_multi):
+            # degrade to a fresh message instead of losing the result.
+            conn.execute(
+                "UPDATE channel_messages SET payload_json = ? WHERE id = ?",
+                (
+                    json.dumps(
+                        {"chat_id": chat_id, "card": card, "kind": "result"},
+                        ensure_ascii=False,
+                    ),
+                    queued["id"],
+                ),
+            )
+            conn.commit()
         if not chat_id or (not text and card is None):
             conn.execute(
                 "UPDATE channel_messages SET status = 'failed', error_code = ?"
@@ -856,30 +963,35 @@ def _handle_command(
     from polyopus.domains.tickets import service as tickets
     from polyopus.workers import engine
 
+    effective_decision = decision
     try:
-        attention_svc.resolve(
+        effective_decision = attention_svc.resolve(
             conn, store, tenant_id=tenant_id, thread_id=thread_id,
             approval_id=str(attention["source_id"]), decision=decision,
             by=actor,
         )
         status = engine.resume_after_approval(
             conn, store, str(attention["turn_id"]), owner="channel",
-            decision=decision,
+            decision=effective_decision,
             config=engine.EngineConfig(workspace=_workspace()),
         )
-        ack = (
-            "已批准，还有一个审批待处理。"
-            if decision == "approved" and status == "waiting_approval"
-            else "已批准，任务继续。" if decision == "approved"
-            else "已拒绝，任务结束。"
-        )
+        expired = effective_decision == "denied" and decision == "approved"
+        if expired:
+            ack = "审批已过期，已按拒绝处理。"
+        elif effective_decision.startswith("approved") and status == "waiting_approval":
+            ack = "已批准，还有一个审批待处理。"
+        elif effective_decision.startswith("approved"):
+            ack = "已批准，任务继续。"
+        else:
+            ack = "已拒绝，任务结束。"
         enqueue_text(
             conn, tenant_id=tenant_id, channel_id=channel_id, chat_id=chat_id,
             text=ack, ticket_id=ticket_id, thread_id=thread_id or None,
         )
         if status != "waiting_approval":
             tickets.finish_after_attention(
-                conn, store, ticket_id, decision=decision,
+                conn, store, ticket_id, decision=effective_decision,
+                expired=expired,
             )
     except Exception as exc:  # noqa: BLE001 - reply with a readable failure
         enqueue_text(
@@ -890,13 +1002,13 @@ def _handle_command(
     return {
         "ticketId": ticket_id,
         "attentionId": attention["attention_id"],
-        "decision": decision,
+        "decision": effective_decision,
     }
 
 
 def _resume_after_card(
     db_path: str | None, tenant_id: str, turn_id: str,
-    decision: str, ticket_id: str,
+    decision: str, ticket_id: str, *, expired: bool = False,
 ) -> None:
     """Continue the paused turn after a card decision (runs post-response)."""
     from polyopus.config import load_settings
@@ -915,7 +1027,7 @@ def _resume_after_card(
         )
         if status != "waiting_approval":
             tickets.finish_after_attention(
-                conn, store, ticket_id, decision=decision,
+                conn, store, ticket_id, decision=decision, expired=expired,
             )
     except Exception as exc:  # noqa: BLE001 - card ack already returned
         tlog.log(
@@ -925,6 +1037,24 @@ def _resume_after_card(
     finally:
         if conn is not None:
             conn.close()
+
+
+def _approval_state(
+    conn: sqlite3.Connection, tenant_id: str, approval_id: str,
+) -> str:
+    """Terminal card state for an approval row: approved/denied/expired/closed."""
+    row = conn.execute(
+        "SELECT status FROM approvals WHERE tenant_id = ? AND approval_id = ?",
+        (tenant_id, approval_id),
+    ).fetchone()
+    if row is None:
+        return "closed"
+    state = str(row["status"])
+    if state in ("approved", "approved_session"):
+        return "approved"
+    if state == "denied":
+        return "denied"
+    return "expired" if state == "expired" else "closed"
 
 
 def _handle_card_action(
@@ -947,15 +1077,57 @@ def _handle_card_action(
         return {"toast": {"type": "error", "content": "无法识别的审批操作"}}
 
     attention = conn.execute(
-        "SELECT attention_id, ticket_id, turn_id, source_id, status"
+        "SELECT attention_id, ticket_id, turn_id, source_id, status, payload_json"
         " FROM attentions WHERE tenant_id = ? AND attention_id = ?"
         " AND source_type = 'approval' ORDER BY id DESC LIMIT 1",
         (tenant_id, attention_id),
     ).fetchone()
-    if attention is None or str(attention["status"]) != "pending":
-        return {"toast": {"type": "info", "content": "该审批已处理。"}}
+    if attention is None:
+        return {"toast": {"type": "error", "content": "无法识别的审批操作"}}
 
     ticket_id = str(attention["ticket_id"] or "")
+    title_row = conn.execute(
+        "SELECT title FROM tickets WHERE ticket_id = ?", (ticket_id,),
+    ).fetchone()
+    ticket_title = str(title_row[0] if title_row is not None else "")
+    try:
+        payload_value = json.loads(str(attention["payload_json"] or "{}"))
+    except ValueError:
+        payload_value = {}
+    label, tool_key, preview = _approval_parts(
+        payload_value if isinstance(payload_value, dict) else {}
+    )
+
+    def response(state: str, toast_type: str, content: str) -> dict[str, Any]:
+        return {
+            "toast": {"type": toast_type, "content": content},
+            # card.action.trigger must reply with {"type": "raw", "data": card},
+            # otherwise Feishu reports 200673 and the card is never refreshed.
+            "card": {
+                "type": "raw",
+                "data": cardkit.closed_card(
+                    ticket_title=ticket_title, state=state,
+                    tool_label=label, tool_key=tool_key, args_preview=preview,
+                ),
+            },
+        }
+
+    if str(attention["status"]) != "pending":
+        state = (
+            "expired" if str(attention["status"]) == "expired"
+            else _approval_state(conn, tenant_id, str(attention["source_id"]))
+        )
+        if state == "expired":
+            return response("expired", "warning", "该审批已过期，已按拒绝处理。")
+        ticket = conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()
+        if ticket is not None and str(ticket["state"]) == "ended":
+            # The result card may already own this message; never downgrade it
+            # back to a decision card, the toast is enough.
+            return {"toast": {"type": "info", "content": "该审批已处理。"}}
+        return response(state, "info", "该审批已处理。")
+
     inbound = _origin_inbound(conn, ticket_id) if ticket_id else None
     thread_id = str(inbound["thread_id"] or "") if inbound is not None else ""
     allowed, creator = _approver_check(conn, row, ticket_id, operator)
@@ -971,11 +1143,22 @@ def _handle_card_action(
     from polyopus.domains.attention import service as attention_svc
 
     try:
-        attention_svc.resolve(
+        effective = attention_svc.resolve(
             conn, store, tenant_id=tenant_id, thread_id=thread_id,
             approval_id=str(attention["source_id"]), decision=decision,
             by=operator,
         )
+    except AppError as exc:
+        if exc.normalized_code() == "ATTENTION_ALREADY_RESOLVED":
+            return response(
+                _approval_state(conn, tenant_id, str(attention["source_id"])),
+                "info", "该审批已处理。",
+            )
+        tlog.log(
+            logger, 30, "channel.card_resolve_failed",
+            attention_id=attention_id, error=str(exc),
+        )
+        return {"toast": {"type": "error", "content": "审批处理失败"}}
     except Exception as exc:  # noqa: BLE001 - report a readable toast
         tlog.log(
             logger, 30, "channel.card_resolve_failed",
@@ -983,18 +1166,26 @@ def _handle_card_action(
         )
         return {"toast": {"type": "error", "content": "审批处理失败"}}
 
+    # A pending approval past its deadline resolves to `denied` even when the
+    # button said approve; resume and report must follow the actual decision.
+    expired = effective == "denied" and decision == "approved"
     db_path = _db_file(conn)
     if schedule is None:
         _resume_after_card(
-            db_path, tenant_id, str(attention["turn_id"]), decision, ticket_id,
+            db_path, tenant_id, str(attention["turn_id"]), effective, ticket_id,
+            expired=expired,
         )
     else:
         schedule(
             _resume_after_card,
-            db_path, tenant_id, str(attention["turn_id"]), decision, ticket_id,
+            db_path, tenant_id, str(attention["turn_id"]), effective, ticket_id,
+            expired=expired,
         )
-    content = "已批准，任务继续。" if decision == "approved" else "已拒绝，任务结束。"
-    return {"toast": {"type": "success", "content": content}}
+    if expired:
+        return response("expired", "warning", "审批已过期，已按拒绝处理。")
+    state = "approved" if effective.startswith("approved") else "denied"
+    content = "已批准，任务继续。" if state == "approved" else "已拒绝，任务结束。"
+    return response(state, "success", content)
 
 
 def handle_event(

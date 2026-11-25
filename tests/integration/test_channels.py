@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from polyopus.api.app import create_app
 from polyopus.config import Settings
+from polyopus.domains.channels import cards
 from polyopus.domains.channels import service as channels
 from polyopus.domains.tickets import service as tickets
 from polyopus.platform.db import migrator as m
@@ -313,9 +314,12 @@ def test_delete_disables_channel_and_pauses_source(
 class FakeFeishu:
     def __init__(self) -> None:
         self.sent: list[str] = []
+        self.patched: list[dict] = []
+        self.patch_ok = True
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
         sent = self.sent
+        patched = self.patched
 
         class Response:
             def __init__(self, payload: dict) -> None:
@@ -338,7 +342,14 @@ class FakeFeishu:
                     sent.append("")
             return Response({"code": 0, "data": {"message_id": f"om_out_{len(sent)}"}})
 
+        def fake_patch(url: str, **kwargs: object) -> Response:
+            patched.append({"url": url, "json": kwargs.get("json")})
+            if not self.patch_ok:
+                return Response({"code": 99991663, "msg": "update failed"})
+            return Response({"code": 0, "data": {}})
+
         monkeypatch.setattr(channels.httpx, "post", fake_post)
+        monkeypatch.setattr(channels.httpx, "patch", fake_patch)
 
 
 def _open_ticket(client: TestClient, channel_id: str, text: str,
@@ -468,10 +479,14 @@ def test_waiting_ticket_queues_approval_hint(
             (ticket_id,),
         ).fetchall()
         payloads = [json.loads(str(row[0])) for row in rows]
-        cards = [item["card"] for item in payloads if isinstance(item.get("card"), dict)]
-        assert cards, payloads
-        dump = json.dumps(cards, ensure_ascii=False)
-        assert "需要你确认" in dump and "fs.write" in dump and "批准" in dump
+        card_items = [
+            item["card"] for item in payloads if isinstance(item.get("card"), dict)
+        ]
+        assert card_items, payloads
+        dump = json.dumps(card_items, ensure_ascii=False)
+        assert "需要你确认" in dump and "写入文件" in dump and "批准" in dump
+        # raw tool keys and JSON args must not leak into the card
+        assert "fs.write" not in dump and "args_preview" not in dump
 
         fake = FakeFeishu()
         fake.install(monkeypatch)
@@ -651,7 +666,14 @@ def test_card_action_approves_and_resumes(
             json=_card_body(attention_id),
         )
         assert response.status_code == 200, response.text
-        assert response.json()["toast"]["type"] == "success"
+        payload = response.json()
+        assert payload["toast"]["type"] == "success"
+        # Feishu only refreshes the card for {"type": "raw", "data": card}
+        assert payload["card"]["type"] == "raw"
+        updated = json.dumps(payload["card"]["data"], ensure_ascii=False)
+        assert "已批准，正在执行" in updated
+        assert "写入文件" in updated
+        assert "actions" not in updated
         assert (ws / "out.txt").is_file()
         state = conn.execute(
             "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
@@ -662,6 +684,372 @@ def test_card_action_approves_and_resumes(
         fake.install(monkeypatch)
         channels.deliver_queued(conn, limit=10)
         assert any("任务完成" in text for text in fake.sent)
+    finally:
+        conn.close()
+
+
+def test_card_action_denies_and_updates_card_in_place(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_card_deny2",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id, decision="denied"),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["toast"]["type"] == "success"
+        assert payload["card"]["type"] == "raw"
+        updated = json.dumps(payload["card"]["data"], ensure_ascii=False)
+        assert "已拒绝" in updated and "这次操作不会执行" in updated
+        assert "approve" not in updated.lower()
+        assert not (ws / "out.txt").exists()
+        attention_status = conn.execute(
+            "SELECT status FROM attentions WHERE attention_id = ?", (attention_id,),
+        ).fetchone()[0]
+        assert attention_status == "answered"
+    finally:
+        conn.close()
+
+
+def test_result_card_keeps_answer_line_breaks() -> None:
+    card = cards.result_card(
+        state="ready",
+        summary="已经保存好了 ✅\n\n- 文件：`out.txt`\n- 内容：你好",
+        ticket_title="保存结果到 out.txt",
+    )
+    content = card["elements"][0]["text"]["content"]
+    assert "• 文件：`out.txt`\n• 内容：你好" in content
+
+
+def _expire_pending_approval(
+    conn: sqlite3.Connection, ticket_id: str,
+) -> str:
+    """Make the pending approval overdue without running the sweeper."""
+    row = conn.execute(
+        "SELECT attention_id, source_id FROM attentions"
+        " WHERE ticket_id = ? AND status = 'pending'", (ticket_id,),
+    ).fetchone()
+    assert row is not None
+    conn.execute(
+        "UPDATE approvals SET expires_at = 1 WHERE approval_id = ?",
+        (row["source_id"],),
+    )
+    conn.execute(
+        "UPDATE attentions SET expires_at = 1 WHERE attention_id = ?",
+        (row["attention_id"],),
+    )
+    conn.commit()
+    return str(row["attention_id"])
+
+
+def test_card_action_repeat_click_does_not_overwrite_result(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_repeat",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        first = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["card"]["data"]["header"]["title"]["content"] == "已批准，正在执行"
+
+        # The background resume already ended the ticket; a late click must not
+        # downgrade the result card that now owns the message.
+        second = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["toast"]["type"] == "info"
+        assert "已处理" in second.json()["toast"]["content"]
+        assert "card" not in second.json()
+        assert (ws / "out.txt").is_file()
+    finally:
+        conn.close()
+
+
+def test_card_action_after_other_decision_marks_card_handled(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_handled",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        row = conn.execute(
+            "SELECT attention_id, source_id FROM attentions"
+            " WHERE ticket_id = ? AND status = 'pending'", (ticket_id,),
+        ).fetchone()
+        attention_id = str(row["attention_id"])
+        # Simulate another approver answering while the ticket is still resuming.
+        conn.execute(
+            "UPDATE approvals SET status = 'approved', decisions_json = ?"
+            " WHERE approval_id = ?", ('{"by": "ou_bob", "decision": "approved"}',
+                                       str(row["source_id"])),
+        )
+        conn.execute(
+            "UPDATE attentions SET status = 'answered' WHERE attention_id = ?",
+            (attention_id,),
+        )
+        conn.commit()
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["toast"]["type"] == "info"
+        assert "已处理" in payload["toast"]["content"]
+        updated = json.dumps(payload["card"]["data"], ensure_ascii=False)
+        assert "已批准，正在执行" in updated
+        assert "actions" not in updated
+    finally:
+        conn.close()
+
+
+def test_card_action_expired_approval_denies_and_marks_card(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_expired",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        attention_id = _expire_pending_approval(conn, ticket_id)
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        # approve on an overdue approval must degrade to denied, never execute
+        assert payload["toast"]["type"] == "warning"
+        assert "过期" in payload["toast"]["content"]
+        updated = json.dumps(payload["card"]["data"], ensure_ascii=False)
+        assert "审批已过期" in updated and "这次操作没有执行" in updated
+        assert not (ws / "out.txt").exists()
+        assert conn.execute(
+            "SELECT status FROM approvals WHERE approval_id ="
+            " (SELECT source_id FROM attentions WHERE attention_id = ?)",
+            (attention_id,),
+        ).fetchone()[0] == "expired"
+        assert conn.execute(
+            "SELECT status FROM attentions WHERE attention_id = ?", (attention_id,),
+        ).fetchone()[0] == "expired"
+        assert conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0] == "ended"
+        # the terminal card is an expired card, not a misleading "user rejected"
+        queued = conn.execute(
+            "SELECT payload_json FROM channel_messages WHERE direction = 'outbound'"
+            " AND ticket_id = ? ORDER BY id DESC LIMIT 1", (ticket_id,),
+        ).fetchone()
+        result = json.dumps(
+            json.loads(str(queued[0])).get("card") or {}, ensure_ascii=False,
+        )
+        assert "审批已过期" in result and "审批超时" in result
+    finally:
+        conn.close()
+
+
+def test_approve_command_after_expiry_is_denied(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_expired_cmd",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    fake = FakeFeishu()
+    fake.install(monkeypatch)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        _expire_pending_approval(conn, ticket_id)
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_message_body(message_id="om_expired_approve", text="/approve"),
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["decision"] == "denied"
+        assert not (ws / "out.txt").exists()
+        assert conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0] == "ended"
+        channels.deliver_queued(conn)
+        assert any("审批已过期" in text for text in fake.sent)
+    finally:
+        conn.close()
+
+
+def _delivered_approval_message(conn: sqlite3.Connection, ticket_id: str) -> str:
+    row = conn.execute(
+        "SELECT external_id FROM channel_messages"
+        " WHERE direction = 'outbound' AND ticket_id = ?"
+        " AND json_extract(payload_json, '$.kind') = 'approval'"
+        " ORDER BY id DESC LIMIT 1",
+        (ticket_id,),
+    ).fetchone()
+    assert row is not None
+    return str(row[0])
+
+
+def test_ticket_result_edits_the_clicked_card(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_one_card",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    fake = FakeFeishu()
+    fake.install(monkeypatch)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        channels.deliver_queued(conn)
+        card_message_id = _delivered_approval_message(conn, ticket_id)
+        assert card_message_id
+        sent_before = len(fake.sent)
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert response.status_code == 200, response.text
+        channels.deliver_queued(conn)
+
+        assert len(fake.sent) == sent_before  # no second bubble for one task
+        assert fake.patched, "expected the approval card to be edited"
+        edit = fake.patched[-1]
+        assert edit["url"].endswith(f"/open-apis/im/v1/messages/{card_message_id}")
+        content = json.loads(str(edit["json"]["content"]))
+        dump = json.dumps(content, ensure_ascii=False)
+        assert "任务完成" in dump
+        assert "已批准，正在执行" not in dump
+    finally:
+        conn.close()
+
+
+def test_ticket_result_falls_back_when_card_edit_fails(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_card_edit_fail",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    fake = FakeFeishu()
+    fake.install(monkeypatch)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        channels.deliver_queued(conn)
+        assert _delivered_approval_message(conn, ticket_id)
+        sent_before = len(fake.sent)
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        fake.patch_ok = False
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert response.status_code == 200, response.text
+        channels.deliver_queued(conn)
+
+        assert fake.patched
+        assert len(fake.sent) == sent_before + 1  # fallback sends a new card
+        assert "任务完成" in fake.sent[-1]
     finally:
         conn.close()
 
