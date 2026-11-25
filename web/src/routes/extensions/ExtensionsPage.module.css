@@ -227,3 +227,11 @@
 
 .detailList dt { color: var(--text-4); }
 .detailList dd { margin: 0; color: var(--text-2); word-break: break-word; }
+
+.toggleCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}

@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Button, Dialog, Drawer, Empty, ErrorState, Loading } from "@/components/ui";
+import { Button, Dialog, Drawer, Empty, ErrorState, Loading, Switch } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
 import type { AgentToolBinding, PluginRow } from "@/lib/api/wire";
@@ -73,16 +73,16 @@ function AgentToolsPanel({ onNotice }: { onNotice: (message: string) => void }) 
                   <tr key={item.toolKey} data-testid="agent-tool-row">
                     <td className={styles.mono}>{item.toolKey}</td>
                     <td>
-                      <input
-                        type="checkbox"
-                        data-testid="agent-tool-enabled"
+                      <Switch
+                        testId="agent-tool-enabled"
+                        label={`启用 ${item.toolKey}`}
                         checked={item.enabled}
                         disabled={!canWrite}
-                        onChange={(event) =>
+                        onChange={(next) =>
                           setDraft((rows) =>
                             rows.map((row) =>
                               row.toolKey === item.toolKey
-                                ? { ...row, enabled: event.target.checked }
+                                ? { ...row, enabled: next }
                                 : row,
                             ),
                           )}
@@ -304,19 +304,19 @@ export function ExtensionsPage() {
                             >
                               详情
                             </Button>
-                            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                              <input
-                                type="checkbox"
-                                data-testid="plugin-enabled"
+                            <span className={styles.toggleCell}>
+                              <Switch
+                                testId="plugin-enabled"
+                                label={`启用 ${plugin.name}`}
                                 checked={plugin.status === "enabled"}
                                 disabled={!canWrite}
-                                onChange={(event) => togglePlugin.mutate({
+                                onChange={(next) => togglePlugin.mutate({
                                   pluginId: plugin.pluginId,
-                                  enabled: event.target.checked,
+                                  enabled: next,
                                 }, { onError: (err) => setError(messageOf(err)) })}
                               />
                               启用
-                            </label>
+                            </span>
                             <Button size="sm" variant="danger"
                               disabled={!canWrite}
                               onClick={() => uninstallPlugin.mutate(plugin.pluginId, {
@@ -384,17 +384,17 @@ export function ExtensionsPage() {
                         </td>
                         <td className={styles.muted}>{tool.source}</td>
                         <td>
-                          <input
-                            type="checkbox"
-                            data-testid="tool-enabled"
+                          <Switch
+                            testId="tool-enabled"
+                            label={`全局启用 ${tool.toolKey}`}
                             checked={tool.enabledGlobal}
                             disabled={!canWrite}
-                            onChange={(event) => setToolGlobal.mutate({
+                            onChange={(next) => setToolGlobal.mutate({
                               toolKey: tool.toolKey,
-                              enabled: event.target.checked,
+                              enabled: next,
                             }, {
                               onSuccess: () => setNotice(
-                                `${tool.toolKey} 全局${event.target.checked ? "启用" : "停用"}`,
+                                `${tool.toolKey} 全局${next ? "启用" : "停用"}`,
                               ),
                               onError: (err) => setError(messageOf(err)),
                             })}

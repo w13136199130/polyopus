@@ -28,6 +28,20 @@ const VIEWS: Array<[View, string]> = [
   ["model", "按模型"],
 ];
 
+function lastDayKeys(days: number): string[] {
+  const out: string[] = [];
+  const now = new Date();
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
+    out.push(
+      `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-`
+      + `${String(day.getDate()).padStart(2, "0")}`,
+    );
+  }
+  return out;
+}
+
+
 function groupOf(view: View): UsageGroup {
   if (view === "day") return "day";
   if (view === "agent") return "agent";
@@ -90,10 +104,13 @@ export function UsagePage() {
   }));
   const totals = data?.totals;
   const totalTokens = (totals?.inputTokens ?? 0) + (totals?.outputTokens ?? 0);
-  const maxDayTokens = Math.max(
-    1,
-    ...(data?.byDay ?? []).map((row) => row.inputTokens + row.outputTokens),
-  );
+  const dailyByKey = new Map((data?.byDay ?? []).map((row) => [row.key, row]));
+  const dailySeries = lastDayKeys(range).map((key) => {
+    const row = dailyByKey.get(key);
+    return { key, tokens: (row?.inputTokens ?? 0) + (row?.outputTokens ?? 0) };
+  });
+  const maxDayTokens = Math.max(1, ...dailySeries.map((row) => row.tokens));
+  const labelStep = range <= 7 ? 1 : range <= 30 ? 5 : 15;
 
   function setFilter(next: { range?: UsageRange; view?: View }) {
     const query = new URLSearchParams(params);
@@ -187,23 +204,26 @@ export function UsagePage() {
                 <span>按调用日期汇总</span>
               </div>
               <div className={styles.chart} data-testid="usage-chart">
-                {data.byDay
-                  .slice()
-                  .sort((a, b) => a.key.localeCompare(b.key))
-                  .slice(-30)
-                  .map((row) => {
-                    const tokens = row.inputTokens + row.outputTokens;
-                    return (
-                      <div
-                        key={row.key}
-                        className={styles.barCol}
-                        title={`${row.key} · ${tokens} tokens`}
-                      >
-                        <i style={{ height: `${Math.max(3, (tokens / maxDayTokens) * 100)}%` }} />
-                        <span>{row.key.slice(5)}</span>
-                      </div>
-                    );
-                  })}
+                {dailySeries.map((row, index) => {
+                  const showLabel = index % labelStep === 0
+                    || index === dailySeries.length - 1;
+                  return (
+                    <div
+                      key={row.key}
+                      className={styles.barCol}
+                      title={`${row.key} · ${row.tokens} tokens`}
+                    >
+                      <i
+                        style={{
+                          height: row.tokens === 0
+                            ? 0
+                            : `${Math.max(3, (row.tokens / maxDayTokens) * 100)}%`,
+                        }}
+                      />
+                      <span>{showLabel ? row.key.slice(5) : " "}</span>
+                    </div>
+                  );
+                })}
               </div>
             </section>
 

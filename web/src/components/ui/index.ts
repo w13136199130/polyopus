@@ -8,6 +8,7 @@ export { ErrorState, type ErrorStateProps } from "./ErrorState";
 export { Forbidden, type ForbiddenProps } from "./Forbidden";
 export { Loading, PageLoading, type LoadingProps } from "./Loading";
 export { Skeleton, type SkeletonProps } from "./Skeleton";
+export { Switch } from "./Switch";
 export {
   StreamConnectingIndicator,
   type StreamIndicatorProps,
