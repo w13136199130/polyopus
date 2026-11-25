@@ -12,6 +12,8 @@ dependencies = [
     "opentelemetry-sdk>=1.45.2",
     # zoneinfo needs the IANA database packaged on Windows (V05-14 schedules)
     "tzdata>=2024.1",
+    # Feishu encrypt-key callbacks use AES-256-CBC
+    "cryptography>=42",
 ]
 
 [project.scripts]

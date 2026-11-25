@@ -31,7 +31,7 @@ def env(tmp_path: Path) -> Iterator[tuple[Path, TestClient]]:
     ensure_admin(conn, password="p")
     conn.close()
     settings = Settings(db_path=db, secret_key="s", access_ttl_seconds=3600,
-                        session_ttl_seconds=86400)
+                        session_ttl_seconds=86400, embedded_worker=False)
     with TestClient(create_app(settings)) as client:
         client.post("/api/v1/auth/login", json={"username": "admin", "password": "p"})
         yield db, client

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from fastapi.testclient import TestClient
 
 from polyopus.api.app import create_app
@@ -43,7 +46,11 @@ def env(tmp_path: Path) -> Iterator[tuple[Path, TestClient]]:
         yield db, client
 
 
-def _create(client: TestClient, *, approvers: list[str] | None = None) -> dict:
+def _create(
+    client: TestClient, *,
+    approvers: list[str] | None = None,
+    encrypt_key: str | None = None,
+) -> dict:
     response = client.post("/api/v1/channels", json={
         "kind": "feishu",
         "displayName": "研发群飞书",
@@ -51,9 +58,24 @@ def _create(client: TestClient, *, approvers: list[str] | None = None) -> dict:
         "appSecret": "secret",
         "verificationToken": "verify-me",
         "approvers": approvers or [],
+        "encryptKey": encrypt_key,
     })
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def _encrypt_event(body: dict, encrypt_key: str) -> dict:
+    raw = json.dumps(body, ensure_ascii=False).encode()
+    pad = 16 - len(raw) % 16
+    padded = raw + bytes([pad]) * pad
+    iv = b"\x0e" * 16
+    cipher = Cipher(
+        algorithms.AES(hashlib.sha256(encrypt_key.encode()).digest()),
+        modes.CBC(iv),
+    )
+    encryptor = cipher.encryptor()
+    blob = iv + encryptor.update(padded) + encryptor.finalize()
+    return {"encrypt": base64.b64encode(blob).decode()}
 
 
 def _message_body(token: str = "verify-me", *, message_id: str = "om_1",
@@ -86,6 +108,9 @@ def test_channel_create_hides_credentials_and_backs_a_source(
     assert created["status"] == "active"
     assert "appSecret" not in created and "verificationToken" not in created
     assert created["approvers"] == []
+    assert created["credentialsSet"] == {
+        "appSecret": True, "verificationToken": True, "encryptKey": False,
+    }
     assert created["webhookPath"].endswith("/events")
 
     patched = client.patch(
@@ -116,6 +141,42 @@ def test_url_verification_and_token_check(env: tuple[Path, TestClient]) -> None:
         "type": "url_verification", "challenge": "abc", "token": "wrong",
     })
     assert bad.status_code == 401
+
+
+def test_encrypted_events_are_decrypted(env: tuple[Path, TestClient]) -> None:
+    _db, client = env
+    created = _create(client, encrypt_key="enc-secret")
+    path = f"/api/v1/channels/feishu/{created['channelId']}/events"
+
+    challenge = client.post(path, json=_encrypt_event({
+        "type": "url_verification", "challenge": "enc-abc",
+        "token": "verify-me",
+    }, "enc-secret"))
+    assert challenge.status_code == 200, challenge.text
+    assert challenge.json()["challenge"] == "enc-abc"
+
+    inbound = client.post(
+        path, json=_encrypt_event(_message_body(message_id="om_enc"), "enc-secret"),
+    )
+    assert inbound.status_code == 200, inbound.text
+    assert inbound.json()["ticketId"]
+
+    wrong_key = client.post(
+        path, json=_encrypt_event(_message_body(message_id="om_bad"), "wrong-key"),
+    )
+    assert wrong_key.status_code == 401
+
+
+def test_encrypted_event_without_key_is_rejected(
+    env: tuple[Path, TestClient],
+) -> None:
+    _db, client = env
+    created = _create(client)
+    response = client.post(
+        f"/api/v1/channels/feishu/{created['channelId']}/events",
+        json=_encrypt_event(_message_body(), "some-key"),
+    )
+    assert response.status_code == 401
 
 
 def test_inbound_message_opens_ticket_and_dedupes(
@@ -161,6 +222,30 @@ def test_group_message_without_mention_is_ignored(
     ignored = client.post(path, json=_message_body(chat_type="group"))
     assert ignored.status_code == 200
     assert ignored.json()["ignored"] == "no_mention"
+
+
+def test_mention_placeholder_is_removed_from_ticket_title(
+    env: tuple[Path, TestClient],
+) -> None:
+    db, client = env
+    created = _create(client)
+    response = client.post(
+        f"/api/v1/channels/feishu/{created['channelId']}/events",
+        json=_message_body(
+            message_id="om_title", text="@_user_1 /polyopus 整理发布记录",
+            chat_type="group", mentions=[{"key": "@_user_1"}],
+        ),
+    )
+    assert response.status_code == 200, response.text
+    conn = sqlite3.connect(str(db))
+    try:
+        title = conn.execute(
+            "SELECT title FROM tickets WHERE ticket_id = ?",
+            (response.json()["ticketId"],),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert title == "整理发布记录"
 
 
 def test_probe_and_send_text_use_feishu_api(
@@ -332,6 +417,41 @@ def test_approve_command_resumes_ticket_and_replies(
         channels.deliver_queued(conn, limit=10)
         assert any("已批准" in text for text in fake.sent)
         assert any("任务完成" in text for text in fake.sent)
+    finally:
+        conn.close()
+
+
+def test_waiting_ticket_queues_approval_hint(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_hint",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        rows = conn.execute(
+            "SELECT payload_json FROM channel_messages"
+            " WHERE direction = 'outbound' AND status = 'queued' AND ticket_id = ?",
+            (ticket_id,),
+        ).fetchall()
+        texts = [json.loads(str(row[0])).get("text", "") for row in rows]
+        assert any("需要审批" in text and "/approve" in text for text in texts)
+        assert any("fs.write" in text for text in texts)
+
+        fake = FakeFeishu()
+        fake.install(monkeypatch)
+        channels.deliver_queued(conn)
+        assert any("需要审批" in text for text in fake.sent)
     finally:
         conn.close()
 

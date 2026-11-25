@@ -589,6 +589,12 @@ def run_assignment(
             (_now(), ticket_id),
         )
         conn.commit()
+        try:
+            from polyopus.domains.channels import service as channels
+
+            channels.enqueue_approval_request(conn, ticket_id=ticket_id)
+        except Exception:  # noqa: BLE001 - IM delivery is advisory
+            pass
 
     if effects and state in ("ready", "blocked", "failed"):
         _enqueue_reply(conn, ticket_id, report_id, state, summary)

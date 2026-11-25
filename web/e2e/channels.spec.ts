@@ -38,6 +38,17 @@ test("channels: create, toggle and delete a Feishu channel", async ({ page }) =>
     page.getByTestId("source-row").filter({ hasText: `飞书 · ${name}` }),
   ).toHaveCount(0);
 
+  await card.getByTestId("channel-edit").click();
+  const edit = page.getByRole("dialog", { name: "编辑飞书通道" });
+  await expect(edit.getByTestId("channel-edit-name")).toHaveValue(name);
+  // credentials are write-only: configured state is shown, values stay blank
+  await expect(edit.getByTestId("channel-edit-app-secret")).toHaveValue("");
+  await expect(edit.getByText(/已配置，留空保持不变/).first()).toBeVisible();
+  await edit.getByTestId("channel-edit-approvers").fill("ou_dave");
+  await edit.getByTestId("channel-edit-save").click();
+  await expect(page.getByText(`已更新通道「${name}」`)).toBeVisible();
+  await expect(card.getByTestId("channel-approvers-view")).toContainText("ou_dave");
+
   await card.getByRole("button", { name: "停用" }).click();
   await expect(card).toContainText("已停用");
   await card.getByRole("button", { name: "启用" }).click();

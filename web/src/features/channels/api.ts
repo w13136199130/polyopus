@@ -30,6 +30,7 @@ export function useUpdateChannel() {
       appId?: string;
       appSecret?: string;
       verificationToken?: string;
+      encryptKey?: string;
       approvers?: string[];
       status?: string;
     }) => channels.update(channelId, body),

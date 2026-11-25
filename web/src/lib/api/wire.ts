@@ -207,6 +207,11 @@ export interface ChannelRow {
   appId: string | null;
   sourceId: string | null;
   approvers: string[];
+  credentialsSet: {
+    appSecret: boolean;
+    verificationToken: boolean;
+    encryptKey: boolean;
+  };
   webhookPath: string;
   lastError: string | null;
   createdAt: number;

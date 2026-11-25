@@ -32,6 +32,10 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
 }
 
+function parseApprovers(value: string): string[] {
+  return value.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
 function fmtTime(ts: number | null): string {
   if (!ts) return "—";
   return new Date(ts * 1000).toLocaleString();
@@ -60,7 +64,13 @@ export function SourcesTab() {
 
   const [channelOpen, setChannelOpen] = useState(false);
   const [channelForm, setChannelForm] = useState({
-    displayName: "", appId: "", appSecret: "", verificationToken: "", approvers: "",
+    displayName: "", appId: "", appSecret: "", verificationToken: "",
+    encryptKey: "", approvers: "",
+  });
+  const [editingChannel, setEditingChannel] = useState<ChannelRow | null>(null);
+  const [editForm, setEditForm] = useState({
+    displayName: "", appId: "", appSecret: "", verificationToken: "",
+    encryptKey: "", approvers: "",
   });
   const [pendingChannelDelete, setPendingChannelDelete] = useState<ChannelRow | null>(null);
 
@@ -169,17 +179,54 @@ export function SourcesTab() {
         appId: channelForm.appId.trim(),
         appSecret: channelForm.appSecret,
         verificationToken: channelForm.verificationToken.trim() || undefined,
-        approvers: channelForm.approvers
-          .split(/[,，\s]+/)
-          .map((item) => item.trim())
-          .filter(Boolean),
+        encryptKey: channelForm.encryptKey.trim() || undefined,
+        approvers: parseApprovers(channelForm.approvers),
       });
       setNotice(`已创建飞书通道「${created.displayName}」`);
       setChannelForm({
         displayName: "", appId: "", appSecret: "",
-        verificationToken: "", approvers: "",
+        verificationToken: "", encryptKey: "", approvers: "",
       });
       setChannelOpen(false);
+    } catch (err) {
+      setError(messageOf(err));
+    }
+  }
+
+  function startEditChannel(row: ChannelRow) {
+    setEditingChannel(row);
+    setEditForm({
+      displayName: row.displayName,
+      appId: row.appId ?? "",
+      appSecret: "",
+      verificationToken: "",
+      encryptKey: "",
+      approvers: row.approvers.join(", "),
+    });
+    setNotice(null);
+    setError(null);
+  }
+
+  async function submitEditChannel(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editingChannel) return;
+    resetError();
+    setNotice(null);
+    try {
+      const updated = await updateChannel.mutateAsync({
+        channelId: editingChannel.channelId,
+        displayName: editForm.displayName.trim(),
+        appId: editForm.appId.trim() || undefined,
+        approvers: parseApprovers(editForm.approvers),
+        // 凭证留空表示保持原值，只有填写才覆盖
+        ...(editForm.appSecret ? { appSecret: editForm.appSecret } : {}),
+        ...(editForm.verificationToken
+          ? { verificationToken: editForm.verificationToken }
+          : {}),
+        ...(editForm.encryptKey ? { encryptKey: editForm.encryptKey } : {}),
+      });
+      setNotice(`已更新通道「${updated.displayName}」`);
+      setEditingChannel(null);
     } catch (err) {
       setError(messageOf(err));
     }
@@ -316,6 +363,14 @@ export function SourcesTab() {
                   </div>
                   {row.lastError ? <p className={styles.channelError}>{row.lastError}</p> : null}
                   <div className={styles.channelActions}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid="channel-edit"
+                      onClick={() => startEditChannel(row)}
+                    >
+                      编辑
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -635,6 +690,9 @@ export function SourcesTab() {
               data-testid="channel-app-secret"
               required
               type="password"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
               value={channelForm.appSecret}
               onChange={(event) => setChannelForm({ ...channelForm, appSecret: event.target.value })}
             />
@@ -643,8 +701,23 @@ export function SourcesTab() {
             Verification Token（可选）
             <input
               data-testid="channel-verification"
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
               value={channelForm.verificationToken}
               onChange={(event) => setChannelForm({ ...channelForm, verificationToken: event.target.value })}
+            />
+          </label>
+          <label>
+            Encrypt Key（可选，飞书开启加密回调时填写）
+            <input
+              data-testid="channel-encrypt-key"
+              type="password"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              value={channelForm.encryptKey}
+              onChange={(event) => setChannelForm({ ...channelForm, encryptKey: event.target.value })}
             />
           </label>
           <label>
@@ -653,6 +726,115 @@ export function SourcesTab() {
               data-testid="channel-approvers"
               value={channelForm.approvers}
               onChange={(event) => setChannelForm({ ...channelForm, approvers: event.target.value })}
+              placeholder="ou_xxx, ou_yyy；留空则仅任务创建人可审批"
+            />
+          </label>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={editingChannel !== null}
+        onOpenChange={(open) => { if (!open) setEditingChannel(null); }}
+        title="编辑飞书通道"
+        description="凭证加密保存且只写不读；留空的凭证字段保持原值。"
+        width={560}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditingChannel(null)}>取消</Button>
+            <Button
+              type="submit"
+              form="channel-edit-form"
+              data-testid="channel-edit-save"
+              loading={updateChannel.isPending}
+            >
+              保存
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="channel-edit-form"
+          className={styles.form}
+          onSubmit={(event) => void submitEditChannel(event)}
+        >
+          <label>
+            显示名称
+            <input
+              data-testid="channel-edit-name"
+              required
+              value={editForm.displayName}
+              onChange={(event) => setEditForm({ ...editForm, displayName: event.target.value })}
+            />
+          </label>
+          <label>
+            App ID
+            <input
+              data-testid="channel-edit-app-id"
+              value={editForm.appId}
+              onChange={(event) => setEditForm({ ...editForm, appId: event.target.value })}
+              placeholder="cli_xxx"
+            />
+          </label>
+          <label>
+            {editingChannel?.credentialsSet?.appSecret
+              ? "App Secret（已配置，留空保持不变）"
+              : "App Secret（未配置）"}
+            <input
+              data-testid="channel-edit-app-secret"
+              type="password"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              value={editForm.appSecret}
+              onChange={(event) => setEditForm({ ...editForm, appSecret: event.target.value })}
+              placeholder={
+                editingChannel?.credentialsSet?.appSecret ? "已配置，留空保持不变" : "未配置"
+              }
+            />
+          </label>
+          <label>
+            {editingChannel?.credentialsSet?.verificationToken
+              ? "Verification Token（已配置，留空保持不变）"
+              : "Verification Token（未配置）"}
+            <input
+              data-testid="channel-edit-verification"
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              value={editForm.verificationToken}
+              onChange={(event) => setEditForm({ ...editForm, verificationToken: event.target.value })}
+              placeholder={
+                editingChannel?.credentialsSet?.verificationToken
+                  ? "已配置，留空保持不变"
+                  : "未配置"
+              }
+            />
+          </label>
+          <label>
+            {editingChannel?.credentialsSet?.encryptKey
+              ? "Encrypt Key（已配置，留空保持不变）"
+              : "Encrypt Key（未配置，按明文校验）"}
+            <input
+              data-testid="channel-edit-encrypt-key"
+              type="password"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              value={editForm.encryptKey}
+              onChange={(event) => setEditForm({ ...editForm, encryptKey: event.target.value })}
+              placeholder={
+                editingChannel?.credentialsSet?.encryptKey
+                  ? "已配置，留空保持不变"
+                  : "未配置"
+              }
+            />
+          </label>
+          <label>
+            审批人 open_id（逗号分隔）
+            <input
+              data-testid="channel-edit-approvers"
+              value={editForm.approvers}
+              onChange={(event) => setEditForm({ ...editForm, approvers: event.target.value })}
               placeholder="ou_xxx, ou_yyy；留空则仅任务创建人可审批"
             />
           </label>

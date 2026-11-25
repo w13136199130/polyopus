@@ -7,6 +7,8 @@ creating a parallel task path.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import re
@@ -17,12 +19,16 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from polyopus.domains.audit import service as audit
 from polyopus.domains.intake import service as intake
 from polyopus.platform.errors import AppError
 from polyopus.platform.events.store import EventStore
 from polyopus.platform.security import secretbox
+from polyopus.platform.telemetry import log as tlog
+
+logger = tlog.get_logger("polyopus.channels")
 
 TENANT = "default"
 SUPPORTED_KINDS = ("feishu",)
@@ -75,6 +81,16 @@ def _normalize_approvers(values: list[str] | None) -> list[str]:
     return seen
 
 
+def _credential_flags(row: sqlite3.Row) -> dict[str, bool]:
+    """Which write-only credentials are set — never their values."""
+    creds = _decrypt(str(row["credential_ref"] or ""))
+    return {
+        "appSecret": bool(creds.get("app_secret")),
+        "verificationToken": bool(creds.get("verification_token")),
+        "encryptKey": bool(creds.get("encrypt_key")),
+    }
+
+
 def _view(row: sqlite3.Row) -> dict[str, Any]:
     cfg = _config(row)
     return {
@@ -85,6 +101,7 @@ def _view(row: sqlite3.Row) -> dict[str, Any]:
         "appId": cfg.get("app_id"),
         "sourceId": cfg.get("source_id"),
         "approvers": cfg.get("approvers") or [],
+        "credentialsSet": _credential_flags(row),
         "webhookPath": f"/api/v1/channels/{row['kind']}/{row['channel_id']}/events",
         "lastError": row["last_error"],
         "createdAt": row["created_at"],
@@ -230,7 +247,7 @@ def update_channel(
         params.append(json.dumps(cfg, ensure_ascii=False))
     if credentials:
         current = _decrypt(str(row["credential_ref"] or ""))
-        current.update({key: str(value) for key, value in credentials.items()})
+        current.update({key: str(value).strip() for key, value in credentials.items()})
         updates.append("credential_ref = ?")
         params.append(_encrypt(current))
     if status is not None:
@@ -414,6 +431,72 @@ def enqueue_text(
     return message_id
 
 
+def _origin_inbound(
+    conn: sqlite3.Connection, ticket_id: str,
+) -> sqlite3.Row | None:
+    return cast(sqlite3.Row | None, conn.execute(
+        """
+        SELECT tenant_id, channel_id, thread_id, payload_json
+        FROM channel_messages
+        WHERE direction = 'inbound' AND ticket_id = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (ticket_id,),
+    ).fetchone())
+
+
+def _chat_id_of(payload_json: object) -> str:
+    try:
+        payload = json.loads(str(payload_json or "{}"))
+        return str(
+            ((payload.get("event") or {}).get("message") or {}).get("chat_id") or ""
+        )
+    except ValueError:
+        return ""
+
+
+def enqueue_approval_request(
+    conn: sqlite3.Connection, *, ticket_id: str,
+) -> str | None:
+    """Tell the origin chat that a tool call is waiting for /approve."""
+    inbound = _origin_inbound(conn, ticket_id)
+    if inbound is None:
+        return None
+    chat_id = _chat_id_of(inbound["payload_json"])
+    if not chat_id:
+        return None
+    pending = conn.execute(
+        "SELECT attention_id, payload_json FROM attentions"
+        " WHERE tenant_id = ? AND ticket_id = ? AND status = 'pending'"
+        " AND source_type = 'approval' ORDER BY id DESC LIMIT 1",
+        (inbound["tenant_id"], ticket_id),
+    ).fetchone()
+    if pending is None:
+        return None
+    try:
+        payload = json.loads(str(pending["payload_json"] or "{}"))
+    except ValueError:
+        payload = {}
+    label = str(payload.get("tool_label") or payload.get("tool") or "")
+    if not label:
+        actions = payload.get("actions")
+        if isinstance(actions, list) and actions and isinstance(actions[0], dict):
+            first = actions[0]
+            label = str(first.get("tool_label") or first.get("tool") or "")
+    label = label or "工具操作"
+    text = (
+        f"任务需要审批：{label}。\n"
+        f"回复 /approve 批准，或 /reject 拒绝"
+        f"（也可指定：/approve {pending['attention_id']}）。"
+    )
+    return enqueue_text(
+        conn, tenant_id=str(inbound["tenant_id"]),
+        channel_id=str(inbound["channel_id"]), chat_id=chat_id,
+        text=text, ticket_id=ticket_id,
+        thread_id=inbound["thread_id"],
+    )
+
+
 def enqueue_ticket_reply(
     conn: sqlite3.Connection,
     *,
@@ -422,24 +505,10 @@ def enqueue_ticket_reply(
     summary: str = "",
 ) -> str | None:
     """Send the ticket's latest assistant answer back to the origin chat."""
-    inbound = conn.execute(
-        """
-        SELECT tenant_id, channel_id, thread_id, payload_json
-        FROM channel_messages
-        WHERE direction = 'inbound' AND ticket_id = ?
-        ORDER BY id DESC LIMIT 1
-        """,
-        (ticket_id,),
-    ).fetchone()
+    inbound = _origin_inbound(conn, ticket_id)
     if inbound is None:
         return None
-    try:
-        payload = json.loads(str(inbound["payload_json"] or "{}"))
-        chat_id = str(
-            ((payload.get("event") or {}).get("message") or {}).get("chat_id") or ""
-        )
-    except ValueError:
-        chat_id = ""
+    chat_id = _chat_id_of(inbound["payload_json"])
     if not chat_id:
         return None
     thread_id = inbound["thread_id"]
@@ -573,10 +642,37 @@ def _event_token(body: dict[str, Any]) -> str:
     )
 
 
+def _decrypt_event(body: dict[str, Any], encrypt_key: str) -> dict[str, Any]:
+    """Feishu encrypt-key callback: AES-256-CBC, SHA256(key) as key."""
+    raw = str(body.get("encrypt") or "")
+    try:
+        blob = base64.b64decode(raw.encode("ascii"))
+        if len(blob) <= 16 or len(blob) % 16 != 0:
+            raise ValueError("bad ciphertext")
+        key = hashlib.sha256(encrypt_key.encode()).digest()
+        iv, data = blob[:16], blob[16:]
+        decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+        padded = decryptor.update(data) + decryptor.finalize()
+        pad = padded[-1]
+        if not 1 <= pad <= 16 or padded[-pad:] != bytes([pad]) * pad:
+            raise ValueError("bad padding")
+        value = json.loads(padded[:-pad].decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise AppError("UNAUTHORIZED", details={"reason": "encrypt"}) from exc
+    if not isinstance(value, dict):
+        raise AppError("UNAUTHORIZED", details={"reason": "encrypt"})
+    return value
+
+
 def _workspace() -> Path:
     from polyopus.config import load_settings
 
     return load_settings().workspace_dir
+
+
+def _clean_text(text: str) -> str:
+    """Strip Feishu mention placeholders (`@_user_1`) before building titles."""
+    return re.sub(r"\s+", " ", re.sub(r"@_user_\d+", " ", text)).strip()
 
 
 def _parse_command(text: str) -> tuple[str, str | None] | None:
@@ -755,11 +851,32 @@ def handle_event(
     row = _channel(conn, tenant_id, channel_id)
     if str(row["status"]) != "active":
         raise AppError("CHANNEL_DISABLED")
+    tlog.log(
+        logger, 20, "channel.event_in",
+        channel_id=channel_id,
+        keys=",".join(sorted(body.keys()))[:120],
+        encrypted="encrypt" in body,
+    )
     creds = _decrypt(str(row["credential_ref"] or ""))
+    encrypt_key = str(creds.get("encrypt_key") or "")
+    if "encrypt" in body:
+        if not encrypt_key:
+            tlog.log(logger, 30, "channel.decrypt_failed",
+                     channel_id=channel_id, reason="no_key")
+            raise AppError("UNAUTHORIZED", details={"reason": "encrypt"})
+        try:
+            body = _decrypt_event(body, encrypt_key)
+        except AppError:
+            tlog.log(logger, 30, "channel.decrypt_failed",
+                     channel_id=channel_id, reason="bad_ciphertext")
+            raise
     expected = str(creds.get("verification_token") or "")
     if expected and _event_token(body) != expected:
+        tlog.log(logger, 30, "channel.token_mismatch",
+                 channel_id=channel_id, has_token=bool(_event_token(body)))
         raise AppError("UNAUTHORIZED")
     if body.get("type") == "url_verification":
+        tlog.log(logger, 20, "channel.challenge_ok", channel_id=channel_id)
         return {"challenge": str(body.get("challenge") or "")}
 
     header = body.get("header") or {}
@@ -780,7 +897,7 @@ def handle_event(
         content = json.loads(str(message.get("content") or "{}"))
     except ValueError:
         content = {}
-    text = str(content.get("text") or "").strip()
+    text = _clean_text(str(content.get("text") or ""))
     if not text or not chat_id or not external_id:
         return {"ignored": "empty_message"}
     chat_type = str(message.get("chat_type") or "p2p")
