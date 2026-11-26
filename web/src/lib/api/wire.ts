@@ -580,6 +580,32 @@ export interface AgentListResponse {
   templates: AgentTemplate[];
 }
 
+export interface TeamMemberRow {
+  agentId: string;
+  name: string;
+  role: "lead" | "member";
+  status: "draft" | "published" | "disabled";
+  version: number;
+}
+
+/** v1.1 orchestration slice 1: persisted team roster (read-only in the UI). */
+export interface TeamRow {
+  id: string;
+  teamId: string;
+  name: string;
+  description: string | null;
+  memberCount: number;
+  members: TeamMemberRow[];
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  version: number;
+}
+
+export interface TeamListResponse {
+  items: TeamRow[];
+}
+
 export interface ToolRow {
   toolKey: string;
   source: string;

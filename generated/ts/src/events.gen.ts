@@ -617,6 +617,7 @@ export interface DelegationStartedPayload {
   member_agent_id: string;
   child_thread_id?: string;
   dedupe_key: string;
+  speaker?: string;
 }
 
 export interface DelegationStartedEvent extends Omit<EventEnvelope, "type" | "payload"> {
@@ -629,6 +630,7 @@ export interface DelegationEndedPayload {
   state: "ended" | "dead";
   reason?: string;
   usage?: Usage;
+  speaker?: string;
 }
 
 export interface DelegationEndedEvent extends Omit<EventEnvelope, "type" | "payload"> {

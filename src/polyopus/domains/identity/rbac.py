@@ -29,6 +29,7 @@ MEMBER_PERMISSIONS = (
     "cron:read", "cron:write",
     "usage:read",
     "agent:read", "agent:write",
+    "team:read", "team:write",
     "knowledge:read", "knowledge:write",
     "extension:read", "extension:write",
     "connector:read", "connector:write",

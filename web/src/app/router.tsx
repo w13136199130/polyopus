@@ -14,6 +14,7 @@ import { NotificationsPage } from "@/routes/notifications/NotificationsPage";
 import { SettingsPage } from "@/routes/settings/SettingsPage";
 import { KitPage } from "@/routes/kit/KitPage";
 import { TasksPage } from "@/routes/tasks/TasksPage";
+import { TeamsPage } from "@/routes/teams/TeamsPage";
 import { UsagePage } from "@/routes/usage/UsagePage";
 import { RouteError } from "./route-error";
 import { RequirePermission } from "@/routes/RequirePermission";
@@ -41,6 +42,7 @@ export const appRoutes: RouteObject[] = [
       { path: "automation", element: <RequirePermission permission="cron:read"><AutomationPage /></RequirePermission> },
       { path: "usage", element: <RequirePermission permission="usage:read"><UsagePage /></RequirePermission> },
       { path: "agents", element: <RequirePermission permission="agent:read"><AgentsPage /></RequirePermission> },
+      { path: "teams", element: <RequirePermission permission="team:read"><TeamsPage /></RequirePermission> },
       { path: "knowledge", element: <RequirePermission permission="knowledge:read"><KnowledgePage /></RequirePermission> },
       { path: "connections", element: <RequirePermission anyOf={["source:read", "connector:read"]}><ConnectionsPage /></RequirePermission> },
       { path: "extensions", element: <RequirePermission permission="extension:read"><ExtensionsPage /></RequirePermission> },

@@ -538,6 +538,7 @@ action: 过去时（事实）：started / delta / completed / failed / queued / 
 | `state` | `enum(ended\|dead)` | ● | 仅 ended |
 | `reason` | `string` | ○ | 仅 ended |
 | `usage` | `Usage` | ○ | 仅 ended |
+| `speaker` | `string` | ○ | 成员展示名（房间按说话人渲染） |
 
 **`memory.written` / `memory.updated`**
 | 字段 | 类型 | 必填 | 说明 |

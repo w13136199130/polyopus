@@ -1,6 +1,7 @@
 /** Experts page (P1-4): card grid + sectioned edit drawer, prototype style. */
 
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
@@ -103,6 +104,11 @@ export function AgentsPage() {
     <PageShell
       title="专家"
       subtitle="草稿可改；发布后的版本不可变，旧会话继续锁定旧版本。"
+      actions={
+        <Link className={styles.teamsLink} to="/teams">
+          团队 →
+        </Link>
+      }
     >
       <div className={styles.layout}>
         <aside className={styles.side} aria-label="专家列表">

@@ -414,6 +414,7 @@ class DelegationStartedPayload(BaseModel):
     member_agent_id: str
     child_thread_id: str | None = None
     dedupe_key: str
+    speaker: str | None = None
 
 class DelegationEndedPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -421,6 +422,7 @@ class DelegationEndedPayload(BaseModel):
     state: Literal["ended", "dead"]
     reason: str | None = None
     usage: Usage | None = None
+    speaker: str | None = None
 
 class AttentionRequestedPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")

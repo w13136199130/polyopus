@@ -399,6 +399,23 @@
   font-size: 11px;
 }
 
+.teamsLink {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text-1);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.teamsLink:hover {
+  background: var(--surface-2, var(--bg-2, transparent));
+}
+
 @media (max-width: 960px) {
   .side { display: none; }
 }

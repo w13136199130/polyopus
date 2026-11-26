@@ -82,6 +82,9 @@
         },
         "usage": {
           "$ref": "../common.schema.json#/$defs/Usage"
+        },
+        "speaker": {
+          "type": "string"
         }
       },
       "required": [

@@ -294,10 +294,11 @@ EVENTS: tuple[Event, ...] = (
        payload=(f("delegation_id", "ref:dg"), f("team_id", "str"),
                 f("parent_run_id", "ref:rn"), f("member_agent_id", "str"),
                 f("child_thread_id", "ref:th", required=False),
-                f("dedupe_key", "str"))),
+                f("dedupe_key", "str"), f("speaker", "str", required=False))),
     ev("delegation.ended", stream=TICKET, group="ticket", producer="orchestration", retention="1y",
        payload=(f("delegation_id", "ref:dg"), f("state", "enum:ended|dead"),
-                f("reason", "str", required=False), f("usage", "obj:Usage", required=False))),
+                f("reason", "str", required=False), f("usage", "obj:Usage", required=False),
+                f("speaker", "str", required=False))),
 
     # ---- attentions -------------------------------------------------------
     ev("attention.requested", stream=USER, group="user", producer="intake", retention="forever",

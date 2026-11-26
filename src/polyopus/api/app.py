@@ -26,6 +26,7 @@ from polyopus.api.routers import (
     channels_api,
     connectors_api,
     cron_api,
+    delegations_api,
     invites_api,
     knowledge_api,
     me_api,
@@ -37,6 +38,7 @@ from polyopus.api.routers import (
     quota_api,
     roles_api,
     settings_api,
+    teams_api,
     threads,
     tickets_api,
     tools_api,
@@ -74,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if effective.embedded_worker:
             from polyopus.workers.channels_loop import start_embedded as start_channels
             from polyopus.workers.data_jobs_loop import start_embedded as start_jobs
+            from polyopus.workers.delegations_loop import start_embedded as start_delegations
             from polyopus.workers.outbox_loop import start_embedded as start_outbox
             from polyopus.workers.scheduler_loop import start_embedded as start_scheduler
             from polyopus.workers.ticket_loop import start_embedded as start_tickets
@@ -85,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             stops.append(start_scheduler(effective.resolved_db_path))
             stops.append(start_jobs(effective.resolved_db_path))
             stops.append(start_channels(effective.resolved_db_path))
+            stops.append(start_delegations(effective.resolved_db_path))
         try:
             yield
         finally:
@@ -96,6 +100,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(agents_api.router, prefix="/api/v1")
+    app.include_router(teams_api.router, prefix="/api/v1")
+    app.include_router(delegations_api.router, prefix="/api/v1")
     app.include_router(tools_api.router, prefix="/api/v1")
     app.include_router(knowledge_api.router, prefix="/api/v1")
     app.include_router(connectors_api.router, prefix="/api/v1")

@@ -86,6 +86,9 @@
         },
         "dedupe_key": {
           "type": "string"
+        },
+        "speaker": {
+          "type": "string"
         }
       },
       "required": [

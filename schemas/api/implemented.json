@@ -1,5 +1,5 @@
 {
-  "count": 154,
+  "count": 165,
   "ops": [
     {
       "method": "DELETE",
@@ -56,6 +56,14 @@
     {
       "method": "DELETE",
       "path": "/api/v1/sources/{source_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/teams/{team_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/teams/{team_id}/members/{agent_id}"
     },
     {
       "method": "DELETE",
@@ -187,6 +195,10 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/delegations"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/invites"
     },
     {
@@ -244,6 +256,14 @@
     {
       "method": "GET",
       "path": "/api/v1/sources"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/teams"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/teams/{team_id}"
     },
     {
       "method": "GET",
@@ -348,6 +368,10 @@
     {
       "method": "PATCH",
       "path": "/api/v1/plugins/{plugin_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/teams/{team_id}"
     },
     {
       "method": "PATCH",
@@ -479,6 +503,10 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/delegations/{delegation_id}/retry"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/invites"
     },
     {
@@ -544,6 +572,22 @@
     {
       "method": "POST",
       "path": "/api/v1/sources/{source_id}/test-reply"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/teams"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/teams/{team_id}/members"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/teams/{team_id}/runs"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/teams/{team_id}/stop"
     },
     {
       "method": "POST",

@@ -55,6 +55,7 @@ import type {
   StorageSnapshot,
   ThreadListResponse,
   ThreadSettings,
+  TeamListResponse,
   TicketCounts,
   TicketDetail,
   TicketListResponse,
@@ -908,9 +909,16 @@ export const adminSecurity = {
     )),
 };
 
+export const teams = {
+  list: op("GET", "/teams", (params?: { q?: string }) => {
+    const suffix = params?.q ? `?q=${encodeURIComponent(params.q)}` : "";
+    return apiFetch<TeamListResponse>(`/teams${suffix}`);
+  }),
+};
+
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, channels, cronJobs, tickets, usage,
-  users, roles, invites, notifications, agents, tools, knowledge, connectors,
-  plugins, settings, adminOps, models, workspace,
+  users, roles, invites, notifications, agents, teams, tools, knowledge,
+  connectors, plugins, settings, adminOps, models, workspace,
   adminModels, adminStorage, adminSecurity, adminOverview,
 ];
