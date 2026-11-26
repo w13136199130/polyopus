@@ -779,6 +779,15 @@ def stop(
         (now, now, ticket_id),
     )
     conn.commit()
+    # A stopped ticket has nothing left to decide: dismiss its pending
+    # attentions (and invalidate pending approvals) so the inbox/bell clears
+    # and a late Feishu card click can never resume the stopped turn.
+    from polyopus.domains.attention import service as attention
+
+    attention.dismiss_for_ticket(
+        conn, store, tenant_id=tenant, thread_id=thread_id,
+        ticket_id=ticket_id, by=by,
+    )
     # V05-19: human stop is an auditable, ticket-scoped action.
     from polyopus.domains.audit import service as audit
 
@@ -1078,6 +1087,14 @@ def add_budget(
          "additional_cost_micros": additional_cost_micros,
          "additional_tokens": additional_tokens},
         tenant_id=tenant,
+    )
+    # The budget blocker is addressed: clear the blocked attention so the
+    # ticket can be reassigned (reassign refuses while one is pending).
+    from polyopus.domains.attention import service as attention
+
+    attention.dismiss_for_ticket(
+        conn, store, tenant_id=tenant, thread_id=thread_id,
+        ticket_id=ticket_id, kinds=("blocked",), by=by,
     )
     from polyopus.domains.audit import service as audit
 

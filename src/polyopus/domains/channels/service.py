@@ -584,6 +584,19 @@ def enqueue_approval_request(
     )
 
 
+def _ticket_url(ticket_id: str) -> str:
+    """Absolute PolyOpus task link for cards (empty when not configured)."""
+    if not ticket_id:
+        return ""
+    try:
+        from polyopus.config import load_settings
+
+        base = str(load_settings().public_base_url or "").rstrip("/")
+    except Exception:  # noqa: BLE001 - a broken link must not drop the card
+        return ""
+    return f"{base}/tasks?ticketId={ticket_id}" if base else ""
+
+
 def enqueue_ticket_reply(
     conn: sqlite3.Connection,
     *,
@@ -615,6 +628,8 @@ def enqueue_ticket_reply(
     card = cardkit.result_card(
         state=state, summary=body,
         ticket_title=str(title_row[0] if title_row is not None else ""),
+        ticket_id=ticket_id,
+        ticket_url=_ticket_url(ticket_id),
     )
     # One task, one card: whatever the user just clicked becomes the result.
     approval = conn.execute(
@@ -1057,6 +1072,66 @@ def _approval_state(
     return "expired" if state == "expired" else "closed"
 
 
+def _handle_stop_action(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    row: sqlite3.Row,
+    *,
+    tenant_id: str,
+    channel_id: str,
+    event: dict[str, Any],
+    value: dict[str, Any],
+) -> dict[str, Any]:
+    """Stop a blocked/failed ticket from its result card (confirm on client)."""
+    operator = str(((event.get("operator") or {}).get("open_id")) or "unknown")
+    ticket_id = str(value.get("ticketId") or "")
+    if not ticket_id:
+        return {"toast": {"type": "error", "content": "无法识别的任务操作"}}
+    ticket = conn.execute(
+        "SELECT title, state FROM tickets WHERE tenant_id = ? AND ticket_id = ?",
+        (tenant_id, ticket_id),
+    ).fetchone()
+    if ticket is None:
+        return {"toast": {"type": "error", "content": "任务不存在或已删除"}}
+    ticket_title = str(ticket["title"] or "")
+    if str(ticket["state"]) != "open":
+        return {"toast": {"type": "info", "content": "任务已结束。"}}
+
+    allowed, creator = _approver_check(conn, row, ticket_id, operator)
+    if not allowed:
+        audit.record(
+            conn, tenant_id=tenant_id, action="channel.stop_denied",
+            result="denied", actor_id=operator, resource_type="ticket",
+            resource_id=ticket_id,
+            detail={"channelId": channel_id, "creator": creator, "via": "card"},
+        )
+        return {"toast": {"type": "error", "content": "你没有权限停止该任务"}}
+
+    from polyopus.domains.tickets import service as tickets
+
+    try:
+        tickets.stop(conn, store, ticket_id, by=operator, tenant_id=tenant_id)
+    except Exception as exc:  # noqa: BLE001 - report a readable toast
+        tlog.log(
+            logger, 30, "channel.stop_failed",
+            ticket_id=ticket_id, error=str(exc),
+        )
+        return {"toast": {"type": "error", "content": "停止任务失败"}}
+
+    return {
+        "toast": {"type": "success", "content": "任务已停止。"},
+        "card": {
+            "type": "raw",
+            "data": cardkit.result_card(
+                state="cancelled",
+                summary="已按你的操作停止任务。",
+                ticket_title=ticket_title,
+                ticket_url=_ticket_url(ticket_id),
+            ),
+        },
+    }
+
+
 def _handle_card_action(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -1071,6 +1146,11 @@ def _handle_card_action(
     operator = str(((event.get("operator") or {}).get("open_id")) or "unknown")
     raw_value = (event.get("action") or {}).get("value")
     value = raw_value if isinstance(raw_value, dict) else {}
+    if str(value.get("action") or "") == "stop":
+        return _handle_stop_action(
+            conn, store, row,
+            tenant_id=tenant_id, channel_id=channel_id, event=event, value=value,
+        )
     decision = str(value.get("decision") or "")
     attention_id = str(value.get("attentionId") or "")
     if decision not in ("approved", "denied") or not attention_id:
@@ -1112,17 +1192,34 @@ def _handle_card_action(
             },
         }
 
-    if str(attention["status"]) != "pending":
+    attention_status = str(attention["status"])
+    if attention_status != "pending":
+        ticket = conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()
+        ended = ticket is not None and str(ticket["state"]) == "ended"
+        if attention_status == "dismissed" and ended:
+            # A human stop closed the ticket and dismissed the approval; the
+            # card still shows buttons only when the click was late.
+            return {
+                "toast": {"type": "info", "content": "任务已停止。"},
+                "card": {
+                    "type": "raw",
+                    "data": cardkit.result_card(
+                        state="cancelled",
+                        summary="任务已停止。",
+                        ticket_title=ticket_title,
+                        ticket_url=_ticket_url(ticket_id),
+                    ),
+                },
+            }
         state = (
-            "expired" if str(attention["status"]) == "expired"
+            "expired" if attention_status == "expired"
             else _approval_state(conn, tenant_id, str(attention["source_id"]))
         )
         if state == "expired":
             return response("expired", "warning", "该审批已过期，已按拒绝处理。")
-        ticket = conn.execute(
-            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
-        ).fetchone()
-        if ticket is not None and str(ticket["state"]) == "ended":
+        if ended:
             # The result card may already own this message; never downgrade it
             # back to a decision card, the toast is enough.
             return {"toast": {"type": "info", "content": "该审批已处理。"}}

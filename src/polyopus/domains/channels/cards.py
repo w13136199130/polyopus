@@ -219,6 +219,7 @@ def closed_card(
 
 def result_card(
     *, state: str, summary: str, ticket_title: str = "",
+    ticket_id: str = "", ticket_url: str = "",
 ) -> dict[str, Any]:
     title, template = _RESULT.get(state, (f"任务{state}", "grey"))
     if state == "denied":
@@ -246,6 +247,32 @@ def result_card(
             "tag": "div",
             "text": {"tag": "lark_md", "content": body or title},
         })
+    actions: list[dict[str, Any]] = []
+    if state in ("blocked", "failed") and ticket_id:
+        # A dead-end card is useless in chat: let the owner stop it in place.
+        # `confirm` makes Feishu ask before the callback is even sent.
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "停止任务"},
+            "type": "danger",
+            "value": {"action": "stop", "ticketId": ticket_id},
+            "confirm": {
+                "title": {"tag": "plain_text", "content": "停止任务？"},
+                "text": {
+                    "tag": "plain_text",
+                    "content": "停止后任务结束，已经产生的内容会保留。",
+                },
+            },
+        })
+    if ticket_url:
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "打开任务"},
+            "type": "default",
+            "url": ticket_url,
+        })
+    if actions:
+        elements.append({"tag": "action", "actions": actions})
     elements.append({
         "tag": "note",
         "elements": [{

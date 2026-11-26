@@ -379,6 +379,66 @@ def expire_due(
     return expired
 
 
+def dismiss_for_ticket(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    ticket_id: str,
+    kinds: tuple[str, ...] | None = None,
+    by: str = "system",
+) -> list[str]:
+    """Close pending attentions a terminal ticket action made moot.
+
+    Pending approvals are invalidated as `expired` first, so neither the TTL
+    sweep nor a late card/text answer can resume a stopped ticket. The
+    attention rows end as `dismissed` (docs/32 attention state machine).
+    """
+    clauses = ["tenant_id = ?", "ticket_id = ?", "status = 'pending'"]
+    params: list[object] = [tenant_id, ticket_id]
+    if kinds:
+        clauses.append("kind IN (" + ",".join("?" for _ in kinds) + ")")
+        params.extend(kinds)
+    where = " AND ".join(clauses)
+    rows = conn.execute(
+        "SELECT attention_id, source_type, source_id, turn_id FROM attentions"
+        f" WHERE {where}",
+        params,
+    ).fetchall()
+    if not rows:
+        return []
+
+    ts = int(time.time())
+    conn.execute(
+        f"UPDATE attentions SET status = 'dismissed', resolved_at = ? WHERE {where}",
+        [ts, *params],
+    )
+    for row in rows:
+        if str(row["source_type"]) != "approval":
+            continue
+        conn.execute(
+            "UPDATE approvals SET status = 'expired', resolved_at = ?"
+            " WHERE tenant_id = ? AND approval_id = ? AND status = 'pending'",
+            (ts, tenant_id, str(row["source_id"])),
+        )
+    conn.commit()
+
+    dismissed: list[str] = []
+    for row in rows:
+        attention_id = str(row["attention_id"])
+        dismissed.append(attention_id)
+        turn_id = str(row["turn_id"] or "")
+        store.append(
+            thread_id,
+            "attention.resolved",
+            {"attention_id": attention_id, "status": "dismissed", "by": by},
+            tenant_id=tenant_id,
+            turn_id=turn_id or None,
+        )
+    return dismissed
+
+
 def pending_for_run(conn: sqlite3.Connection, run_id: str) -> list[sqlite3.Row]:
     return list(
         conn.execute(

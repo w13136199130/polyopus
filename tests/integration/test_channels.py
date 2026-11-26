@@ -384,6 +384,22 @@ def _card_body(
     }
 
 
+def _action_card_body(
+    value: dict, operator: str = "ou_alice", token: str = "verify-me",
+) -> dict:
+    return {
+        "schema": "2.0",
+        "header": {
+            "event_type": "card.action.trigger", "token": token,
+            "event_id": "evt_card_action",
+        },
+        "event": {
+            "operator": {"open_id": operator},
+            "action": {"tag": "button", "value": value},
+        },
+    }
+
+
 def test_terminal_ticket_reply_is_queued_and_delivered(
     env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -412,6 +428,7 @@ def test_terminal_ticket_reply_is_queued_and_delivered(
         channels.deliver_queued(conn)
         assert fake.sent and "任务完成" in fake.sent[0]
         assert "总结一下这次发布" in fake.sent[0]
+        assert f"/tasks?ticketId={ticket_id}" in fake.sent[0]
     finally:
         conn.close()
 
@@ -741,6 +758,40 @@ def test_result_card_keeps_answer_line_breaks() -> None:
     assert "• 文件：`out.txt`\n• 内容：你好" in content
 
 
+def test_result_card_links_to_the_task() -> None:
+    card = cards.result_card(
+        state="blocked", summary="预算不足", ticket_title="发布 1.2",
+        ticket_url="https://poly.example/tasks?ticketId=tk_1",
+    )
+    actions = [el for el in card["elements"] if el.get("tag") == "action"]
+    assert actions
+    button = actions[0]["actions"][0]
+    assert button["url"] == "https://poly.example/tasks?ticketId=tk_1"
+    assert button["text"]["content"] == "打开任务"
+
+
+def test_blocked_result_card_offers_guarded_stop() -> None:
+    card = cards.result_card(
+        state="blocked", summary="预算不足", ticket_title="发布 1.2",
+        ticket_id="tk_blocked",
+        ticket_url="https://poly.example/tasks?ticketId=tk_blocked",
+    )
+    rows = [el for el in card["elements"] if el.get("tag") == "action"]
+    assert rows
+    stop, open_task = rows[0]["actions"]
+    assert stop["value"] == {"action": "stop", "ticketId": "tk_blocked"}
+    assert stop["type"] == "danger"
+    # Feishu asks before the callback fires; title and text are both required
+    assert stop["confirm"]["title"]["content"]
+    assert stop["confirm"]["text"]["content"]
+    assert open_task["url"].endswith("/tasks?ticketId=tk_blocked")
+
+
+def test_ready_result_card_has_no_stop_button() -> None:
+    card = cards.result_card(state="ready", summary="完成", ticket_id="tk_done")
+    assert not [el for el in card["elements"] if el.get("tag") == "action"]
+
+
 def _expire_pending_approval(
     conn: sqlite3.Connection, ticket_id: str,
 ) -> str:
@@ -760,6 +811,130 @@ def _expire_pending_approval(
     )
     conn.commit()
     return str(row["attention_id"])
+
+
+def test_card_action_stops_ticket(
+    env: tuple[Path, TestClient],
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 总结一下这次发布", "om_stop",
+    )
+    conn = m.connect(db)
+    try:
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_action_card_body({"action": "stop", "ticketId": ticket_id}),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["toast"]["type"] == "success"
+        updated = json.dumps(payload["card"]["data"], ensure_ascii=False)
+        assert "任务已取消" in updated
+        assert '"action": "stop"' not in updated
+        assert conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0] == "ended"
+        audit_row = conn.execute(
+            "SELECT result FROM audit_log WHERE action = 'ticket.stop'"
+            " ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert audit_row is not None and audit_row[0] == "ok"
+
+        # a second click must not overwrite whatever owns the message now
+        again = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_action_card_body({"action": "stop", "ticketId": ticket_id}),
+        )
+        assert again.json()["toast"]["type"] == "info"
+        assert "card" not in again.json()
+    finally:
+        conn.close()
+
+
+def test_card_action_stop_rejects_non_creator(
+    env: tuple[Path, TestClient],
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 总结一下这次发布", "om_stop_deny",
+    )
+    conn = m.connect(db)
+    try:
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_action_card_body(
+                {"action": "stop", "ticketId": ticket_id}, operator="ou_mallory",
+            ),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["toast"]["type"] == "error"
+        assert "权限" in payload["toast"]["content"]
+        assert conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0] == "open"
+        audit_row = conn.execute(
+            "SELECT result FROM audit_log WHERE action = 'channel.stop_denied'"
+            " ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert audit_row is not None and audit_row[0] == "denied"
+    finally:
+        conn.close()
+
+
+def test_stop_dismisses_pending_approval_and_late_click_is_inert(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_stop_approval",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        stopped = client.post(f"/api/v1/tickets/{ticket_id}/stop")
+        assert stopped.status_code == 200, stopped.text
+        assert conn.execute(
+            "SELECT status FROM attentions WHERE attention_id = ?", (attention_id,),
+        ).fetchone()[0] == "dismissed"
+        assert conn.execute(
+            "SELECT status FROM approvals WHERE approval_id ="
+            " (SELECT source_id FROM attentions WHERE attention_id = ?)",
+            (attention_id,),
+        ).fetchone()[0] == "expired"
+
+        # A late card click must not resume a stopped ticket or run the tool.
+        late = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id),
+        )
+        assert late.status_code == 200, late.text
+        assert late.json()["toast"]["type"] == "info"
+        assert "停止" in late.json()["toast"]["content"]
+        updated = json.dumps(late.json()["card"]["data"], ensure_ascii=False)
+        assert "任务已取消" in updated
+        assert not (ws / "out.txt").exists()
+        assert conn.execute(
+            "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0] == "ended"
+    finally:
+        conn.close()
 
 
 def test_card_action_repeat_click_does_not_overwrite_result(

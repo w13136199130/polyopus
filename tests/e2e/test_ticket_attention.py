@@ -121,6 +121,45 @@ def test_budget_blocked_opens_structured_attention(
     assert "attention.requested" in _events_of(db, ticket_id)
 
 
+def test_add_budget_dismisses_blocked_attention_and_unblocks_reassign(
+    env: tuple[Path, TestClient]
+) -> None:
+    """The blocked attention's own next_action is "add budget then reassign";
+    reassign refuses while an attention is pending, so the budget change must
+    dismiss the blocker instead of leaving a zombie in the inbox."""
+    db, client = env
+    ticket_id = _open_ticket(client, max_total_tokens=1)
+    conn = m.connect(db)
+    try:
+        assert tickets.run_assignment(
+            conn, EventStore(conn), ticket_id,
+        ) == "blocked"
+    finally:
+        conn.close()
+    _attention_of(client, ticket_id, "blocked")
+
+    added = client.post(
+        f"/api/v1/tickets/{ticket_id}/budget",
+        json={"additionalTokens": 50_000},
+    )
+    assert added.status_code == 200, added.text
+
+    inbox = client.get("/api/v1/attentions").json()["items"]
+    assert not [item for item in inbox if item["ticketId"] == ticket_id]
+    conn = m.connect(db)
+    try:
+        status = conn.execute(
+            "SELECT status FROM attentions WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert status == "dismissed"
+
+    reassigned = client.post(f"/api/v1/tickets/{ticket_id}/reassign")
+    assert reassigned.status_code == 200, reassigned.text
+    assert reassigned.json()["bucket"] == "queued"
+
+
 # ---- 验收 2: 人 stop → assignment ended / ticket ended ------------------------
 
 
