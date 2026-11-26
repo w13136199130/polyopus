@@ -41,10 +41,10 @@
     <div class="toolbar">
       <span class="chip">tenant: default</span><span class="chip">agent: ops-expert</span>
       <span class="spacer"></span>
-      <button class="btn" onclick="alert('导出 JSONL（含证据与时间区间）')">导出</button>
+      <button class="btn" onclick="pt('导出 JSONL（含证据与时间区间）')">导出</button>
       <button class="btn" id="pauseBtn">暂停写入</button>
     </div>
-    <div class="pausebar" id="pauseBar" style="display:none">记忆写入已暂停 · 范围：当前 Agent · 至 18:00 · <button class="link-btn" style="border:0;background:none;color:var(--amber);text-decoration:underline" onclick="alert('恢复写入')">恢复</button></div>
+    <div class="pausebar" id="pauseBar" style="display:none">记忆写入已暂停 · 范围：当前 Agent · 至 18:00 · <button class="link-btn" style="border:0;background:none;color:var(--amber);text-decoration:underline" onclick="pt('恢复写入')">恢复</button></div>
     <div class="split">
       <div class="list" id="list"></div>
       <div class="detail" id="detail"></div>
@@ -93,21 +93,51 @@ function renderDetail(){
     </div>
     <div class="section-title">处理</div>
     <div class="row" style="flex-wrap:wrap">
-      <button class="btn primary" onclick="alert('保留新 atom，旧 atom 标记 retired + superseded_by')">保留新版本</button>
-      <button class="btn" onclick="alert('合并为一条，写新版本')">合并</button>
-      <button class="btn" onclick="alert('搁置：保持双方 pending_review')">搁置待定</button>
+      <button class="btn primary" onclick="resolveConflict('keep')">保留新版本</button>
+      <button class="btn" onclick="resolveConflict('merge')">合并为一条</button>
+      <button class="btn" onclick="resolveConflict('hold')">搁置待定</button>
     </div>`:`<div class="section-title">证据</div>
-    ${m.evidence.map(([kind,id,note])=>`<div class="ev"><b>${kind}</b> <span class="mono">${id}</span> · ${note}<div class="src">点击可跳到原始 turn / tool_call</div></div>`).join('')}
+    ${m.evidence.map(([kind,id,note])=>`<div class="ev" style="cursor:pointer" onclick="pt('跳转到 ${kind} ${id}（演示）')"><b>${kind}</b> <span class="mono">${id}</span> · ${note}<div class="src">点击可跳到原始 turn / tool_call</div></div>`).join('')}
     <div class="section-title">时间与来源</div>
-    <div class="kv"><div class="k">valid_from</div><div class="v">${m.date}</div><div class="k">valid_to</div><div class="v">—</div><div class="k">supersedes</div><div class="v">${m.id==='ma_05'?'ma_04':'—'}</div><div class="k">写入来源</div><div class="v">${m.source}</div></div>
+    <div class="kv"><div class="k">valid_from</div><div class="v">${m.date}</div><div class="k">valid_to</div><div class="v">${m.status==='retired'?'已退休':'—'}</div><div class="k">supersedes</div><div class="v">${m.id==='ma_05'?'ma_04':'—'}</div><div class="k">写入来源</div><div class="v">${m.source}</div></div>
     <div class="section-title">用户控制</div>
-    <div class="row" style="flex-wrap:wrap"><button class="btn primary">编辑/纠错</button><button class="btn">退休</button><button class="btn danger">删除</button><button class="btn">查看历史版本</button></div>`}
+    <div class="row" style="flex-wrap:wrap"><button class="btn primary" onclick="editMem()">编辑/纠错</button><button class="btn" onclick="retireMem()">退休</button><button class="btn danger" onclick="deleteMem()">删除</button><button class="btn" onclick="historyMem()">查看历史版本</button></div>`}
   `;
 }
 document.getElementById('list').addEventListener('click',e=>{const r=e.target.closest('[data-id]');if(r){current=r.dataset.id;renderList();renderDetail();}});
+
+/* 记忆操作：编辑 / 退休 / 删除 / 历史 / 冲突处理（均带反馈） */
+function saveMem(){ renderList(); renderDetail(); }
+function editMem(){
+  const m=mem.find(x=>x.id===current); if(!m) return;
+  const v=window.prompt('修改记忆内容（会标记为 explicit_user，置信度 0.99）', m.text);
+  if(v && v.trim()){ m.text=v.trim(); m.source='explicit_user'; m.conf='0.99'; pt('已纠错并写入审计：'+m.id); saveMem(); }
+}
+function retireMem(){
+  const m=mem.find(x=>x.id===current); if(!m) return;
+  m.status='retired'; pt('已退休：不再参与检索，历史与证据保留'); saveMem();
+}
+function deleteMem(){
+  const m=mem.find(x=>x.id===current); if(!m) return;
+  if(!window.confirm('删除「'+m.text.slice(0,20)+'…」？删除会写审计且不可恢复。')) return;
+  const i=mem.indexOf(m); if(i>=0) mem.splice(i,1);
+  current=mem[0]?mem[0].id:''; pt('已删除并写审计'); saveMem();
+}
+function historyMem(){
+  const m=mem.find(x=>x.id===current); if(!m) return;
+  pt('历史版本：'+(m.id==='ma_05'?'ma_04 → ma_05（supersedes）':'仅当前版本'));
+}
+function resolveConflict(choice){
+  const oldOne=mem.find(x=>x.id==='ma_04'), newOne=mem.find(x=>x.id==='ma_05');
+  if(choice==='keep' && oldOne && newOne){ oldOne.status='retired'; newOne.status='active'; pt('保留新版本：旧 atom 标记 retired + superseded_by'); }
+  else if(choice==='merge'){ if(oldOne) oldOne.status='retired'; if(newOne) newOne.text='发布窗口改为周四 20:00（合并旧值 周三 20:00）'; pt('已合并为一条，写新版本'); }
+  else { if(oldOne) oldOne.status='pending_review'; if(newOne) newOne.status='pending_review'; pt('已搁置：双方保持 pending_review'); }
+  saveMem();
+}
 document.getElementById('scenes').addEventListener('click',e=>{const b=e.target.closest('[data-scene]');if(!b)return;scene=b.dataset.scene;document.querySelectorAll('#scenes .proto-tab').forEach(x=>x.classList.toggle('on',x.dataset.scene===scene));document.getElementById('pauseBar').style.display=scene==='paused'?'flex':'none';renderList();renderDetail();});
-document.getElementById('pauseBtn').onclick=()=>{document.getElementById('pauseBar').style.display='flex';alert('暂停写入：范围当前 Agent，默认 1 小时；可改为全局或按时长');};
+document.getElementById('pauseBtn').onclick=()=>{document.getElementById('pauseBar').style.display='flex';pt('暂停写入：范围当前 Agent，默认 1 小时；可改为全局或按时长');};
 renderList();renderDetail();
 </script>
+<script src="proto-common.js"></script>
 </body>
 </html>

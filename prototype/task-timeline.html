@@ -32,9 +32,9 @@
         <div class="tk-sub" id="ticketSub"></div>
       </div>
       <div class="tk-actions">
-        <button class="btn" onclick="alert('只停止 Assignment，不删除 Ticket')">停止</button>
-        <button class="btn" onclick="alert('选择执行器并填写原因')">改派</button>
-        <button class="btn" onclick="alert('输入新的预算上限')">追加预算</button>
+        <button class="btn" onclick="pt('只停止 Assignment，不删除 Ticket')">停止</button>
+        <button class="btn" onclick="pt('选择执行器并填写原因')">改派</button>
+        <button class="btn" onclick="pt('输入新的预算上限')">追加预算</button>
       </div>
     </div>
     <div class="tk-body">
@@ -181,5 +181,6 @@ document.getElementById('tabs').addEventListener('click', (e) => {
 
 render('running');
 </script>
+<script src="proto-common.js"></script>
 </body>
 </html>

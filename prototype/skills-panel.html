@@ -29,8 +29,8 @@
       <span class="chip blue" id="allow">本轮 allowlist · 3</span>
       <span class="chip" id="count">12 个技能</span>
       <span class="spacer"></span>
-      <button class="btn" onclick="alert('只清空本轮选择，不改专家配置')">清空本轮</button>
-      <button class="btn primary" onclick="alert('保存到专家配置；下轮生效')">保存</button>
+      <button class="btn" onclick="pt('只清空本轮选择，不改专家配置')">清空本轮</button>
+      <button class="btn primary" onclick="pt('保存到专家配置；下轮生效')">保存</button>
     </div>
 
     <div class="split" id="split">
@@ -156,5 +156,6 @@ document.getElementById('scenes').addEventListener('click', (e) => {
 
 renderList(); renderDetail();
 </script>
+<script src="proto-common.js"></script>
 </body>
 </html>

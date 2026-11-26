@@ -36,7 +36,7 @@
     <div class="panel" style="padding:18px">
       <div style="font-size:13px;font-weight:650;margin-bottom:8px">说明</div>
       <div class="note">铃铛入口显示未读数；单条已读与全部已读都幂等。系统通知权限被拒时只降级站内，不丢通知；点击通知跳到关联任务/工单。</div>
-      <div style="margin-top:14px"><button class="btn primary" onclick="alert('模拟：去处理审批')">去处理审批</button></div>
+      <div style="margin-top:14px"><button class="btn primary" onclick="pt('模拟：去处理审批')">去处理审批</button></div>
     </div>
     <div class="panel">
       <div class="bell">🔔 通知 <span class="badge" id="badge">3</span><span class="spacer"></span><button class="link-btn" id="all">全部已读</button></div>
@@ -74,5 +74,6 @@ document.getElementById('all').onclick=()=>{notes.forEach(n=>n.read=true);render
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-s]');if(b){scene=b.dataset.s;render();}});
 render();
 </script>
+<script src="proto-common.js"></script>
 </body>
 </html>

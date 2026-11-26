@@ -46,8 +46,8 @@
       <span class="chip blue">黄金集：kb-ops-50</span>
       <span class="chip">最近运行 10:20</span>
       <span class="spacer"></span>
-      <button class="btn" onclick="alert('选择黄金集与阈值')">设置</button>
-      <button class="btn primary" onclick="alert('已排队：跑 50 条；完成后通知')">运行评测</button>
+      <button class="btn" onclick="pt('选择黄金集与阈值')">设置</button>
+      <button class="btn primary" onclick="pt('已排队：跑 50 条；完成后通知')">运行评测</button>
     </div>
     <div class="cards">
       <div class="card"><div class="k">recall@5</div><div class="v">0.86</div><div class="s">阈值 ≥0.80 · 通过</div></div>
@@ -70,7 +70,7 @@
     <div class="toolbar">
       <span class="chip">队列 12</span><span class="chip amber">处理中 2</span><span class="chip red">失败 1</span>
       <span class="spacer"></span>
-      <button class="btn" onclick="alert('重试全部失败项')">重试失败</button>
+      <button class="btn" onclick="pt('重试全部失败项')">重试失败</button>
     </div>
     <table class="grid">
       <thead><tr><th>文档</th><th>状态</th><th>切片</th><th>错误</th><th>操作</th></tr></thead>
@@ -135,5 +135,6 @@ document.getElementById('tabs').addEventListener('click', (e) => {
 });
 renderSearch();
 </script>
+<script src="proto-common.js"></script>
 </body>
 </html>

@@ -44,7 +44,7 @@
       <div class="row" style="margin-bottom:10px">
         <div><div style="font-size:15px;font-weight:650">运维小组</div><div class="note">协调者 @ops-lead · 3 名成员 · 房间 ops-room</div></div>
         <span class="spacer"></span>
-        <button class="btn" onclick="alert('选择：只停协调者 / 停止整个房间')">停止房间</button>
+        <button class="btn" onclick="pt('选择：只停协调者 / 停止整个房间')">停止房间</button>
         <button class="btn">房间设置</button>
       </div>
       <div class="banner">成员忙碌时不能移除；停止房间要选范围——停协调者 ≠ 停成员。</div>
@@ -110,5 +110,6 @@ document.getElementById('tabs').addEventListener('click',e=>{
   document.getElementById('controlView').style.display=v==='control'?'block':'none';
 });
 </script>
+<script src="proto-common.js"></script>
 </body>
 </html>

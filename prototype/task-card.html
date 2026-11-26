@@ -150,7 +150,7 @@ host.addEventListener('click', (e) => {
   else if (act === 'view' || act === 'trace' || act === 'report') {
     window.open('task-timeline.html', '_blank');
   } else if (act === 'why') {
-    alert('因为这一步会修改工作区文件。任务卡用来记录：谁授权、能做什么、预算多少、出了事怎么审计。');
+    pt('因为这一步会修改工作区文件。任务卡用来记录：谁授权、能做什么、预算多少、出了事怎么审计。');
   }
 });
 
@@ -163,5 +163,6 @@ document.getElementById('tabs').addEventListener('click', (e) => {
 
 render();
 </script>
+<script src="proto-common.js"></script>
 </body>
 </html>
