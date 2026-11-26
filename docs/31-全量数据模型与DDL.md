@@ -824,16 +824,20 @@ CREATE TABLE channel_messages (
   direction     TEXT NOT NULL,             -- inbound|outbound
   external_id   TEXT NOT NULL,             -- 平台 message_id
   thread_id     TEXT,
+  ticket_id     TEXT,
   actor_id      TEXT,                      -- inbound: source_actors.actor_id
   actor_kind    TEXT,                      -- human|bot|system
   payload_json  TEXT NOT NULL,
-  status        TEXT NOT NULL,             -- received|sent|failed
+  status        TEXT NOT NULL,             -- received|queued|sent|failed
   error_code    TEXT,
+  attempts      INTEGER NOT NULL DEFAULT 0, -- outbound delivery attempts
+  next_retry_at INTEGER,                   -- outbound backoff gate (epoch s)
   created_at    INTEGER NOT NULL,
   UNIQUE (channel_id, external_id)
 );
 CREATE INDEX idx_chmsg_thread ON channel_messages(tenant_id, thread_id, created_at);
 CREATE INDEX idx_chmsg_actor ON channel_messages(tenant_id, actor_id, created_at);
+CREATE INDEX idx_chmsg_retry ON channel_messages(direction, status, next_retry_at);
 
 -- 编排：派工与事件订阅
 CREATE TABLE delegations (

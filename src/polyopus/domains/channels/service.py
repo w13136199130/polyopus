@@ -36,6 +36,13 @@ TENANT = "default"
 SUPPORTED_KINDS = ("feishu",)
 SOURCE_KIND = "channel_feishu"
 FEISHU_BASE = "https://open.feishu.cn"
+# Outbound delivery: bounded retries with backoff (CHAN-003). Dead-lettered
+# rows stay `failed` with error_code so operators can see what was lost.
+MAX_DELIVERY_ATTEMPTS = 3
+RETRY_BASE_SECONDS = 30
+RETRY_MAX_SECONDS = 300
+# Feishu event callbacks older than this are rejected (replay window).
+EVENT_MAX_AGE_SECONDS = 600
 
 
 def _now() -> int:
@@ -400,6 +407,61 @@ def _update_card(
     return ok, None if ok else str(payload.get("msg") or "update failed")
 
 
+def _retry_delay(attempts: int) -> int:
+    """Backoff after `attempts` failures: 30s, 120s, capped at 5 min."""
+    delay = RETRY_BASE_SECONDS * (4 ** max(0, attempts - 1))
+    return min(RETRY_MAX_SECONDS, int(delay))
+
+
+def _emit_channel_event(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    kind: str,
+    *,
+    external_id: str = "",
+    error: str | None = None,
+) -> None:
+    """Record a terminal delivery outcome on the ticket thread (best effort)."""
+    thread_id = str(row["thread_id"] or "")
+    ticket_id = str(row["ticket_id"] or "")
+    if not thread_id or (kind == "channel.sent" and not ticket_id):
+        return
+    payload: dict[str, Any] = {"channel_id": str(row["channel_id"])}
+    if kind == "channel.sent":
+        payload.update({
+            "ticket_id": ticket_id,
+            "target": {"kind": "feishu", "id": str(row["channel_id"])},
+            "external_id": external_id,
+            "idem_key": str(row["message_id"]),
+        })
+    else:
+        payload.update({
+            "code": "delivery_failed",
+            "message": str(error or "send failed"),
+            "retryable": False,
+        })
+    try:
+        EventStore(conn).append(
+            thread_id, kind, payload, tenant_id=str(row["tenant_id"]),
+        )
+    except Exception as exc:  # noqa: BLE001 - events must not break delivery
+        tlog.log(
+            logger, 30, "channel.event_append_failed",
+            kind=kind, error=str(exc),
+        )
+
+
+def _fail_outbound(conn: sqlite3.Connection, row: sqlite3.Row, error: str) -> None:
+    """Dead-letter an outbound row that retrying cannot fix."""
+    conn.execute(
+        "UPDATE channel_messages SET status = 'failed', error_code = ?,"
+        " attempts = attempts + 1, next_retry_at = NULL WHERE id = ?",
+        (error, row["id"]),
+    )
+    conn.commit()
+    _emit_channel_event(conn, row, "channel.failed", error=error)
+
+
 def send_text(
     conn: sqlite3.Connection,
     *,
@@ -670,10 +732,18 @@ def enqueue_ticket_reply(
 
 
 def deliver_queued(conn: sqlite3.Connection, *, limit: int = 10) -> int:
-    """Deliver queued outbound rows; returns how many reached Feishu."""
+    """Deliver queued outbound rows; returns how many reached Feishu.
+
+    Transient failures stay `queued` with a backoff gate (`next_retry_at`)
+    instead of being dropped; after MAX_DELIVERY_ATTEMPTS the row becomes a
+    dead letter (`failed`) and a `channel.failed` event is recorded.
+    """
+    now = _now()
     rows = conn.execute(
         "SELECT * FROM channel_messages WHERE direction = 'outbound'"
-        " AND status = 'queued' ORDER BY id LIMIT ?", (max(1, limit),),
+        " AND status = 'queued'"
+        " AND (next_retry_at IS NULL OR next_retry_at <= ?)"
+        " ORDER BY id LIMIT ?", (now, max(1, limit)),
     ).fetchall()
     delivered = 0
     for queued in rows:
@@ -682,13 +752,10 @@ def deliver_queued(conn: sqlite3.Connection, *, limit: int = 10) -> int:
             (queued["tenant_id"], queued["channel_id"]),
         ).fetchone()
         if channel is None or str(channel["status"]) != "active":
-            conn.execute(
-                "UPDATE channel_messages SET status = 'failed', error_code = ?"
-                " WHERE id = ?",
-                ("channel missing" if channel is None else "channel disabled",
-                 queued["id"]),
+            _fail_outbound(
+                conn, queued,
+                "channel missing" if channel is None else "channel disabled",
             )
-            conn.commit()
             continue
         try:
             payload = json.loads(str(queued["payload_json"] or "{}"))
@@ -700,10 +767,14 @@ def deliver_queued(conn: sqlite3.Connection, *, limit: int = 10) -> int:
         card = raw_card if isinstance(raw_card, dict) else None
         target = str(payload.get("update_message_id") or "")
         if target and card is not None:
-            ok, error = _update_card(channel, message_id=target, card=card)
+            try:
+                ok, error = _update_card(channel, message_id=target, card=card)
+            except Exception as exc:  # noqa: BLE001 - token/transport failures
+                ok, error = False, str(exc)
             if ok:
                 conn.execute(
                     "UPDATE channel_messages SET status = 'sent', error_code = NULL,"
+                    " attempts = attempts + 1, next_retry_at = NULL,"
                     " payload_json = ? WHERE id = ?",
                     (
                         json.dumps(
@@ -714,6 +785,9 @@ def deliver_queued(conn: sqlite3.Connection, *, limit: int = 10) -> int:
                     ),
                 )
                 conn.commit()
+                _emit_channel_event(
+                    conn, queued, "channel.sent", external_id=target,
+                )
                 delivered += 1
                 continue
             tlog.log(
@@ -734,27 +808,48 @@ def deliver_queued(conn: sqlite3.Connection, *, limit: int = 10) -> int:
             )
             conn.commit()
         if not chat_id or (not text and card is None):
+            _fail_outbound(conn, queued, "missing chat_id/text")
+            continue
+        try:
+            ok, message_id, error = _deliver(
+                channel, chat_id=chat_id, text=text, card=card,
+            )
+        except Exception as exc:  # noqa: BLE001 - token/transport failures
+            ok, message_id, error = False, "", str(exc)
+        if ok:
             conn.execute(
-                "UPDATE channel_messages SET status = 'failed', error_code = ?"
-                " WHERE id = ?", ("missing chat_id/text", queued["id"]),
+                "UPDATE channel_messages SET status = 'sent', error_code = NULL,"
+                " attempts = attempts + 1, next_retry_at = NULL,"
+                " external_id = CASE WHEN ? <> '' THEN ? ELSE external_id END"
+                " WHERE id = ?",
+                (message_id, message_id, queued["id"]),
             )
             conn.commit()
+            _emit_channel_event(conn, queued, "channel.sent", external_id=message_id)
+            delivered += 1
             continue
-        ok, message_id, error = _deliver(
-            channel, chat_id=chat_id, text=text, card=card,
-        )
+
+        attempts = int(queued["attempts"] or 0) + 1
+        if attempts >= MAX_DELIVERY_ATTEMPTS:
+            _fail_outbound(conn, queued, str(error or "send failed"))
+            tlog.log(
+                logger, 30, "channel.delivery_dead",
+                channel_id=queued["channel_id"], message_id=queued["message_id"],
+                attempts=attempts, error=error,
+            )
+            continue
+        retry_at = _now() + _retry_delay(attempts)
         conn.execute(
-            "UPDATE channel_messages SET status = ?, error_code = ?,"
-            " external_id = CASE WHEN ? <> '' THEN ? ELSE external_id END"
-            " WHERE id = ?",
-            (
-                "sent" if ok else "failed", error,
-                message_id, message_id, queued["id"],
-            ),
+            "UPDATE channel_messages SET attempts = ?, next_retry_at = ?,"
+            " error_code = ? WHERE id = ?",
+            (attempts, retry_at, error, queued["id"]),
         )
         conn.commit()
-        if ok:
-            delivered += 1
+        tlog.log(
+            logger, 20, "channel.delivery_retry",
+            channel_id=queued["channel_id"], message_id=queued["message_id"],
+            attempts=attempts, retry_at=retry_at, error=error,
+        )
     return delivered
 
 
@@ -1366,6 +1461,24 @@ def _handle_card_action(
     return response("denied", "success", "已拒绝，任务结束。")
 
 
+def _stale_event(header: dict[str, Any], *, now: int | None = None) -> bool:
+    """True when Feishu's create_time is outside the replay window.
+
+    Feishu puts millisecond timestamps on every v2 event; a request that old
+    is either a replay or a retry from a long-dead connection. Events without
+    a parseable create_time are accepted (older payload shapes / tests).
+    """
+    raw = header.get("create_time")
+    try:
+        created_ms = int(str(raw))
+    except (TypeError, ValueError):
+        return False
+    if created_ms <= 0:
+        return False
+    ts = created_ms // 1000
+    return ts < (now if now is not None else _now()) - EVENT_MAX_AGE_SECONDS
+
+
 def handle_event(
     conn: sqlite3.Connection,
     store: EventStore,
@@ -1409,6 +1522,17 @@ def handle_event(
 
     header = body.get("header") or {}
     event_type = str(header.get("event_type") or body.get("type") or "")
+    if event_type == "card.action.trigger" and _stale_event(header):
+        # Only state-mutating clicks need the freshness window: inbound
+        # messages are idempotent by message_id and a retry after downtime
+        # must not be dropped.
+        tlog.log(
+            logger, 30, "channel.stale_event",
+            channel_id=channel_id,
+            event_type=event_type,
+            create_time=str(header.get("create_time") or ""),
+        )
+        raise AppError("UNAUTHORIZED", details={"reason": "stale_event"})
     if event_type == "card.action.trigger":
         return _handle_card_action(
             conn, store, row,

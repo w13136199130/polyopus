@@ -15,7 +15,7 @@
   "counts": {
     "candidate": 102,
     "first": 94,
-    "indexes": 57
+    "indexes": 58
   },
   "deferred": [
     "workflows",
@@ -92,6 +92,11 @@
     "idx_chmsg_actor": {
       "ddl": "CREATE INDEX idx_chmsg_actor ON channel_messages(tenant_id, actor_id, created_at);",
       "sha256": "7cc29e70a1fa229c53134cc38635f0509215ab7ca06ea0f3af65c674df5ac9f9",
+      "table": "channel_messages"
+    },
+    "idx_chmsg_retry": {
+      "ddl": "CREATE INDEX idx_chmsg_retry ON channel_messages(direction, status, next_retry_at);",
+      "sha256": "537bd3b324c82490ecc1507e4964e7727672fa6c66e86e5251fb0bd0416cafc6",
       "table": "channel_messages"
     },
     "idx_chmsg_thread": {
@@ -419,12 +424,13 @@
       "sha256": "377e0c4704bf27f53ccb73bfed69eb95d64e778a8df0cc6b532f9ce10846f787"
     },
     "channel_messages": {
-      "ddl": "CREATE TABLE channel_messages (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  message_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  channel_id    TEXT NOT NULL,\n  direction     TEXT NOT NULL,             -- inbound|outbound\n  external_id   TEXT NOT NULL,             -- 平台 message_id\n  thread_id     TEXT,\n  actor_id      TEXT,                      -- inbound: source_actors.actor_id\n  actor_kind    TEXT,                      -- human|bot|system\n  payload_json  TEXT NOT NULL,\n  status        TEXT NOT NULL,             -- received|sent|failed\n  error_code    TEXT,\n  created_at    INTEGER NOT NULL,\n  UNIQUE (channel_id, external_id)\n);",
+      "ddl": "CREATE TABLE channel_messages (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  message_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  channel_id    TEXT NOT NULL,\n  direction     TEXT NOT NULL,             -- inbound|outbound\n  external_id   TEXT NOT NULL,             -- 平台 message_id\n  thread_id     TEXT,\n  ticket_id     TEXT,\n  actor_id      TEXT,                      -- inbound: source_actors.actor_id\n  actor_kind    TEXT,                      -- human|bot|system\n  payload_json  TEXT NOT NULL,\n  status        TEXT NOT NULL,             -- received|queued|sent|failed\n  error_code    TEXT,\n  attempts      INTEGER NOT NULL DEFAULT 0, -- outbound delivery attempts\n  next_retry_at INTEGER,                   -- outbound backoff gate (epoch s)\n  created_at    INTEGER NOT NULL,\n  UNIQUE (channel_id, external_id)\n);",
       "indexes": [
         "idx_chmsg_thread",
-        "idx_chmsg_actor"
+        "idx_chmsg_actor",
+        "idx_chmsg_retry"
       ],
-      "sha256": "ef38e51bc70c161741800cf8ede2db39ea30aecf18635110115f0f34878f7bdb"
+      "sha256": "fc4e22883a3342a11dc02be33d8883cd0c9bff4f45232a06288d04360eaa564c"
     },
     "channels": {
       "ddl": "-- 渠道：账号配置、绑定与消息（入站幂等）\nCREATE TABLE channels (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT,\n  channel_id    TEXT NOT NULL UNIQUE,\n  tenant_id     TEXT NOT NULL,\n  kind          TEXT NOT NULL,             -- feishu|dingtalk|wecom|qq|telegram|discord\n  display_name  TEXT NOT NULL,\n  config_json   TEXT,                      -- 非敏感配置（app_id、回调地址等）\n  credential_ref TEXT,                     -- secrets 引用，不存明文\n  status        TEXT NOT NULL DEFAULT 'disabled', -- active|disabled|error|expired\n  last_error    TEXT,\n  created_at    INTEGER NOT NULL,\n  updated_at    INTEGER NOT NULL,\n  UNIQUE (tenant_id, display_name)\n);",

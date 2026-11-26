@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import sqlite3
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -142,6 +143,32 @@ def test_url_verification_and_token_check(env: tuple[Path, TestClient]) -> None:
         "type": "url_verification", "challenge": "abc", "token": "wrong",
     })
     assert bad.status_code == 401
+
+
+def test_stale_card_actions_are_rejected(env: tuple[Path, TestClient]) -> None:
+    _db, client = env
+    created = _create(client)
+    path = f"/api/v1/channels/feishu/{created['channelId']}/events"
+
+    stale = _card_body("at_missing")
+    stale["header"]["create_time"] = str(
+        (int(time.time()) - channels.EVENT_MAX_AGE_SECONDS - 60) * 1000
+    )
+    assert client.post(path, json=stale).status_code == 401
+
+    recent = _card_body("at_missing")
+    recent["header"]["create_time"] = str(int(time.time()) * 1000)
+    allowed = client.post(path, json=recent)
+    assert allowed.status_code == 200
+    assert allowed.json()["toast"]["type"] == "error"
+
+    # inbound messages stay idempotent by message_id: a late retry after a
+    # restart is still accepted instead of being dropped
+    late = _message_body(message_id="om_late")
+    late["header"]["create_time"] = str((int(time.time()) - 3600) * 1000)
+    accepted = client.post(path, json=late)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["ticketId"]
 
 
 def test_encrypted_events_are_decrypted(env: tuple[Path, TestClient]) -> None:
@@ -316,6 +343,7 @@ class FakeFeishu:
         self.sent: list[str] = []
         self.patched: list[dict] = []
         self.patch_ok = True
+        self.post_ok = True
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
         sent = self.sent
@@ -331,6 +359,8 @@ class FakeFeishu:
         def fake_post(url: str, **kwargs: object) -> Response:
             if "tenant_access_token" in url:
                 return Response({"code": 0, "tenant_access_token": "tok"})
+            if not self.post_ok:
+                return Response({"code": 99991400, "msg": "rate limited"})
             body = kwargs.get("json") or {}
             content = body.get("content") if isinstance(body, dict) else "{}"
             if body.get("msg_type") == "interactive":
@@ -429,6 +459,95 @@ def test_terminal_ticket_reply_is_queued_and_delivered(
         assert fake.sent and "任务完成" in fake.sent[0]
         assert "总结一下这次发布" in fake.sent[0]
         assert f"/tasks?ticketId={ticket_id}" in fake.sent[0]
+    finally:
+        conn.close()
+
+
+def _queued_text(
+    conn: sqlite3.Connection, created: dict, ticket_id: str, text: str,
+) -> str:
+    thread_id = tickets.thread_of_ticket(conn, ticket_id)
+    return channels.enqueue_text(
+        conn, tenant_id="default", channel_id=created["channelId"],
+        chat_id="oc_chat", text=text, ticket_id=ticket_id, thread_id=thread_id,
+    )
+
+
+def test_outbound_retry_then_success(
+    env: tuple[Path, TestClient], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 总结一下这次发布", "om_retry_send",
+    )
+    conn = m.connect(db)
+    fake = FakeFeishu()
+    fake.install(monkeypatch)
+    monkeypatch.setattr(channels, "RETRY_BASE_SECONDS", 0)
+    try:
+        queue_id = _queued_text(conn, created, ticket_id, "回归提醒")
+        fake.post_ok = False
+        assert channels.deliver_queued(conn) == 0
+        row = conn.execute(
+            "SELECT status, attempts, next_retry_at, error_code"
+            " FROM channel_messages WHERE message_id = ?", (queue_id,),
+        ).fetchone()
+        assert row["status"] == "queued"
+        assert row["attempts"] == 1
+        assert row["next_retry_at"] is not None
+        assert "rate limited" in str(row["error_code"])
+        assert not fake.sent
+
+        fake.post_ok = True
+        assert channels.deliver_queued(conn) == 1
+        row = conn.execute(
+            "SELECT status, attempts, external_id FROM channel_messages"
+            " WHERE message_id = ?", (queue_id,),
+        ).fetchone()
+        assert row["status"] == "sent" and row["attempts"] == 2
+        assert row["external_id"].startswith("om_out_")
+        assert "回归提醒" in fake.sent[-1]
+        types = [r[0] for r in conn.execute("SELECT type FROM events").fetchall()]
+        assert "channel.sent" in types
+    finally:
+        conn.close()
+
+
+def test_outbound_dead_letters_after_max_attempts(
+    env: tuple[Path, TestClient], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 总结一下这次发布", "om_dead_send",
+    )
+    conn = m.connect(db)
+    fake = FakeFeishu()
+    fake.install(monkeypatch)
+    monkeypatch.setattr(channels, "RETRY_BASE_SECONDS", 0)
+    try:
+        queue_id = _queued_text(conn, created, ticket_id, "必失败")
+        fake.post_ok = False
+        for _ in range(channels.MAX_DELIVERY_ATTEMPTS):
+            channels.deliver_queued(conn)
+        row = conn.execute(
+            "SELECT status, attempts, next_retry_at FROM channel_messages"
+            " WHERE message_id = ?", (queue_id,),
+        ).fetchone()
+        assert row["status"] == "failed"
+        assert row["attempts"] == channels.MAX_DELIVERY_ATTEMPTS
+        assert row["next_retry_at"] is None
+        types = [r[0] for r in conn.execute("SELECT type FROM events").fetchall()]
+        assert "channel.failed" in types
+
+        # a dead letter is never retried again
+        assert channels.deliver_queued(conn) == 0
+        again = conn.execute(
+            "SELECT attempts FROM channel_messages WHERE message_id = ?",
+            (queue_id,),
+        ).fetchone()
+        assert again["attempts"] == channels.MAX_DELIVERY_ATTEMPTS
     finally:
         conn.close()
 
