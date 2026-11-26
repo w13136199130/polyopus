@@ -109,7 +109,7 @@
 }
 
 .groupLabel {
-  padding: 14px 11px 5px;
+  padding: 10px 11px 4px;
   color: var(--text-4);
   font-size: 10.5px;
   font-weight: 650;
@@ -121,7 +121,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 40px;
+  height: 36px;
   padding: 0 11px;
   border-radius: 7px;
   color: var(--text-2);
@@ -240,6 +240,7 @@
 .collapsed .brandText,
 .collapsed .label,
 .collapsed .groupLabel,
+.collapsed .soon,
 .collapsed .userMeta {
   display: none;
 }
@@ -270,7 +271,7 @@
   display: none;
 }
 
-/* pending-attention count on 任务 */
+/* pending-attention count on 收件箱 */
 .badge {
   margin-left: auto;
   min-width: 18px;
@@ -285,6 +286,23 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+}
+
+/* "规划中" tag for nav entries whose page ships later (v1.1). */
+.soon {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-4);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.soon + .badge {
+  margin-left: 4px;
 }
 
 /* account popover (prototype user-menu.png) */
@@ -411,6 +429,7 @@
   .brandText,
   .label,
   .groupLabel,
+  .soon,
   .userMeta,
   .chev {
     display: none;

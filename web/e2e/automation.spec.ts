@@ -14,8 +14,7 @@ async function login(page: import("@playwright/test").Page) {
 
 test("automation: create, pause, run now, edit and delete a job", async ({ page }) => {
   await login(page);
-  await page.goto("/tasks");
-  await page.getByRole("link", { name: /自动化/ }).click();
+  await page.goto("/automation");
   await page.waitForURL("**/automation");
   await expect(page.getByRole("heading", { name: "自动化", level: 1 })).toBeVisible();
 

@@ -14,7 +14,6 @@ async function login(page: import("@playwright/test").Page) {
 test("connections: connector create and probe", async ({ page }) => {
   await login(page);
   await page.goto("/connections");
-  await page.getByTestId("connectors-tab").click();
 
   const name = `E2E Webhook ${Date.now()}`;
   await page.getByTestId("connector-new").click();
@@ -55,7 +54,6 @@ test("connections: connector create and probe", async ({ page }) => {
 test("connections: custom MCP visual/JSON drawer", async ({ page }) => {
   await login(page);
   await page.goto("/connections");
-  await page.getByTestId("connectors-tab").click();
 
   const name = `E2E MCP ${Date.now()}`;
   await page.getByTestId("mcp-new").click();

@@ -28,16 +28,18 @@ test("usage: range tabs, overview, group views and export", async ({ page }) => 
     timeout: 20_000,
   });
 
-  await page.getByRole("link", { name: "用量" }).click();
+  await page.getByRole("link", { name: "Token 统计" }).click();
   await page.waitForURL("**/usage");
 
-  await expect(page.getByRole("heading", { name: "用量" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Token 统计" })).toBeVisible();
   expect(page.url()).not.toContain("range=");
   expect(page.url()).not.toContain("view=");
 
   // overview: KPI cards + daily chart; unpriced cost is never rendered as ¥0
   await expect(page.getByTestId("usage-chart")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("usage-kpi")).toHaveCount(4);
+  await expect(page.getByTestId("usage-kpi")).toHaveCount(7);
+  await expect(page.getByTestId("usage-donut-io")).toBeVisible();
+  await expect(page.getByTestId("usage-donut-model")).toBeVisible();
   await expect(page.getByText(/未计价|¥/).first()).toBeVisible();
 
   // model view: table keeps the fake model rows

@@ -1,19 +1,36 @@
-/** Experts page (P1-4): card grid + sectioned edit drawer, prototype style. */
+/**
+ * 专家 (docs/52 §4): 页头 + 我的专家/我的团队/发现专家 Tab + 过滤器行 +
+ * 卡片/表格视图 + 右侧编辑抽屉. Teams and the market are real/placeholder
+ * respectively — no fake cloud scopes.
+ */
 
-import { useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
-import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
+import {
+  Button,
+  Chip,
+  Empty,
+  ErrorState,
+  FilterBar,
+  Loading,
+  Tabs,
+  ViewToggle,
+} from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
+import { TeamPanel } from "@/features/teams/components/TeamPanel";
 import { useCan } from "@/lib/auth/permissions";
 import type { AgentRow } from "@/lib/api/wire";
-import {
-  useAgents,
-  useCreateAgent,
-  useDeleteAgent,
-  usePublishAgent,
-} from "@/features/agents/api";
+import { useAgents, useDeleteAgent, usePublishAgent } from "@/features/agents/api";
+import { AgentCard } from "./AgentCard";
+import { AgentCreateDrawer } from "./AgentCreateDrawer";
+import { DialogDelete, DialogPublish } from "./AgentDialogs";
 import { AgentEditDrawer } from "./AgentEditDrawer";
+import { AgentsTable } from "./AgentsTable";
 import styles from "./AgentsPage.module.css";
+
+type Tab = "mine" | "team" | "discover";
+type Scope = "all" | "local" | "cloud" | "shared";
+type View = "card" | "table";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
@@ -22,15 +39,35 @@ function messageOf(error: unknown): string {
 export function AgentsPage() {
   const query = useAgents();
   const canWrite = useCan("agent:write");
-  const createAgent = useCreateAgent();
   const publishAgent = usePublishAgent();
   const deleteAgent = useDeleteAgent();
+  const [params, setParams] = useSearchParams();
+
+  const tabParam = params.get("tab");
+  const tab: Tab = tabParam === "team" || tabParam === "discover" ? tabParam : "mine";
+  const scopeParam = params.get("scope");
+  const scope: Scope =
+    scopeParam === "local" || scopeParam === "cloud" || scopeParam === "shared"
+      ? scopeParam
+      : "all";
+  const view: View = params.get("view") === "table" ? "table" : "card";
+  const search = params.get("q") ?? "";
+
+  function setParam(key: string, value: string, fallback: string) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (!value || value === fallback) next.delete(key);
+        else next.set(key, value);
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [template, setTemplate] = useState("");
-  const [newName, setNewName] = useState("");
-  const nameRef = useRef<HTMLInputElement | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingSection, setEditingSection] = useState<"basic" | "test">("basic");
   const [pendingPublish, setPendingPublish] = useState<AgentRow | null>(null);
@@ -42,35 +79,19 @@ export function AgentsPage() {
     () => agents.find((agent) => agent.agentId === editingId) ?? null,
     [agents, editingId],
   );
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return agents;
+    return agents.filter((agent) =>
+      `${agent.name} ${agent.agentId} ${agent.description ?? ""} ${agent.model ?? ""}`
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [agents, search]);
 
   function openAgent(agentId: string, section: "basic" | "test" = "basic") {
     setEditingSection(section);
     setEditingId(agentId);
-  }
-
-  function applyTemplate(id: string) {
-    setTemplate(id);
-    const found = templates.find((item) => item.id === id);
-    if (found) setNewName(found.name);
-  }
-
-  async function submitCreate(event: React.FormEvent) {
-    event.preventDefault();
-    setError(null);
-    try {
-      const selected = templates.find((item) => item.id === template);
-      const created = await createAgent.mutateAsync({
-        name: newName.trim(),
-        description: selected?.description,
-        model: selected?.model,
-        systemPrompt: selected?.systemPrompt,
-      });
-      setNotice(`已创建草稿 ${created.name}`);
-      setNewName("");
-      setTemplate("");
-    } catch (err) {
-      setError(messageOf(err));
-    }
   }
 
   async function confirmPublish() {
@@ -105,171 +126,127 @@ export function AgentsPage() {
       title="专家"
       subtitle="草稿可改；发布后的版本不可变，旧会话继续锁定旧版本。"
       actions={
-        <Link className={styles.teamsLink} to="/teams">
-          团队 →
-        </Link>
+        <Button size="sm" variant="outline" disabled title="云端托管专家随 v1.1 接入">
+          添加云端专家 · v1.1
+        </Button>
+      }
+      tabs={
+        <Tabs
+          ariaLabel="专家视图"
+          value={tab}
+          onChange={(next) => setParam("tab", next, "mine")}
+          items={[
+            { key: "mine", label: "我的专家" },
+            { key: "team", label: "我的团队" },
+            { key: "discover", label: "发现专家" },
+          ]}
+        />
       }
     >
-      <div className={styles.layout}>
-        <aside className={styles.side} aria-label="专家列表">
-          <div className={styles.sideHead}>
-            <b>专家</b>
-            <span>{agents.length} 个 · {agents.filter((agent) => agent.status === "published").length} 已发布</span>
-          </div>
-          <div className={styles.sideList}>
-            {agents.map((agent) => (
-              <button
-                key={agent.agentId}
-                type="button"
-                className={styles.sideRow}
-                data-testid="agent-side-row"
-                onClick={() => openAgent(agent.agentId)}
-              >
-                <span className={styles.sideAvatar}>{agent.name.slice(0, 1).toUpperCase()}</span>
-                <span className={styles.sideMeta}>
-                  <b>{agent.name}</b>
-                  <span>{agent.model || "默认模型"}</span>
-                </span>
-                <i
-                  className={`${styles.sideDot} ${
-                    agent.status === "published" ? styles.sideDotOn : ""
-                  }`}
-                  aria-label={agent.status === "published" ? "已发布" : "草稿"}
-                />
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        <div className={styles.page}>
+      <div className={styles.page}>
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
 
-        <form className={styles.toolbar} onSubmit={(event) => void submitCreate(event)}>
-          <select
-            data-testid="agent-template"
-            value={template}
-            aria-label="从模板创建"
-            onChange={(event) => applyTemplate(event.target.value)}
-          >
-            <option value="">（空白）</option>
-            {templates.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </select>
-          <input
-            ref={nameRef}
-            data-testid="agent-name"
-            required
-            maxLength={100}
-            placeholder="新专家名称"
-            value={newName}
-            onChange={(event) => setNewName(event.target.value)}
-          />
-          <Button
-            type="submit"
-            size="sm"
-            data-testid="agent-create"
-            disabled={!canWrite || !newName.trim()}
-            loading={createAgent.isPending}
-          >
-            创建专家
-          </Button>
-        </form>
+        {tab === "mine" ? (
+          <>
+            <FilterBar
+              count={`共 ${filtered.length} 个专家`}
+              testId="agents-filter"
+              right={
+                <>
+                  <input
+                    className={styles.search}
+                    type="search"
+                    aria-label="搜索专家"
+                    placeholder="搜索名称、ID 或模型"
+                    value={search}
+                    onChange={(event) => setParam("q", event.target.value, "")}
+                  />
+                  <ViewToggle value={view} onChange={(next) => setParam("view", next, "card")} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void query.refetch()}
+                    loading={query.isFetching}
+                  >
+                    刷新
+                  </Button>
+                  <Button size="sm" data-testid="agent-new" disabled={!canWrite} onClick={() => setCreateOpen(true)}>
+                    ＋ 新建专家
+                  </Button>
+                </>
+              }
+            >
+              <Chip active={scope === "all"} onClick={() => setParam("scope", "all", "all")} count={agents.length}>
+                全部
+              </Chip>
+              <Chip active={scope === "local"} onClick={() => setParam("scope", "local", "all")} count={agents.length}>
+                本地
+              </Chip>
+              <Chip disabled title="云端专家随 v1.1 接入">云端</Chip>
+              <Chip disabled title="共享专家随 v1.1 接入">共享</Chip>
+            </FilterBar>
 
-        {query.isLoading ? (
-          <Loading label="载入专家…" />
-        ) : query.isError ? (
-          <ErrorState message="专家加载失败" onRetry={() => void query.refetch()} />
-        ) : agents.length === 0 ? (
-          <Empty
-            title="暂无专家"
-            hint="从模板创建一个，或直接输入名称新建。"
-            action={canWrite ? {
-              label: "从空白创建",
-              onClick: () => nameRef.current?.focus(),
-            } : undefined}
-          />
-        ) : (
-          <div className={styles.grid}>
-            {agents.map((agent) => (
-              <div
-                key={agent.agentId}
-                className={styles.card}
-                data-testid="agent-row"
-                onClick={() => openAgent(agent.agentId)}
-              >
-                <div className={styles.cardHead}>
-                  <span className={styles.avatar}>
-                    {agent.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <div className={styles.name}>{agent.name}</div>
-                    <span
-                      className={`${styles.badge} ${
-                        agent.status === "published"
-                          ? styles.badgePublished
-                          : styles.badgeDraft
-                      }`}
-                      data-testid="agent-status"
-                    >
-                      {agent.status === "published" ? `已发布 v${agent.version}` : "草稿"}
-                    </span>
-                  </div>
-                </div>
-                <p className={styles.desc}>{agent.description || "无描述"}</p>
-                <div className={styles.meta}>
-                  {agent.model ? <span>{agent.model}</span> : <span>默认模型</span>}
-                  <span>· {agent.tools.length} 工具</span>
-                </div>
-                <div
-                  className={styles.cardActions}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <Button
-                    size="sm"
-                    data-testid="agent-open"
-                    onClick={() => openAgent(agent.agentId)}
-                  >
-                    打开
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    data-testid="agent-try"
-                    disabled={!canWrite}
-                    onClick={() => openAgent(agent.agentId, "test")}
-                  >
-                    试运行
-                  </Button>
-                  <Button
-                    size="sm"
-                    data-testid="agent-publish"
-                    disabled={!canWrite}
-                    onClick={() => setPendingPublish(agent)}
-                  >
-                    发布
-                  </Button>
-                  <details className={styles.more} onClick={(event) => event.stopPropagation()}>
-                    <summary aria-label="更多操作" data-testid="agent-more">⋯</summary>
-                    <div className={styles.moreMenu}>
-                      <button
-                        type="button"
-                        className={styles.moreDanger}
-                        disabled={!canWrite}
-                        onClick={() => setPendingDelete(agent)}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </details>
-                </div>
+            {query.isLoading ? (
+              <Loading label="载入专家…" />
+            ) : query.isError ? (
+              <ErrorState message="专家加载失败" onRetry={() => void query.refetch()} />
+            ) : agents.length === 0 ? (
+              <Empty
+                title="暂无专家"
+                hint="从模板创建一个，或直接输入名称新建。"
+                action={canWrite ? { label: "新建专家", onClick: () => setCreateOpen(true) } : undefined}
+              />
+            ) : filtered.length === 0 ? (
+              <Empty
+                title="没有匹配的专家"
+                hint="换个关键词，或清空搜索。"
+                action={{ label: "清空搜索", onClick: () => setParam("q", "", "") }}
+              />
+            ) : view === "table" ? (
+              <AgentsTable
+                agents={filtered}
+                canWrite={canWrite}
+                onOpen={(agent) => openAgent(agent.agentId)}
+                onTest={(agent) => openAgent(agent.agentId, "test")}
+                onPublish={setPendingPublish}
+                onDelete={setPendingDelete}
+              />
+            ) : (
+              <div className={styles.grid} data-testid="agents-grid">
+                {filtered.map((agent) => (
+                  <AgentCard
+                    key={agent.agentId}
+                    agent={agent}
+                    canWrite={canWrite}
+                    onOpen={() => openAgent(agent.agentId)}
+                    onTest={() => openAgent(agent.agentId, "test")}
+                    onPublish={() => setPendingPublish(agent)}
+                    onDelete={() => setPendingDelete(agent)}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        </div>
+            )}
+          </>
+        ) : null}
+
+        {tab === "team" ? <TeamPanel /> : null}
+
+        {tab === "discover" ? (
+          <Empty
+            title="专家市场尚未接入"
+            hint="发现、预览并安装市场专家的能力随 v1.1 提供；当前实例只展示本地专家。"
+          />
+        ) : null}
       </div>
+
+      <AgentCreateDrawer
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        templates={templates}
+        canWrite={canWrite}
+        onCreated={(name) => setNotice(`已创建草稿 ${name}`)}
+      />
 
       <AgentEditDrawer
         agent={editing}
@@ -280,52 +257,18 @@ export function AgentsPage() {
         onError={setError}
       />
 
-      <Dialog
-        open={pendingPublish !== null}
-        onOpenChange={(open) => { if (!open) setPendingPublish(null); }}
-        title="发布新版本"
-        description={pendingPublish ? `将把「${pendingPublish.name}」的当前草稿发布为不可变新版本。` : undefined}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setPendingPublish(null)}>取消</Button>
-            <Button
-              data-testid="confirm-agent-publish"
-              loading={publishAgent.isPending}
-              onClick={() => void confirmPublish()}
-            >
-              确认发布
-            </Button>
-          </>
-        }
-      >
-        <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>
-          已发布版本不可修改；正在进行的会话继续使用其锁定的旧版本。
-        </p>
-      </Dialog>
-
-      <Dialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
-        title="确认删除专家"
-        description={pendingDelete ? `将删除「${pendingDelete.name}」及其草稿。` : undefined}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setPendingDelete(null)}>取消</Button>
-            <Button
-              variant="danger"
-              data-testid="confirm-agent-delete"
-              loading={deleteAgent.isPending}
-              onClick={() => void confirmDelete()}
-            >
-              确认删除
-            </Button>
-          </>
-        }
-      >
-        <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>
-          已发布的历史版本记录将一并删除；此操作不可撤销。
-        </p>
-      </Dialog>
+      <DialogPublish
+        agent={pendingPublish}
+        loading={publishAgent.isPending}
+        onCancel={() => setPendingPublish(null)}
+        onConfirm={() => void confirmPublish()}
+      />
+      <DialogDelete
+        agent={pendingDelete}
+        loading={deleteAgent.isPending}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
+      />
     </PageShell>
   );
 }

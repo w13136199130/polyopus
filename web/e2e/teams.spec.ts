@@ -14,11 +14,7 @@ async function login(page: import("@playwright/test").Page) {
 test("teams: read-only roster is reachable from the experts page", async ({ page }) => {
   await login(page);
   await page.goto("/agents");
-  await page.getByRole("link", { name: /团队/ }).click();
-
-  await expect(page.getByRole("heading", { name: "团队", level: 1 })).toBeVisible();
-  await expect(
-    page.getByText("团队编制（只读）。创建、编辑与派工随下一批开放。"),
-  ).toBeVisible();
+  await page.getByRole("tab", { name: "我的团队" }).click();
+  await expect(page).toHaveURL(/tab=team/);
   await expect(page.getByTestId("teams-page")).toBeVisible();
 });

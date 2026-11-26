@@ -17,6 +17,7 @@ test("agents: create from template and publish", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "专家", level: 1 })).toBeVisible();
 
   const name = `E2E 专家 ${Date.now()}`;
+  await page.getByTestId("agent-new").click();
   await page.getByTestId("agent-template").selectOption("engineer");
   await page.getByTestId("agent-name").fill(name);
   await page.getByTestId("agent-create").click();
@@ -46,13 +47,14 @@ test("agents: edit drawer saves draft and publishes v2", async ({ page }) => {
   await page.goto("/agents");
 
   const name = `抽屉专家 ${Date.now()}`;
+  await page.getByTestId("agent-new").click();
   await page.getByTestId("agent-name").fill(name);
   await page.getByTestId("agent-create").click();
   const card = page.getByTestId("agent-row").filter({ hasText: name });
   await expect(card).toBeVisible();
 
-  // open drawer via card click
-  await card.click();
+  // open the edit drawer from the card action bar
+  await card.getByTestId("agent-open").click();
   const drawer = page.getByRole("dialog", { name: /编辑专家/ });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByTestId("agent-section-basic")).toBeVisible();
@@ -91,7 +93,7 @@ test("agents: edit drawer saves draft and publishes v2", async ({ page }) => {
     .getByRole("button", { name: "确认发布" }).click();
   await expect(card.getByTestId("agent-status")).toHaveText("已发布 v1");
 
-  await card.click();
+  await card.getByTestId("agent-open").click();
   await page.getByRole("dialog", { name: /编辑专家/ })
     .getByTestId("agent-section-prompt").click();
   await page.getByRole("dialog", { name: /编辑专家/ })
@@ -107,16 +109,41 @@ test("agents: edit drawer saves draft and publishes v2", async ({ page }) => {
   await expect(card.getByTestId("agent-status")).toHaveText("已发布 v2");
 });
 
+test("agents: page tabs, search and card/table switch", async ({ page }) => {
+  await login(page);
+  await page.goto("/agents");
+
+  await expect(page.getByRole("tab", { name: "我的专家" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "我的团队" }).click();
+  await expect(page).toHaveURL(/tab=team/);
+  await expect(page.getByTestId("teams-page")).toBeVisible();
+
+  await page.getByRole("tab", { name: "发现专家" }).click();
+  await expect(page.getByText("专家市场尚未接入")).toBeVisible();
+
+  await page.getByRole("tab", { name: "我的专家" }).click();
+  await page.getByLabel("搜索专家").fill("不存在的专家名");
+  await expect(page.getByText("没有匹配的专家")).toBeVisible();
+  await page.getByLabel("搜索专家").fill("");
+
+  await page.getByTestId("view-table").click();
+  await expect(page).toHaveURL(/view=table/);
+  await expect(page.getByRole("table", { name: "专家列表" })).toBeVisible();
+  await page.getByTestId("view-card").click();
+  await expect(page.getByTestId("agents-grid")).toBeVisible();
+});
+
 test("agents: dirty drawer asks before discarding edits", async ({ page }) => {
   await login(page);
   await page.goto("/agents");
   const name = `脏关闭专家 ${Date.now()}`;
+  await page.getByTestId("agent-new").click();
   await page.getByTestId("agent-name").fill(name);
   await page.getByTestId("agent-create").click();
   const card = page.getByTestId("agent-row").filter({ hasText: name });
   await expect(card).toBeVisible();
 
-  await card.click();
+  await card.getByTestId("agent-open").click();
   const drawer = page.getByRole("dialog", { name: /编辑专家/ });
   await expect(drawer).toBeVisible();
   await drawer.getByTestId("agent-drawer-desc").fill("未保存的描述");
@@ -138,6 +165,7 @@ test("agents: card 试运行 opens the drawer on the test section", async ({ pag
   await login(page);
   await page.goto("/agents");
   const name = `试运行专家 ${Date.now()}`;
+  await page.getByTestId("agent-new").click();
   await page.getByTestId("agent-name").fill(name);
   await page.getByTestId("agent-create").click();
   const card = page.getByTestId("agent-row").filter({ hasText: name });

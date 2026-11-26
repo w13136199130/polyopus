@@ -52,40 +52,6 @@
   border-bottom: 1px solid var(--line);
 }
 
-.tabs { display: flex; gap: 4px; }
-
-.tab {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-3);
-  padding: 8px 10px;
-  font-size: 12.5px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tab:hover { color: var(--text); }
-
-.tabOn {
-  color: var(--primary);
-  border-color: var(--primary);
-  font-weight: 600;
-}
-
-.tab span {
-  min-width: 17px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-3);
-  font-size: 9.5px;
-  line-height: 16px;
-}
-
 .unreadCount { background: var(--red-soft) !important; color: var(--red) !important; }
 
 .list {

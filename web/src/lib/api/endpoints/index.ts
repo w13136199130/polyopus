@@ -719,6 +719,12 @@ export const knowledge = {
   }) => apiFetch<KnowledgeBaseRow>("/knowledge-bases", {
     method: "POST", body: JSON.stringify(body),
   })),
+  updateKb: op("PATCH", "/knowledge-bases/{kb_id}", (
+    kbId: string, body: { name?: string; description?: string },
+  ) => apiFetch<KnowledgeBaseRow>(
+    `/knowledge-bases/${encodeURIComponent(kbId)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )),
   removeKb: op("DELETE", "/knowledge-bases/{kb_id}", (kbId: string) =>
     apiFetch<{ ok: boolean; kbId: string }>(
       `/knowledge-bases/${encodeURIComponent(kbId)}`, { method: "DELETE" },

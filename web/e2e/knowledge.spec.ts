@@ -17,9 +17,10 @@ async function login(page: import("@playwright/test").Page) {
 test("knowledge: file upload, preview, retrieval and batch delete", async ({ page }) => {
   await login(page);
   await page.goto("/knowledge");
-  await expect(page.getByRole("heading", { name: "知识", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "知识库", level: 1 })).toBeVisible();
 
   const name = `E2E 知识库 ${Date.now()}`;
+  await page.getByTestId("kb-new").click();
   await page.getByTestId("kb-name").fill(name);
   await page.getByTestId("kb-create").click();
   await expect(page.getByText(`已创建知识库 ${name}`)).toBeVisible();
@@ -36,7 +37,7 @@ test("knowledge: file upload, preview, retrieval and batch delete", async ({ pag
   await page.getByTestId("kb-pick-files").click();
   await page.setInputFiles("input[data-testid=kb-file-input]", tmp);
   await expect(
-    page.locator("tr", { hasText: path.basename(tmp) }),
+    page.getByTestId("doc-card").filter({ hasText: path.basename(tmp) }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("已上传 1 个文档")).toBeVisible();
 
@@ -50,7 +51,7 @@ test("knowledge: file upload, preview, retrieval and batch delete", async ({ pag
   await expect(page.getByText(/已上传 ops.md/)).toBeVisible();
 
   // preview opens the chunk drawer
-  await page.locator("tr", { hasText: "ops.md" }).getByTestId("doc-preview").click();
+  await page.getByTestId("doc-card").filter({ hasText: "ops.md" }).getByTestId("doc-preview").click();
   const drawer = page.getByRole("dialog", { name: "文档预览" });
   await expect(drawer).toContainText("备份", { timeout: 15_000 });
   await drawer.getByRole("button", { name: "关闭" }).click();
@@ -63,8 +64,9 @@ test("knowledge: file upload, preview, retrieval and batch delete", async ({ pag
   await expect(page.getByTestId("kb-hit").first()).toContainText("ops.md");
   await expect(page.getByTestId("kb-hit").first()).toContainText("备份");
 
-  // batch delete: select both docs, remove, table empty
+  // batch delete: switch to table, select both docs, remove
   await page.getByTestId("kb-tab-docs").click();
+  await page.getByTestId("doc-view-table").click();
   await page.getByRole("checkbox", { name: "全选文档" }).click();
   await expect(page.getByText("已选 2 项")).toBeVisible();
   await page.getByTestId("doc-batch-reindex").click();
@@ -73,12 +75,13 @@ test("knowledge: file upload, preview, retrieval and batch delete", async ({ pag
   await page.getByTestId("doc-batch-delete").click();
   await expect(page.getByText("已删除 2 个文档")).toBeVisible({ timeout: 15_000 });
 
-  // settings tab: stats + reindex + kb delete
-  await page.getByTestId("kb-tab-settings").click();
-  await expect(page.getByText("文档数")).toBeVisible();
-  await page.getByTestId("kb-reindex").click();
+  // settings drawer: stats + reindex + kb delete
+  await page.getByTestId("kb-settings-open").click();
+  const settings = page.getByRole("dialog", { name: "知识库设置" });
+  await expect(settings.getByText("文档数")).toBeVisible();
+  await settings.getByTestId("kb-reindex").click();
   await expect(page.getByText("索引已重建")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("kb-delete").click();
+  await settings.getByTestId("kb-delete").click();
   await page.getByRole("dialog", { name: "确认删除知识库" })
     .getByRole("button", { name: "确认删除" }).click();
   await expect(page.getByText(`已删除 ${name}`)).toBeVisible();
@@ -90,6 +93,7 @@ test("knowledge: pipeline chips and per-doc reindex", async ({ page }) => {
   await page.goto("/knowledge");
 
   const name = `E2E 管线 ${Date.now()}`;
+  await page.getByTestId("kb-new").click();
   await page.getByTestId("kb-name").fill(name);
   await page.getByTestId("kb-create").click();
   await expect(page.getByText(`已创建知识库 ${name}`)).toBeVisible();
@@ -100,7 +104,7 @@ test("knowledge: pipeline chips and per-doc reindex", async ({ page }) => {
     "# 运维\n## 备份\n每天备份，保留七份。\n",
   );
   await page.getByTestId("doc-upload").click();
-  const row = page.locator("tr", { hasText: "pipeline.md" });
+  const row = page.getByTestId("doc-card").filter({ hasText: "pipeline.md" });
   await expect(row).toBeVisible({ timeout: 15_000 });
 
   // document search + card view
@@ -109,7 +113,7 @@ test("knowledge: pipeline chips and per-doc reindex", async ({ page }) => {
   await page.getByTestId("doc-search").fill("missing-file");
   await expect(page.getByText("没有匹配的文档")).toBeVisible();
   await page.getByTestId("doc-search").fill("");
-  await page.getByTestId("doc-view-cards").click();
+  await page.getByTestId("doc-view-card").click();
   await expect(page.getByTestId("doc-card").filter({ hasText: "pipeline.md" })).toBeVisible();
   await page.getByTestId("doc-view-table").click();
 
@@ -127,7 +131,9 @@ test("knowledge: pipeline chips and per-doc reindex", async ({ page }) => {
 
   // per-doc reindex from the doc row (摄取队列行内操作)
   await page.getByTestId("kb-tab-docs").click();
-  await row.getByTestId("doc-reindex").click();
+  await page.getByTestId("doc-view-card").click();
+  await page.getByTestId("doc-card").filter({ hasText: "pipeline.md" })
+    .getByTestId("doc-reindex").click();
   await expect(page.getByText("已重建 pipeline.md 的索引")).toBeVisible({
     timeout: 15_000,
   });

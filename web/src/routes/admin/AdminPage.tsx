@@ -5,8 +5,8 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { useNavigate } from "react-router";
-import { Button } from "@/components/ui";
+import { useNavigate, useSearchParams } from "react-router";
+import { Button, Tabs } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
 import { AdminAppTab } from "./AdminAppTab";
@@ -60,15 +60,7 @@ export function AdminPage() {
   const canInvite = useCan("invite:write");
   const canWriteUsers = useCan("user:write");
 
-  const [tab, setTab] = useState<Tab>(canAdmin ? "overview" : "users");
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // Header actions open dialogs owned by the active tab.
-  const [createUserSignal, setCreateUserSignal] = useState(0);
-  const [inviteSignal, setInviteSignal] = useState(0);
-  const [providerSignal, setProviderSignal] = useState(0);
-  const [securityEditorSignal, setSecurityEditorSignal] = useState(0);
+  const [params, setParams] = useSearchParams();
 
   const tabs: Array<[Tab, string, boolean]> = [
     ["overview", "概览", canAdmin],
@@ -80,6 +72,30 @@ export function AdminPage() {
     ["app", "应用设置", canAdmin],
   ];
   const visible = tabs.filter(([, , allowed]) => allowed);
+  const requested = params.get("tab") as Tab | null;
+  const tab: Tab = visible.some(([key]) => key === requested)
+    ? (requested as Tab)
+    : (visible[0]?.[0] ?? "users");
+  // Tabs are URL-driven so admin nav entries and deep links survive reloads.
+  const setTab = (next: Tab) => {
+    setParams(
+      (prev) => {
+        const value = new URLSearchParams(prev);
+        value.set("tab", next);
+        return value;
+      },
+      { replace: true },
+    );
+  };
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Header actions open dialogs owned by the active tab.
+  const [createUserSignal, setCreateUserSignal] = useState(0);
+  const [inviteSignal, setInviteSignal] = useState(0);
+  const [providerSignal, setProviderSignal] = useState(0);
+  const [securityEditorSignal, setSecurityEditorSignal] = useState(0);
+
   const meta = tab === "security" && !canAdmin
     ? { title: "安全防护", subtitle: "审计日志只读；策略配置需要管理员权限。" }
     : META[tab];
@@ -136,22 +152,23 @@ export function AdminPage() {
   }
 
   return (
-    <PageShell title={meta.title} subtitle={meta.subtitle} actions={actions}>
-      <div className={styles.tabs} role="tablist" aria-label="管理视图">
-        {visible.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={tab === key}
-            data-testid={`admin-tab-${key}`}
-            className={`${styles.tab} ${tab === key ? styles.tabActive : ""}`}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+    <PageShell
+      title={meta.title}
+      subtitle={meta.subtitle}
+      actions={actions}
+      tabs={
+        <Tabs
+          ariaLabel="管理视图"
+          value={tab}
+          onChange={setTab}
+          items={visible.map(([key, label]) => ({
+            key,
+            label,
+            testId: `admin-tab-${key}`,
+          }))}
+        />
+      }
+    >
       <div className={styles.page}>
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}

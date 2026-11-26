@@ -8,39 +8,6 @@
   min-height: 0;
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-.tab {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-3);
-  padding: 8px 10px;
-  font-size: 12.5px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.tab:hover { color: var(--text); }
-
-.tabOn {
-  color: var(--primary);
-  border-color: var(--primary);
-  font-weight: 600;
-}
-
 .spacer { flex: 1; }
 
 .search {

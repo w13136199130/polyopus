@@ -36,6 +36,18 @@ export function useDeleteKb() {
   });
 }
 
+export function useUpdateKb() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { kbId: string; name?: string; description?: string }) =>
+      knowledge.updateKb(input.kbId, {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+      }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: knowledgeKeys.kbs }),
+  });
+}
+
 export function useUploadDoc(kbId: string) {
   const client = useQueryClient();
   return useMutation({

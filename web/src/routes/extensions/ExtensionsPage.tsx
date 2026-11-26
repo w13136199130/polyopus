@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { Button, Dialog, Drawer, Empty, ErrorState, Loading, Switch } from "@/components/ui";
+import { useSearchParams } from "react-router";
+import { Button, Dialog, Drawer, Empty, ErrorState, Loading, Switch, Tabs } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
 import type { AgentToolBinding, PluginRow } from "@/lib/api/wire";
@@ -121,8 +122,24 @@ export function ExtensionsPage() {
   const togglePlugin = useTogglePlugin();
   const uninstallPlugin = useUninstallPlugin();
 
-  const [tab, setTab] = useState<Tab>("plugins");
-  const [pluginView, setPluginView] = useState<"installed" | "market">("installed");
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab");
+  const tab: Tab = (["plugins", "skills", "tools", "agent"] as const).includes(tabParam as never)
+    ? (tabParam as Tab)
+    : "plugins";
+  const pluginView: "installed" | "market" = params.get("sub") === "market" ? "market" : "installed";
+  const setTab = (next: Tab) => {
+    const query = new URLSearchParams(params);
+    if (next === "plugins") query.delete("tab");
+    else query.set("tab", next);
+    setParams(query, { replace: true });
+  };
+  const setPluginView = (next: "installed" | "market") => {
+    const query = new URLSearchParams(params);
+    if (next === "installed") query.delete("sub");
+    else query.set("sub", next);
+    setParams(query, { replace: true });
+  };
   const [detailPlugin, setDetailPlugin] = useState<PluginRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -177,27 +194,23 @@ export function ExtensionsPage() {
     <PageShell
       title="扩展"
       subtitle="插件只接受本地签名白名单；工具设置只缩小权限，永不扩大策略。"
+      tabs={
+        <Tabs
+          ariaLabel="扩展视图"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { key: "plugins", label: "插件", testId: "ext-tab-plugins" },
+            { key: "skills", label: "技能包", testId: "ext-tab-skills" },
+            { key: "tools", label: "工具", testId: "ext-tab-tools" },
+            { key: "agent", label: "Agent 工具", testId: "ext-tab-agent" },
+          ]}
+        />
+      }
     >
       <div className={styles.page}>
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
-
-        <div className={styles.tabs} role="tablist" aria-label="扩展视图">
-          {([["plugins", "插件"], ["skills", "技能包"], ["tools", "工具"], ["agent", "Agent 工具"]] as const)
-            .map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={tab === key}
-                data-testid={`ext-tab-${key}`}
-                className={`${styles.tab} ${tab === key ? styles.tabActive : ""}`}
-                onClick={() => setTab(key)}
-              >
-                {label}
-              </button>
-            ))}
-        </div>
 
         {tab === "plugins" ? (
           <section className={styles.panel}>
@@ -227,28 +240,16 @@ export function ExtensionsPage() {
                 安装签名插件
               </Button>
             </div>
-            <div className={styles.subTabs} role="tablist" aria-label="插件视图">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={pluginView === "installed"}
-                className={`${styles.subTab} ${pluginView === "installed" ? styles.subTabOn : ""}`}
-                data-testid="plugin-view-installed"
-                onClick={() => setPluginView("installed")}
-              >
-                已安装
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={pluginView === "market"}
-                className={`${styles.subTab} ${pluginView === "market" ? styles.subTabOn : ""}`}
-                data-testid="plugin-view-market"
-                onClick={() => setPluginView("market")}
-              >
-                插件市场 <span className={styles.tag}>v1.1</span>
-              </button>
-            </div>
+            <Tabs
+              ariaLabel="插件视图"
+              variant="segmented"
+              value={pluginView}
+              onChange={setPluginView}
+              items={[
+                { key: "installed", label: "已安装", testId: "plugin-view-installed" },
+                { key: "market", label: "插件市场 v1.1", testId: "plugin-view-market" },
+              ]}
+            />
             {pluginView === "market" ? (
               <Empty
                 title="插件市场随 v1.1 接入"

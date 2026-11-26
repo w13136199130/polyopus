@@ -14,7 +14,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, Dialog, Drawer, ErrorState, PageLoading, StreamConnectingIndicator } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import { useAgents } from "@/features/agents/api";
@@ -82,8 +82,9 @@ function readTab(): DockTab {
 export function ChatPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const { threadId: pathThreadId } = useParams();
   const createTicket = useCreateTicket();
-  const threadId = params.get("threadId");
+  const threadId = params.get("threadId") ?? pathThreadId ?? null;
 
   const threadsQuery = useThreads();
   const activeMode = threadsQuery.data?.items.find(

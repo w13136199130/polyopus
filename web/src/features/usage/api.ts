@@ -16,11 +16,13 @@ export type UsageGroup = (typeof GROUPS)[number];
 export interface UsageQuery {
   range: UsageRange;
   groupBy: UsageGroup;
+  asUser?: string;
+  agentId?: string;
 }
 
 export const usageKeys = {
   summary: (query: UsageQuery) =>
-    ["usage", "summary", query.range, query.groupBy] as const,
+    ["usage", "summary", query.range, query.groupBy, query.asUser ?? "", query.agentId ?? ""] as const,
 };
 
 export function useUsageSummary(query: UsageQuery) {

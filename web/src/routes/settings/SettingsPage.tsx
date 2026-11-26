@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Button, Empty, ErrorState, Loading } from "@/components/ui";
+import { Button, Empty, ErrorState, Loading, Tabs } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useSession } from "@/lib/auth/session";
 import {
@@ -266,6 +266,18 @@ export function SettingsPage() {
           退出登录
         </Button>
       }
+      tabs={
+        <Tabs
+          ariaLabel="设置分区"
+          value={tab}
+          onChange={selectTab}
+          items={TABS.map(([id, label]) => ({
+            key: id,
+            label,
+            testId: `settings-tab-${id}`,
+          }))}
+        />
+      }
     >
       <div className={styles.page}>
         {notice ? (
@@ -307,22 +319,6 @@ export function SettingsPage() {
             </Button>
           </div>
         </section>
-
-        <div className={styles.tabs} role="tablist" aria-label="设置分区">
-          {TABS.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              className={`${styles.tab} ${tab === id ? styles.tabOn : ""}`}
-              data-testid={`settings-tab-${id}`}
-              onClick={() => selectTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
         {tab === "appearance" ? (
           <div className={styles.sections}>

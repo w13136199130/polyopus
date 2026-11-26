@@ -1,8 +1,7 @@
 import { Empty, ErrorState, Loading } from "@/components/ui";
-import { PageShell } from "@/layouts/PageShell";
-import type { TeamRow } from "@/lib/api/wire";
 import { useTeams } from "@/features/teams/api";
-import styles from "./TeamsPage.module.css";
+import type { TeamRow } from "@/lib/api/wire";
+import styles from "./TeamPanel.module.css";
 
 function dateOf(ts: number): string {
   const date = new Date(ts * 1000);
@@ -27,9 +26,7 @@ function TeamCard({ team }: { team: TeamRow }) {
         <div className={styles.members}>
           {team.members.map((member) => (
             <span key={member.agentId} className={styles.member}>
-              {member.role === "lead" ? (
-                <i className={styles.lead}>协调者</i>
-              ) : null}
+              {member.role === "lead" ? <i className={styles.lead}>协调者</i> : null}
               {member.name}
               <em className={styles.memberState}>
                 {member.status === "published" ? `v${member.version}` : "草稿"}
@@ -43,36 +40,31 @@ function TeamCard({ team }: { team: TeamRow }) {
 }
 
 /**
- * v1.1 orchestration slice 1: the persisted roster is visible, while
- * create/edit/delegation stay honest placeholders until the next slice.
+ * Roster panel shared by 专家 → 我的团队 (tab) and the legacy /teams route.
+ * Create/edit/delegation stay honest placeholders until the next slice.
  */
-export function TeamsPage() {
+export function TeamPanel() {
   const query = useTeams();
   const items = query.data?.items ?? [];
 
   return (
-    <PageShell
-      title="团队"
-      subtitle="团队编制（只读）。创建、编辑与派工随下一批开放。"
-    >
-      <div data-testid="teams-page">
-        {query.isLoading ? (
-          <Loading label="载入团队…" />
-        ) : query.isError ? (
-          <ErrorState message="团队加载失败" onRetry={() => void query.refetch()} />
-        ) : items.length === 0 ? (
-          <Empty
-            title="还没有团队"
-            hint="团队会在这里展示协调者与成员；创建入口随下一批开放。"
-          />
-        ) : (
-          <div className={styles.grid}>
-            {items.map((team) => (
-              <TeamCard key={team.teamId} team={team} />
-            ))}
-          </div>
-        )}
-      </div>
-    </PageShell>
+    <div data-testid="teams-page" className={styles.wrap}>
+      {query.isLoading ? (
+        <Loading label="载入团队…" />
+      ) : query.isError ? (
+        <ErrorState message="团队加载失败" onRetry={() => void query.refetch()} />
+      ) : items.length === 0 ? (
+        <Empty
+          title="还没有团队"
+          hint="团队会在这里展示协调者与成员；创建入口随下一批开放。"
+        />
+      ) : (
+        <div className={styles.grid}>
+          {items.map((team) => (
+            <TeamCard key={team.teamId} team={team} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

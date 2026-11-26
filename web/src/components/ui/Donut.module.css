@@ -1,0 +1,115 @@
+.card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  padding: 14px 16px 16px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.donut {
+  width: 108px;
+  height: 108px;
+  flex: none;
+  transform: rotate(-90deg);
+}
+
+.track {
+  fill: none;
+  stroke: var(--surface-3);
+  stroke-width: 14;
+}
+
+.segment {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: butt;
+}
+
+.centerValue {
+  transform: rotate(90deg);
+  transform-origin: 60px 60px;
+  fill: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.centerLabel {
+  transform: rotate(90deg);
+  transform-origin: 60px 60px;
+  fill: var(--text-4);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.legend i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 2px;
+}
+
+.legendLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.legendValue {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.legendPct {
+  width: 32px;
+  text-align: right;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .body {
+    gap: 8px;
+  }
+  .donut {
+    width: 92px;
+    height: 92px;
+  }
+}

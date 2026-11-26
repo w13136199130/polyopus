@@ -1,7 +1,8 @@
 /** Admin → 安全防护: tool approval, file access, scans and audit. */
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Dialog, ErrorState, Loading } from "@/components/ui";
+import { useSearchParams } from "react-router";
+import { Button, Dialog, ErrorState, Loading, Tabs } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import type { SecurityRule } from "@/lib/api/wire";
 import {
@@ -53,7 +54,18 @@ export function AdminSecurityTab({
   const publish = usePublishPolicy();
   const rollback = useRollbackPolicy();
   const canAudit = useCan("audit:read");
-  const [sub, setSub] = useState<SubTab>("approval");
+  const [params, setParams] = useSearchParams();
+  const subParam = params.get("sub");
+  const availableTabs = SUB_TABS.filter(([key]) => key !== "audit" || canAudit);
+  const sub: SubTab = availableTabs.some(([key]) => key === subParam)
+    ? (subParam as SubTab)
+    : "approval";
+  const setSub = (next: SubTab) => {
+    const query = new URLSearchParams(params);
+    if (next === "approval") query.delete("sub");
+    else query.set("sub", next);
+    setParams(query, { replace: true });
+  };
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const [rollbackVersion, setRollbackVersion] = useState("");
@@ -129,21 +141,17 @@ export function AdminSecurityTab({
 
   return (
     <div className={styles.page}>
-      <div className={styles.subTabs} role="tablist" aria-label="安全防护">
-        {SUB_TABS.filter(([key]) => key !== "audit" || canAudit).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={sub === key}
-            data-testid={`admin-subtab-${key}`}
-            className={`${styles.subTab} ${sub === key ? styles.subTabOn : ""}`}
-            onClick={() => setSub(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        ariaLabel="安全防护"
+        variant="segmented"
+        value={sub}
+        onChange={setSub}
+        items={availableTabs.map(([key, label]) => ({
+          key,
+          label,
+          testId: `admin-subtab-${key}`,
+        }))}
+      />
 
       {query.isLoading ? <Loading label="载入安全姿态…" /> : query.isError ? (
         <ErrorState message="安全信息加载失败" onRetry={() => void query.refetch()} />

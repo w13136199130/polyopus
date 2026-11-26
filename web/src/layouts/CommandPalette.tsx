@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { NAV_GROUPS, NAV_ITEMS, navHref } from "@/app/nav";
 import { useSession } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
 import styles from "./CommandPalette.module.css";
@@ -13,19 +14,25 @@ interface Command {
   permission?: string;
 }
 
-const COMMANDS: Command[] = [
-  { id: "chat", label: "对话", hint: "打开会话工作台", path: "/chat", permission: "chat:read" },
+const GROUP_LABEL = Object.fromEntries(NAV_GROUPS.map((group) => [group.key, group.label]));
+
+const EXTRA_COMMANDS: Command[] = [
   { id: "new-chat", label: "新建对话", hint: "从空白或当前专家开始", action: "new-chat", permission: "chat:write" },
-  { id: "tasks", label: "任务", hint: "待决 / 运行 / 排队 / 完成", path: "/tasks", permission: "ticket:read" },
-  { id: "agents", label: "专家", hint: "管理专家与草稿", path: "/agents", permission: "agent:read" },
-  { id: "knowledge", label: "知识", hint: "知识库与检索", path: "/knowledge", permission: "knowledge:read" },
-  { id: "connections", label: "连接", hint: "来源与连接器", path: "/connections", permission: "source:read" },
-  { id: "extensions", label: "扩展", hint: "插件与工具", path: "/extensions", permission: "extension:read" },
-  { id: "automation", label: "自动化", hint: "定时任务", path: "/automation", permission: "cron:read" },
-  { id: "usage", label: "用量", hint: "Token 与成本", path: "/usage", permission: "usage:read" },
   { id: "notifications", label: "通知", hint: "站内通知中心", path: "/notifications" },
-  { id: "settings", label: "设置", hint: "外观与账号", path: "/settings", permission: "settings:read" },
-  { id: "admin", label: "管理", hint: "用户、模型、存储与安全", path: "/admin", permission: "user:read" },
+  { id: "settings", label: "个人设置", hint: "外观与账号", path: "/settings", permission: "settings:read" },
+];
+
+/** Single source of truth: nav entries + a few non-nav surfaces/actions. */
+const COMMANDS: Command[] = [
+  ...EXTRA_COMMANDS.slice(0, 1),
+  ...NAV_ITEMS.map((item) => ({
+    id: `${item.path}${item.search ?? ""}`,
+    label: item.label,
+    hint: `${GROUP_LABEL[item.group] || "主功能"}${item.soon ? " · 规划中" : ""}`,
+    path: navHref(item),
+    permission: item.permission,
+  })),
+  ...EXTRA_COMMANDS.slice(1),
 ];
 
 /** Global ⌘K / Ctrl+K palette (prototype command panel). */

@@ -17,8 +17,7 @@ async function login(page: import("@playwright/test").Page) {
 
 test("sources: create webhook -> test event -> task -> stop", async ({ page }) => {
   await login(page);
-  await page.goto("/connections");
-  await page.getByTestId("channels-tab").click();
+  await page.goto("/channels");
 
   const name = `e2e-hook-${Date.now()}`;
   await page.getByTestId("source-name-input").fill(name);
@@ -33,7 +32,7 @@ test("sources: create webhook -> test event -> task -> stop", async ({ page }) =
   await row.getByTestId("source-test-webhook").click();
   await expect(page.getByText(/已触发任务|已发送 webhook/)).toBeVisible();
 
-  await page.getByRole("link", { name: "任务" }).click();
+  await page.goto("/tasks");
   await page.getByTestId("task-source").filter({ hasText: name }).click();
 
   const ticket = page.getByTestId("ticket-row").first();
@@ -54,8 +53,7 @@ test("sources: create webhook -> test event -> task -> stop", async ({ page }) =
 
 test("sources: schedule create then delete", async ({ page }) => {
   await login(page);
-  await page.goto("/connections");
-  await page.getByTestId("channels-tab").click();
+  await page.goto("/channels");
 
   const name = `e2e-cron-${Date.now()}`;
   await page.getByTestId("schedule-name-input").fill(name);
@@ -77,8 +75,7 @@ test("sources: schedule create then delete", async ({ page }) => {
 
 test("sources: generated secret is shown once", async ({ page }) => {
   await login(page);
-  await page.goto("/connections");
-  await page.getByTestId("channels-tab").click();
+  await page.goto("/channels");
 
   const name = `e2e-secret-${Date.now()}`;
   await page.getByTestId("source-name-input").fill(name);

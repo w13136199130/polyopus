@@ -7,31 +7,6 @@
   padding: 18px 24px 28px;
 }
 
-.subTabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--line);
-}
-
-.subTab {
-  padding: 10px 12px;
-  margin-bottom: -1px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.subTab:hover { color: var(--primary); }
-
-.subTabOn {
-  color: var(--primary);
-  border-color: var(--primary);
-  font-weight: 600;
-}
 
 .section {
   display: flex;

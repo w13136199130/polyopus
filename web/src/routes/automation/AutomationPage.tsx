@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, Dialog, Drawer, Empty, ErrorState, Loading } from "@/components/ui";
+import { useSearchParams } from "react-router";
+import { Button, Dialog, Drawer, Empty, ErrorState, FilterBar, Loading, Tabs } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import { useCan } from "@/lib/auth/permissions";
 import type { CronJobView } from "@/lib/api/wire";
@@ -148,8 +149,17 @@ export function AutomationPage() {
   const runJob = useRunCron();
   const canWrite = useCan("cron:write");
 
-  const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
+  const [params, setParams] = useSearchParams();
+  const filterParam = params.get("filter");
+  const filter: Filter = filterParam === "on" || filterParam === "off" ? filterParam : "all";
+  const query = params.get("q") ?? "";
+
+  function setParam(key: string, value: string | null) {
+    const next = new URLSearchParams(params);
+    if (!value) next.delete(key);
+    else next.set(key, value);
+    setParams(next, { replace: true });
+  }
   const [editing, setEditing] = useState<CronJobView | null>(null);
   const [creating, setCreating] = useState(false);
   const [historyJob, setHistoryJob] = useState<CronJobView | null>(null);
@@ -201,6 +211,33 @@ export function AutomationPage() {
           ＋ 创建定时任务
         </Button>
       }
+      tabs={
+        <Tabs
+          ariaLabel="任务筛选"
+          value={filter}
+          onChange={(next) => setParam("filter", next === "all" ? null : next)}
+          items={[
+            { key: "all", label: "全部", badge: jobs.length },
+            { key: "on", label: "已启用", badge: enabled },
+            { key: "off", label: "已暂停", badge: jobs.length - enabled },
+          ]}
+        />
+      }
+      filters={
+        <FilterBar
+          count={`${enabled} 个任务已启用 · 按服务器时区调度`}
+          right={
+            <input
+              className={styles.search}
+              type="search"
+              placeholder="搜索任务名、Cron 或指令"
+              aria-label="搜索定时任务"
+              value={query}
+              onChange={(event) => setParam("q", event.target.value || null)}
+            />
+          }
+        />
+      }
     >
       <div className={styles.page}>
         {notice ? (
@@ -213,36 +250,6 @@ export function AutomationPage() {
             {error}
           </button>
         ) : null}
-
-        <div className={styles.toolbar}>
-          <div className={styles.tabs} role="tablist" aria-label="任务筛选">
-            {([
-              ["all", `全部 ${jobs.length}`],
-              ["on", `已启用 ${enabled}`],
-              ["off", `已暂停 ${jobs.length - enabled}`],
-            ] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={filter === value}
-                className={`${styles.tab} ${filter === value ? styles.tabOn : ""}`}
-                onClick={() => setFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <span className={styles.spacer} />
-          <input
-            className={styles.search}
-            type="search"
-            placeholder="搜索任务名、Cron 或指令"
-            aria-label="搜索定时任务"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
 
         {jobsQuery.isLoading && !jobsQuery.data ? (
           <Loading label="载入定时任务…" />

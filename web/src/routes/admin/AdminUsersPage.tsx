@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Dialog, Empty, ErrorState, Loading } from "@/components/ui";
+import { useSearchParams } from "react-router";
+import { Button, Dialog, Empty, ErrorState, Loading, Tabs } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import {
   useAdminUsers,
@@ -88,7 +89,18 @@ export function AdminUsersPage({
   const createInvite = useCreateInvite();
   const revokeInvite = useRevokeInvite();
 
-  const [sub, setSub] = useState<SubTab>("users");
+  const [params, setParams] = useSearchParams();
+  const subParam = params.get("sub");
+  const sub: SubTab =
+    subParam === "roles" || subParam === "groups" || (subParam === "quotas" && canQuota)
+      ? subParam
+      : "users";
+  const setSub = (next: SubTab) => {
+    const query = new URLSearchParams(params);
+    if (next === "users") query.delete("sub");
+    else query.set("sub", next);
+    setParams(query, { replace: true });
+  };
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -325,26 +337,20 @@ export function AdminUsersPage({
 
   return (
     <div className={styles.page}>
-      <div className={styles.subTabs} role="tablist" aria-label="用户管理视图">
-        {([
-          ["users", "用户"],
-          ["roles", "角色"],
-          ["groups", "分组"],
-          ...(canQuota ? [["quotas", "配额"] as const] : []),
-        ] as ReadonlyArray<readonly [SubTab, string]>).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={sub === key}
-            data-testid={`admin-subtab-${key}`}
-            className={`${styles.subTab} ${sub === key ? styles.subTabOn : ""}`}
-            onClick={() => switchSub(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        ariaLabel="用户管理视图"
+        variant="segmented"
+        value={sub}
+        onChange={switchSub}
+        items={[
+          { key: "users", label: "用户", testId: "admin-subtab-users" },
+          { key: "roles", label: "角色", testId: "admin-subtab-roles" },
+          { key: "groups", label: "分组", testId: "admin-subtab-groups" },
+          ...(canQuota
+            ? [{ key: "quotas" as const, label: "配额", testId: "admin-subtab-quotas" }]
+            : []),
+        ]}
+      />
 
       {sub === "users" ? (
         <section className={styles.panel}>

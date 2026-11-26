@@ -1,7 +1,7 @@
 /** Admin → 应用设置: env vars, backup/restore, HTTPS, updates, passkeys. */
 
-import { useState } from "react";
-import { Button } from "@/components/ui";
+import { useSearchParams } from "react-router";
+import { Button, Tabs } from "@/components/ui";
 import { AdminBackupTab } from "./AdminBackupTab";
 import styles from "./AdminConfig.module.css";
 
@@ -31,25 +31,31 @@ export function AdminAppTab({
   onNotice: (message: string) => void;
   onError: (message: string) => void;
 }) {
-  const [sub, setSub] = useState<SubTab>("env");
+  const [params, setParams] = useSearchParams();
+  const subParam = params.get("sub");
+  const sub: SubTab = SUB_TABS.some(([key]) => key === subParam)
+    ? (subParam as SubTab)
+    : "env";
+  const setSub = (next: SubTab) => {
+    const query = new URLSearchParams(params);
+    if (next === "env") query.delete("sub");
+    else query.set("sub", next);
+    setParams(query, { replace: true });
+  };
 
   return (
     <div className={styles.page}>
-      <div className={styles.subTabs} role="tablist" aria-label="应用设置">
-        {SUB_TABS.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={sub === key}
-            data-testid={`admin-subtab-${key}`}
-            className={`${styles.subTab} ${sub === key ? styles.subTabOn : ""}`}
-            onClick={() => setSub(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        ariaLabel="应用设置"
+        variant="segmented"
+        value={sub}
+        onChange={setSub}
+        items={SUB_TABS.map(([key, label]) => ({
+          key,
+          label,
+          testId: `admin-subtab-${key}`,
+        }))}
+      />
 
       {sub === "env" ? (
         <section className={styles.panel}>

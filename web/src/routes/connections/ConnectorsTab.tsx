@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { Button, Dialog, ErrorState, Loading } from "@/components/ui";
+import { useSearchParams } from "react-router";
+import { Button, Dialog, ErrorState, Loading, Tabs } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import paths from "@/layouts/icons";
 import {
@@ -179,7 +180,17 @@ export function ConnectorsTab({
   const remove = useDeleteConnector();
   const canWrite = useCan("connector:write");
 
-  const [subTab, setSubTab] = useState<SubTab>("enabled");
+  const [params, setParams] = useSearchParams();
+  const subParam = params.get("sub");
+  const subTab: SubTab = subParam === "builtin" || subParam === "custom"
+    ? subParam
+    : "enabled";
+  const setSubTab = (next: SubTab) => {
+    const query = new URLSearchParams(params);
+    if (next === "enabled") query.delete("sub");
+    else query.set("sub", next);
+    setParams(query, { replace: true });
+  };
   const [category, setCategory] = useState("全部");
   const [mcpMode, setMcpMode] = useState<"visual" | "json">("visual");
   const [jsonText, setJsonText] = useState(MCP_TEMPLATE);
@@ -445,25 +456,17 @@ export function ConnectorsTab({
         </button>
       ) : null}
 
-      <div className={styles.subTabs} role="tablist" aria-label="连接器视图">
-        {([
-          ["enabled", "已启用连接器"],
-          ["builtin", "内置连接器"],
-          ["custom", "自定义连接器"],
-        ] as const).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={subTab === key}
-            data-testid={`connector-subtab-${key}`}
-            className={`${styles.subTab} ${subTab === key ? styles.subTabOn : ""}`}
-            onClick={() => setSubTab(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        ariaLabel="连接器视图"
+        variant="segmented"
+        value={subTab}
+        onChange={setSubTab}
+        items={[
+          { key: "enabled", label: "已启用连接器", testId: "connector-subtab-enabled" },
+          { key: "builtin", label: "内置连接器", testId: "connector-subtab-builtin" },
+          { key: "custom", label: "自定义连接器", testId: "connector-subtab-custom" },
+        ]}
+      />
 
       {subTab === "enabled" ? (
         instancesQuery.isLoading && !instancesQuery.data ? (

@@ -6,8 +6,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
-import { Button, Empty, ErrorState, Loading } from "@/components/ui";
+import { useNavigate, useSearchParams } from "react-router";
+import { Button, Empty, ErrorState, Loading, Tabs } from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
 import type { NotificationRow } from "@/lib/api/wire";
 import { pendingInbox, useAttentions } from "@/lib/api/hooks";
@@ -55,7 +55,14 @@ export function NotificationsPage() {
   const markAll = useMarkAllNotificationsRead();
   const attentions = useAttentions();
   const pending = pendingInbox(attentions.data?.items).length;
-  const [filter, setFilter] = useState<Filter>("all");
+  const [params, setParams] = useSearchParams();
+  const filter: Filter = params.get("filter") === "unread" ? "unread" : "all";
+  const setFilter = (next: Filter) => {
+    const query = new URLSearchParams(params);
+    if (next === "all") query.delete("filter");
+    else query.set("filter", next);
+    setParams(query, { replace: true });
+  };
   const [permission, setPermission] = useState<Permission>(permissionNow);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -134,6 +141,17 @@ export function NotificationsPage() {
           全部已读
         </Button>
       }
+      tabs={
+        <Tabs
+          ariaLabel="通知筛选"
+          value={filter}
+          onChange={setFilter}
+          items={[
+            { key: "all", label: "全部", badge: items.length },
+            { key: "unread", label: "未读", badge: unreadCount, testId: "notifications-unread-filter" },
+          ]}
+        />
+      }
     >
       <div className={styles.page}>
         {notice ? (
@@ -157,34 +175,10 @@ export function NotificationsPage() {
             variant="secondary"
             data-testid="notifications-inbox-open"
             disabled={pending === 0}
-            onClick={() => navigate("/tasks?bucket=attention")}
+            onClick={() => navigate("/inbox")}
           >
             去任务页处理
           </Button>
-        </div>
-
-        <div className={styles.toolbar}>
-          <div className={styles.tabs} role="tablist" aria-label="通知筛选">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={filter === "all"}
-              className={`${styles.tab} ${filter === "all" ? styles.tabOn : ""}`}
-              onClick={() => setFilter("all")}
-            >
-              全部 <span>{items.length}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={filter === "unread"}
-              className={`${styles.tab} ${filter === "unread" ? styles.tabOn : ""}`}
-              data-testid="notifications-unread-filter"
-              onClick={() => setFilter("unread")}
-            >
-              未读 <span className={styles.unreadCount}>{unreadCount}</span>
-            </button>
-          </div>
         </div>
 
         {query.isLoading && !query.data ? (

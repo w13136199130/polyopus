@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NAV_BOTTOM, NAV_PRIMARY } from "@/app/nav";
+import { NAV_ADMIN, NAV_ITEMS, NAV_PRIMARY } from "@/app/nav";
 import { AuthProvider } from "@/lib/auth/session";
 import { Sidebar } from "./Sidebar";
 
@@ -34,30 +34,51 @@ function json(body: unknown) {
 }
 
 describe("Sidebar", () => {
-  it("renders all 8 primary and 2 bottom entries with labels", () => {
+  it("renders all 21 entries in four groups with labels", () => {
     renderAt("/chat");
-    for (const item of [...NAV_PRIMARY, ...NAV_BOTTOM]) {
-      expect(screen.getByRole("link", { name: item.label })).toHaveAttribute(
+    expect(NAV_PRIMARY).toHaveLength(15);
+    expect(NAV_ADMIN).toHaveLength(6);
+    for (const item of NAV_ITEMS) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${item.label}`) })).toHaveAttribute(
         "href",
-        item.path,
+        `${item.path}${item.search ?? ""}`,
       );
+    }
+    for (const label of ["设置", "控制", "管理"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
 
   it("marks the active route", () => {
     renderAt("/tasks");
-    const active = screen.getByRole("link", { name: "任务" });
-    expect(active.className).toMatch(/active/);
-    const idle = screen.getByRole("link", { name: "对话" });
-    expect(idle.className).not.toMatch(/active/);
-  });
-
-  it("keeps 任务 active on the automation route", () => {
-    renderAt("/automation");
     expect(screen.getByRole("link", { name: "任务" }).className).toMatch(/active/);
+    expect(screen.getByRole("link", { name: "对话" }).className).not.toMatch(/active/);
   });
 
-  it("shows the pending-attention count on 任务", async () => {
+  it("keeps 自动化 active on its own route", () => {
+    renderAt("/automation");
+    expect(screen.getByRole("link", { name: "自动化" }).className).toMatch(/active/);
+    expect(screen.getByRole("link", { name: "任务" }).className).not.toMatch(/active/);
+  });
+
+  it("marks 收件箱 active on its own route", () => {
+    renderAt("/inbox");
+    expect(screen.getByRole("link", { name: "收件箱" }).className).toMatch(/active/);
+    expect(screen.getByRole("link", { name: "任务" }).className).not.toMatch(/active/);
+  });
+
+  it("marks a single admin entry by tab query", () => {
+    renderAt("/admin?tab=models");
+    expect(screen.getByRole("link", { name: "模型配置" }).className).toMatch(/active/);
+    expect(screen.getByRole("link", { name: "用户管理" }).className).not.toMatch(/active/);
+  });
+
+  it("tags planned v1.1 pages", () => {
+    renderAt("/chat");
+    expect(screen.getAllByText("规划中").length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("shows the pending-attention count on 收件箱", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL) => {

@@ -1,18 +1,26 @@
 import { useState } from "react";
 import {
   Button,
+  Card,
+  Chip,
   Dialog,
+  Donut,
   Drawer,
   Empty,
   ErrorBoundary,
   ErrorState,
+  FilterBar,
   Forbidden,
+  Kpi,
   Loading,
   PageLoading,
   Skeleton,
   StreamConnectingIndicator,
   Table,
+  Tabs,
+  ViewToggle,
   type Column,
+  type ViewMode,
 } from "@/components/ui";
 import styles from "./KitPage.module.css";
 
@@ -41,6 +49,9 @@ const COLUMNS: Array<Column<Row>> = [
 export function KitPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [tab, setTab] = useState<"mine" | "team" | "discover">("mine");
+  const [scope, setScope] = useState<"all" | "local" | "cloud">("all");
+  const [view, setView] = useState<ViewMode>("card");
 
   return (
     <main className={styles.page}>
@@ -95,6 +106,80 @@ export function KitPage() {
       <section className={styles.section} aria-label="表格">
         <h2 className={styles.h2}>Table</h2>
         <Table caption="工单示例" columns={COLUMNS} rows={ROWS} rowKey={(row) => row.id} />
+      </section>
+
+      <section className={styles.section} aria-label="页内结构与过滤器">
+        <h2 className={styles.h2}>Tabs / FilterBar / Chip / ViewToggle / Card / Kpi</h2>
+        <Tabs
+          ariaLabel="专家视图"
+          items={[
+            { key: "mine", label: "我的专家", badge: 6 },
+            { key: "team", label: "我的团队" },
+            { key: "discover", label: "发现专家" },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+        <div style={{ height: 12 }} />
+        <Tabs
+          ariaLabel="范围"
+          variant="segmented"
+          items={[
+            { key: "all", label: "全部" },
+            { key: "local", label: "本地" },
+            { key: "cloud", label: "云端" },
+          ]}
+          value={scope}
+          onChange={setScope}
+        />
+        <div style={{ height: 16 }} />
+        <FilterBar
+          count="共 6 个专家"
+          right={
+            <>
+              <Chip active={scope === "all"} onClick={() => setScope("all")} count={6}>
+                全部
+              </Chip>
+              <ViewToggle value={view} onChange={setView} />
+              <Button size="sm">＋ 新建专家</Button>
+            </>
+          }
+        >
+          <Chip active={scope === "local"} onClick={() => setScope("local")} count={4}>
+            本地
+          </Chip>
+          <Chip active={scope === "cloud"} onClick={() => setScope("cloud")} count={2}>
+            云端
+          </Chip>
+        </FilterBar>
+        <div style={{ height: 16 }} />
+        <Kpi
+          items={[
+            { label: "TOTAL TOKENS", value: "1.28M", hint: "近 30 天" },
+            { label: "输入", value: "812K" },
+            { label: "输出", value: "468K" },
+            { label: "缓存命中率", value: "37%" },
+            { label: "对话轮数", value: "2,431" },
+            { label: "均值/轮", value: "526" },
+            { label: "成本", value: "¥42.10" },
+          ]}
+        />
+        <div style={{ height: 16 }} />
+        <div className={styles.grid2}>
+          <Donut
+            title="输入 / 输出"
+            segments={[
+              { label: "输入", value: 812000, color: "var(--primary)" },
+              { label: "输出", value: 468000, color: "var(--green)" },
+            ]}
+          />
+          <Card title="专家卡" subtitle="头像、ID、状态/模型/版本" footer={<span>打开 · 试运行 · ⋯</span>}>
+            <p style={{ margin: 0 }}>用 Card 承载列表项或设置块。</p>
+          </Card>
+          <Card title="空态卡" subtitle="没有数据时的引导">
+            <Empty title="还没有内容" hint="创建第一条记录试试。" />
+          </Card>
+        </div>
       </section>
 
       <section className={styles.section} aria-label="四态">

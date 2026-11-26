@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
 import {
-  NAV_BOTTOM,
-  NAV_GROUP_LABELS,
-  NAV_PRIMARY,
-  type NavGroup,
+  NAV_GROUPS,
+  NAV_ITEMS,
+  isNavActive,
+  navHref,
   type NavItem,
 } from "@/app/nav";
 import { useSession } from "@/lib/auth/session";
@@ -24,33 +24,43 @@ function readCollapsed(): boolean {
   }
 }
 
-function NavButton({ item, collapsed, badge }: {
+function NavButton({
+  item,
+  collapsed,
+  badge,
+}: {
   item: NavItem;
   collapsed: boolean;
   badge?: number;
 }) {
   const location = useLocation();
-  // The automation page lives under the task area in the prototype; keep the
-  // rail highlight on 任务 even though its route is separate.
-  const taskArea = item.path === "/tasks"
-    && (location.pathname === "/automation" || location.pathname.startsWith("/automation/"));
+  const active = isNavActive(item, location.pathname, location.search);
+  // Collapsed mode hides the label, so the title carries the accessible name.
+  const title = collapsed
+    ? `${item.label}${item.soon ? "（规划中）" : ""}`
+    : undefined;
   return (
-    <NavLink
-      to={item.path}
-      title={collapsed ? item.label : undefined}
-      className={({ isActive }) =>
-        `${styles.item} ${isActive || taskArea ? styles.active : ""}`}
+    <Link
+      to={navHref(item)}
+      title={title}
+      className={`${styles.item} ${active ? styles.active : ""}`}
+      aria-current={active ? "page" : undefined}
     >
       <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true">
         <path d={icons[item.icon as IconName]} />
       </svg>
       <span className={styles.label}>{item.label}</span>
+      {item.soon ? <span className={styles.soon}>规划中</span> : null}
       {badge ? (
-        <span className={styles.badge} data-testid="nav-badge" aria-label={`${badge} 条待决定`}>
+        <span
+          className={styles.badge}
+          data-testid="nav-badge"
+          aria-label={`${badge} 条待决定`}
+        >
           {badge > 99 ? "99+" : badge}
         </span>
       ) : null}
-    </NavLink>
+    </Link>
   );
 }
 
@@ -70,17 +80,9 @@ export function Sidebar() {
     }
   }, [collapsed]);
 
-  const visiblePrimary = NAV_PRIMARY.filter(
+  const visible = NAV_ITEMS.filter(
     (item) => !item.permission || hasPermission(user, item.permission),
   );
-  const visibleBottom = NAV_BOTTOM.filter(
-    (item) => !item.permission || hasPermission(user, item.permission),
-  );
-  const groups: Array<[NavGroup, NavItem[]]> = [
-    ["work", visiblePrimary.filter((item) => item.group === "work")],
-    ["capability", visiblePrimary.filter((item) => item.group === "capability")],
-    ["system", visibleBottom],
-  ];
   const role = user?.roles?.includes("admin")
     ? "管理员"
     : user?.roles?.includes("auditor")
@@ -130,21 +132,23 @@ export function Sidebar() {
       </div>
 
       <div className={styles.nav}>
-        {groups.map(([group, items]) => (
-          items.length === 0 ? null : (
-            <div key={group} className={styles.group}>
-              <div className={styles.groupLabel}>{NAV_GROUP_LABELS[group]}</div>
-              {items.map((item) => (
+        {NAV_GROUPS.map(({ key, label }) => {
+          const items = visible.filter((entry) => entry.group === key);
+          if (items.length === 0) return null;
+          return (
+            <div key={key} className={styles.group}>
+              {label ? <div className={styles.groupLabel}>{label}</div> : null}
+              {items.map((entry) => (
                 <NavButton
-                  key={item.path}
-                  item={item}
+                  key={`${entry.path}${entry.search ?? ""}`}
+                  item={entry}
                   collapsed={collapsed}
-                  badge={item.path === "/tasks" ? pendingCount : undefined}
+                  badge={entry.badge === "inbox" ? pendingCount : undefined}
                 />
               ))}
             </div>
-          )
-        ))}
+          );
+        })}
       </div>
 
       <div className={styles.foot}>

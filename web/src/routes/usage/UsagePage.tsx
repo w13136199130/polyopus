@@ -1,12 +1,25 @@
 /**
- * Usage analytics (Batch D): 7/30/90-day range with overview, daily, agent
- * and model views. The backend exposes the same totals + three breakdowns in
- * one response, so switching tabs never shows inconsistent numbers.
+ * Token 统计 (docs/52 §6): 7 段 KPI + 4 张环形图 + 每日趋势 + 三维明细.
+ * Filters (user/agent/range) are URL state and apply to KPIs, charts, tables
+ * and the CSV export alike.
  */
 
 import { useSearchParams } from "react-router";
-import { Button, Empty, ErrorState, Loading, Table, type Column } from "@/components/ui";
+import {
+  Button,
+  Chip,
+  Empty,
+  ErrorState,
+  FilterBar,
+  Loading,
+  Table,
+  Tabs,
+  type Column,
+} from "@/components/ui";
 import { PageShell } from "@/layouts/PageShell";
+import { useCan } from "@/lib/auth/permissions";
+import { useAgents } from "@/features/agents/api";
+import { useAdminUsers } from "@/features/admin/api";
 import {
   downloadCsv,
   formatCost,
@@ -17,12 +30,13 @@ import {
   type UsageItemRow,
   type UsageRange,
 } from "@/features/usage/api";
+import { UsageOverview } from "./UsageOverview";
 import styles from "./UsagePage.module.css";
 
 type View = "overview" | "day" | "agent" | "model";
 
 const VIEWS: Array<[View, string]> = [
-  ["overview", "概览"],
+  ["overview", "汇总"],
   ["day", "按天"],
   ["agent", "按专家"],
   ["model", "按模型"],
@@ -40,7 +54,6 @@ function lastDayKeys(days: number): string[] {
   }
   return out;
 }
-
 
 function groupOf(view: View): UsageGroup {
   if (view === "day") return "day";
@@ -84,8 +97,37 @@ function columnsFor(view: View): Array<Column<UsageItemRow>> {
   ];
 }
 
+function UserFilter({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const users = useAdminUsers();
+  return (
+    <select
+      className={styles.select}
+      aria-label="用户"
+      data-testid="usage-user"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">全部用户</option>
+      {(users.data?.items ?? []).map((user) => (
+        <option key={user.userId} value={user.userId}>
+          {user.displayName || user.username}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function UsagePage() {
   const [params, setParams] = useSearchParams();
+  const canUsers = useCan("user:read");
+  const agentsQuery = useAgents();
+
   const rangeParam = Number(params.get("range"));
   const range: UsageRange = (RANGES as readonly number[]).includes(rangeParam)
     ? (rangeParam as UsageRange)
@@ -94,8 +136,10 @@ export function UsagePage() {
   const view: View = (VIEWS.map(([key]) => key) as string[]).includes(viewParam ?? "")
     ? (viewParam as View)
     : "overview";
+  const asUser = params.get("user") ?? "";
+  const agentId = params.get("agent") ?? "";
   const groupBy = groupOf(view);
-  const summary = useUsageSummary({ range, groupBy });
+  const summary = useUsageSummary({ range, groupBy, asUser: asUser || undefined, agentId: agentId || undefined });
 
   const data = summary.data;
   const rows: UsageItemRow[] = (data?.items ?? []).map((item) => ({
@@ -103,7 +147,11 @@ export function UsagePage() {
     costLabel: formatCost(item.costMicros),
   }));
   const totals = data?.totals;
-  const totalTokens = (totals?.inputTokens ?? 0) + (totals?.outputTokens ?? 0);
+  const inputTokens = totals?.inputTokens ?? 0;
+  const outputTokens = totals?.outputTokens ?? 0;
+  const cachedTokens = totals?.cachedTokens ?? 0;
+  const turns = totals?.turns ?? 0;
+
   const dailyByKey = new Map((data?.byDay ?? []).map((row) => [row.key, row]));
   const dailySeries = lastDayKeys(range).map((key) => {
     const row = dailyByKey.get(key);
@@ -112,152 +160,125 @@ export function UsagePage() {
   const maxDayTokens = Math.max(1, ...dailySeries.map((row) => row.tokens));
   const labelStep = range <= 7 ? 1 : range <= 30 ? 5 : 15;
 
-  function setFilter(next: { range?: UsageRange; view?: View }) {
+  const agents = agentsQuery.data?.items ?? [];
+
+  function setFilter(next: {
+    range?: UsageRange;
+    view?: View;
+    asUser?: string;
+    agentId?: string;
+  }) {
     const query = new URLSearchParams(params);
     const chosenRange = next.range ?? range;
     const chosenView = next.view ?? view;
+    const chosenUser = next.asUser ?? asUser;
+    const chosenAgent = next.agentId ?? agentId;
     if (chosenRange === 30) query.delete("range");
     else query.set("range", String(chosenRange));
     if (chosenView === "overview") query.delete("view");
     else query.set("view", chosenView);
+    if (chosenUser) query.set("user", chosenUser);
+    else query.delete("user");
+    if (chosenAgent) query.set("agent", chosenAgent);
+    else query.delete("agent");
     setParams(query, { replace: true });
   }
 
-  const subtitle = data
-    ? `最近 ${range} 天 · ${totals?.turns ?? 0} 轮 · ${formatTokens(totalTokens)} tokens`
-    : `最近 ${range} 天 token 与成本`;
+  const updatedAt = summary.dataUpdatedAt
+    ? new Date(summary.dataUpdatedAt).toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
 
   return (
     <PageShell
-      title="用量"
-      subtitle={subtitle}
+      title="Token 统计"
+      subtitle="页面展示的 Token 用量仅供参考；部分消耗尚未纳入统计。"
       actions={
         <Button
           variant="secondary"
-          disabled={summary.isLoading || !data || data.totals.turns === 0}
-          onClick={() => void downloadCsv({ range, groupBy })}
+          disabled={summary.isLoading || !data || turns === 0}
+          onClick={() => void downloadCsv({
+            range,
+            groupBy,
+            asUser: asUser || undefined,
+            agentId: agentId || undefined,
+          })}
         >
           导出 CSV
         </Button>
       }
+      tabs={
+        <Tabs
+          ariaLabel="用量视图"
+          value={view}
+          onChange={(next) => setFilter({ view: next })}
+          items={VIEWS.map(([key, label]) => ({
+            key,
+            label,
+            testId: `usage-view-${key}`,
+          }))}
+        />
+      }
     >
       <div className={styles.page}>
-        <div className={styles.filters}>
-          <div className={styles.tabs} role="tablist" aria-label="用量视图">
-            {VIEWS.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={view === key}
-                data-testid={`usage-view-${key}`}
-                className={`${styles.tab} ${view === key ? styles.tabOn : ""}`}
-                onClick={() => setFilter({ view: key })}
-              >
-                {label}
-              </button>
+        <FilterBar
+          testId="usage-filters"
+          right={<span className={styles.updated}>更新于 {updatedAt}</span>}
+        >
+          {canUsers ? (
+            <UserFilter value={asUser} onChange={(value) => setFilter({ asUser: value })} />
+          ) : (
+            <select className={styles.select} aria-label="用户" disabled title="用户维度筛选需要管理员权限">
+              <option>全部用户</option>
+            </select>
+          )}
+          <select
+            className={styles.select}
+            aria-label="专家"
+            data-testid="usage-agent"
+            value={agentId}
+            onChange={(event) => setFilter({ agentId: event.target.value })}
+          >
+            <option value="">全部专家</option>
+            {agents.map((agent) => (
+              <option key={agent.agentId} value={agent.agentId}>{agent.name}</option>
             ))}
-          </div>
-          <span className={styles.spacer} />
-          <div className={styles.ranges} role="group" aria-label="时间范围">
-            {RANGES.map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={range === option}
-                data-testid={`usage-range-${option}`}
-                className={`${styles.range} ${range === option ? styles.rangeOn : ""}`}
-                onClick={() => setFilter({ range: option })}
-              >
-                {option} 天
-              </button>
-            ))}
-          </div>
-        </div>
+          </select>
+          <span className={styles.rangeLabel}>时间范围</span>
+          {RANGES.map((option) => (
+            <Chip
+              key={option}
+              active={range === option}
+              testId={`usage-range-${option}`}
+              onClick={() => setFilter({ range: option })}
+            >
+              {option} 天
+            </Chip>
+          ))}
+        </FilterBar>
 
         {summary.isLoading ? (
           <Loading label="载入用量…" />
         ) : summary.isError ? (
           <ErrorState message="用量加载失败" onRetry={() => void summary.refetch()} />
-        ) : !data || data.totals.turns === 0 ? (
+        ) : !data || turns === 0 ? (
           <Empty title="该范围还没有用量" hint="发几轮对话后，这里会出现 token 与成本统计。" />
         ) : view === "overview" ? (
-          <>
-            <div className={styles.kpis}>
-              {([
-                ["Tokens", formatTokens(totalTokens), `${formatTokens(totals?.cachedTokens ?? 0)} 缓存命中`],
-                ["轮次", String(totals?.turns ?? 0), `最近 ${range} 天`],
-                ["成本", formatCost(totals?.costMicros ?? 0), "0 表示价表未配置"],
-                ["专家", String(data.byAgent.length), "有调用的执行者"],
-              ] as const).map(([label, value, hint]) => (
-                <div key={label} className={styles.kpi} data-testid="usage-kpi">
-                  <span>{label}</span>
-                  <b>{value}</b>
-                  <small>{hint}</small>
-                </div>
-              ))}
-            </div>
-
-            <section className={styles.panel}>
-              <div className={styles.panelHead}>
-                <b>每日 tokens</b>
-                <span>按调用日期汇总</span>
-              </div>
-              <div className={styles.chart} data-testid="usage-chart">
-                {dailySeries.map((row, index) => {
-                  const showLabel = index % labelStep === 0
-                    || index === dailySeries.length - 1;
-                  return (
-                    <div
-                      key={row.key}
-                      className={styles.barCol}
-                      title={`${row.key} · ${row.tokens} tokens`}
-                    >
-                      <i
-                        style={{
-                          height: row.tokens === 0
-                            ? 0
-                            : `${Math.max(3, (row.tokens / maxDayTokens) * 100)}%`,
-                        }}
-                      />
-                      <span>{showLabel ? row.key.slice(5) : " "}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <div className={styles.overviewGrid}>
-              <section className={styles.panel}>
-                <div className={styles.panelHead}>
-                  <b>专家用量</b>
-                  <span>Top {Math.min(5, data.byAgent.length)}</span>
-                </div>
-                {data.byAgent.slice(0, 5).map((row) => (
-                  <div key={row.key} className={styles.rankRow}>
-                    <code>{row.key}</code>
-                    <span className={styles.spacer} />
-                    <span>{formatTokens(row.inputTokens + row.outputTokens)}</span>
-                    <b>{formatCost(row.costMicros)}</b>
-                  </div>
-                ))}
-              </section>
-              <section className={styles.panel}>
-                <div className={styles.panelHead}>
-                  <b>模型用量</b>
-                  <span>Top {Math.min(5, data.byModel.length)}</span>
-                </div>
-                {data.byModel.slice(0, 5).map((row) => (
-                  <div key={row.key} className={styles.rankRow}>
-                    <code>{row.key}</code>
-                    <span className={styles.spacer} />
-                    <span>{formatTokens(row.inputTokens + row.outputTokens)}</span>
-                    <b>{formatCost(row.costMicros)}</b>
-                  </div>
-                ))}
-              </section>
-            </div>
-          </>
+          <UsageOverview
+            range={range}
+            inputTokens={inputTokens}
+            outputTokens={outputTokens}
+            cachedTokens={cachedTokens}
+            turns={turns}
+            costMicros={totals?.costMicros ?? 0}
+            byAgent={data.byAgent}
+            byModel={data.byModel}
+            dailySeries={dailySeries}
+            maxDayTokens={maxDayTokens}
+            labelStep={labelStep}
+          />
         ) : (
           <Table
             caption={`最近 ${range} 天 · ${

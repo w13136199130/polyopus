@@ -13,8 +13,7 @@ async function login(page: import("@playwright/test").Page) {
 /** v1.1: Feishu channel cards live in 连接 → 通道. */
 test("channels: create, toggle and delete a Feishu channel", async ({ page }) => {
   await login(page);
-  await page.goto("/connections");
-  await page.getByTestId("channels-tab").click();
+  await page.goto("/channels");
 
   const name = `E2E 飞书 ${Date.now()}`;
   await page.getByTestId("channel-new").click();

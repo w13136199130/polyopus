@@ -12,8 +12,11 @@ const PAGES: Array<[string, string]> = [
   ["/automation", "自动化"],
   ["/notifications", "通知"],
   ["/agents", "专家"],
-  ["/knowledge", "知识"],
+  ["/knowledge", "知识库"],
+  ["/connections", "连接器"],
+  ["/channels", "通道"],
   ["/extensions", "扩展"],
+  ["/usage", "Token 统计"],
   ["/admin", "管理"],
   ["/settings", "个人设置"],
 ];
@@ -80,7 +83,7 @@ test("mobile: bottom navigation replaces the rail", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(0);
 
   // mobile tasks: list -> detail -> back, without a second column
-  await page.getByTestId("new-ticket-mobile").click();
+  await page.getByTestId("new-ticket").click();
   await page.getByTestId("new-ticket-title").fill(`移动端任务 ${Date.now()}`);
   await page.getByTestId("new-ticket-submit").click();
   await page.waitForURL(/ticketId=/);
