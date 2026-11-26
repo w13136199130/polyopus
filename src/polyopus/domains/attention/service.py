@@ -20,6 +20,19 @@ from polyopus.platform.events.store import EventStore
 DEFAULT_TTL_SECONDS = 30 * 60
 
 
+def _approval_ttl(override: int | None) -> int:
+    """Caller override > POLY_APPROVAL_TTL_SECONDS > DEFAULT_TTL_SECONDS."""
+    if override is not None and override > 0:
+        return override
+    try:
+        from polyopus.config import load_settings
+
+        configured = int(load_settings().approval_ttl_seconds)
+    except Exception:  # noqa: BLE001 - a bad config must not block approvals
+        configured = 0
+    return configured if configured > 0 else DEFAULT_TTL_SECONDS
+
+
 @dataclass(frozen=True)
 class ApprovalRequest:
     tool: str
@@ -47,11 +60,12 @@ def request(
     step_idx: int,
     req: ApprovalRequest,
     ticket_id: str | None = None,
-    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    ttl_seconds: int | None = None,
     now: int | None = None,
 ) -> tuple[str, str]:
     """Create approval + attention rows and emit events. Returns (approval_id, attention_id)."""
     ts = now or int(time.time())
+    ttl = _approval_ttl(ttl_seconds)
     approval_id = "ap_" + secrets.token_hex(8)
     attention_id = "at_" + secrets.token_hex(8)
     request_json = json.dumps(
@@ -82,7 +96,7 @@ def request(
             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (tenant_id, approval_id, turn_id, run_id, step_idx, request_json,
-             ts + ttl_seconds, ts),
+             ts + ttl, ts),
         )
         conn.execute(
             """
@@ -109,7 +123,7 @@ def request(
                  },
                  ensure_ascii=False,
              ),
-             ts + ttl_seconds, ts),
+             ts + ttl, ts),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -137,7 +151,7 @@ def request(
                 }
             ],
             "allowed_decisions": list(req.allowed_decisions),
-            "expires_at": ts + ttl_seconds,
+            "expires_at": ts + ttl,
             "summary": req.summary or req.tool,
         },
         tenant_id=tenant_id,

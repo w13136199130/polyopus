@@ -25,6 +25,7 @@ _RESULT = {
     "expired": ("审批已过期", "grey"),
     "failed": ("任务失败", "red"),
     "blocked": ("任务待处理", "orange"),
+    "queued": ("任务已重新排队", "blue"),
     "cancelled": ("任务已取消", "grey"),
 }
 
@@ -136,10 +137,20 @@ def approval_card(
                     },
                     {
                         "tag": "button",
-                        "text": {"tag": "plain_text", "content": "批准"},
+                        "text": {"tag": "plain_text", "content": "本次允许"},
                         "type": "primary",
                         "value": {
                             "decision": "approved",
+                            "attentionId": attention_id,
+                            "ticketId": ticket_id,
+                        },
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "本会话允许"},
+                        "type": "default",
+                        "value": {
+                            "decision": "approved_session",
                             "attentionId": attention_id,
                             "ticketId": ticket_id,
                         },
@@ -163,6 +174,12 @@ _CLOSED = {
         "title": "已批准，正在执行",
         "status": "✅ **已批准** · 正在继续执行",
         "note": "审批已完成，任务结果随后返回。",
+    },
+    "approved_session": {
+        "template": "green",
+        "title": "本会话允许，正在执行",
+        "status": "✅ **已允许（本会话）** · 正在继续执行",
+        "note": "本会话内同一工具不再询问；任务结果随后返回。",
     },
     "denied": {
         "template": "grey",
@@ -228,11 +245,21 @@ def result_card(
         lead = "审批超时，已按拒绝处理，没有执行任何操作。"
     elif state == "cancelled":
         lead = "任务已停止；已经产生的内容会保留。"
+    elif state == "queued":
+        lead = "已回到执行队列，完成后会发送新的结果。"
     elif state == "failed":
         lead = "执行没有成功，请查看任务详情或重新运行。"
     else:
         lead = ""
-    body = "\n\n".join(part for part in (lead, _clip_block(summary, 600)) if part)
+    # Keep terminal cards short: the full model answer is only useful for a
+    # completed run; expired/denied/stopped cards just state the outcome.
+    if state == "ready":
+        detail = _clip_block(summary, 600)
+    elif state in ("blocked", "failed"):
+        detail = _clip_block(summary, 240)
+    else:
+        detail = ""
+    body = "\n\n".join(part for part in (lead, detail) if part)
     elements: list[dict[str, Any]] = []
     if ticket_title:
         elements.append({
@@ -249,8 +276,21 @@ def result_card(
         })
     actions: list[dict[str, Any]] = []
     if state in ("blocked", "failed") and ticket_id:
-        # A dead-end card is useless in chat: let the owner stop it in place.
-        # `confirm` makes Feishu ask before the callback is even sent.
+        # A dead-end card is useless in chat: let the owner retry or stop it
+        # in place. `confirm` makes Feishu ask before the callback is sent.
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "重新运行"},
+            "type": "primary",
+            "value": {"action": "retry", "ticketId": ticket_id},
+            "confirm": {
+                "title": {"tag": "plain_text", "content": "重新运行任务？"},
+                "text": {
+                    "tag": "plain_text",
+                    "content": "任务会回到队列重新执行，已产生的内容会保留。",
+                },
+            },
+        })
         actions.append({
             "tag": "button",
             "text": {"tag": "plain_text", "content": "停止任务"},
@@ -273,13 +313,14 @@ def result_card(
         })
     if actions:
         elements.append({"tag": "action", "actions": actions})
-    elements.append({
-        "tag": "note",
-        "elements": [{
-            "tag": "plain_text",
-            "content": "在 PolyOpus 任务页可以查看完整报告与产物。",
-        }],
-    })
+    if not ticket_url:
+        elements.append({
+            "tag": "note",
+            "elements": [{
+                "tag": "plain_text",
+                "content": "在 PolyOpus 任务页可以查看完整报告与产物。",
+            }],
+        })
     return {
         "config": {"wide_screen_mode": True, "update_multi": True},
         "header": {

@@ -613,7 +613,7 @@ def enqueue_ticket_reply(
         return None
     thread_id = inbound["thread_id"]
     answer = ""
-    if thread_id:
+    if state == "ready" and thread_id:
         answer_row = conn.execute(
             "SELECT content FROM messages WHERE thread_id = ? AND role = 'assistant'"
             " AND content <> '' ORDER BY seq DESC LIMIT 1",
@@ -621,6 +621,9 @@ def enqueue_ticket_reply(
         ).fetchone()
         if answer_row is not None:
             answer = str(answer_row[0] or "").strip()
+    # Only a completed run deserves the model's full answer; terminal cards
+    # (expired/denied/blocked/failed) use the short report summary instead of
+    # dumping the follow-up assistant message into the chat.
     body = answer or summary
     title_row = conn.execute(
         "SELECT title FROM tickets WHERE ticket_id = ?", (ticket_id,),
@@ -1066,10 +1069,78 @@ def _approval_state(
         return "closed"
     state = str(row["status"])
     if state in ("approved", "approved_session"):
-        return "approved"
+        return state
     if state == "denied":
         return "denied"
     return "expired" if state == "expired" else "closed"
+
+
+def _handle_retry_action(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    row: sqlite3.Row,
+    *,
+    tenant_id: str,
+    channel_id: str,
+    event: dict[str, Any],
+    value: dict[str, Any],
+) -> dict[str, Any]:
+    """Re-queue a blocked/failed ticket from its result card."""
+    operator = str(((event.get("operator") or {}).get("open_id")) or "unknown")
+    ticket_id = str(value.get("ticketId") or "")
+    if not ticket_id:
+        return {"toast": {"type": "error", "content": "无法识别的任务操作"}}
+    ticket = conn.execute(
+        "SELECT title, state FROM tickets WHERE tenant_id = ? AND ticket_id = ?",
+        (tenant_id, ticket_id),
+    ).fetchone()
+    if ticket is None:
+        return {"toast": {"type": "error", "content": "任务不存在或已删除"}}
+    ticket_title = str(ticket["title"] or "")
+    if str(ticket["state"]) != "open":
+        return {"toast": {"type": "info", "content": "任务已结束。"}}
+
+    allowed, creator = _approver_check(conn, row, ticket_id, operator)
+    if not allowed:
+        audit.record(
+            conn, tenant_id=tenant_id, action="channel.retry_denied",
+            result="denied", actor_id=operator, resource_type="ticket",
+            resource_id=ticket_id,
+            detail={"channelId": channel_id, "creator": creator, "via": "card"},
+        )
+        return {"toast": {"type": "error", "content": "你没有权限重新运行该任务"}}
+
+    from polyopus.domains.attention import service as attention
+    from polyopus.domains.tickets import service as tickets
+
+    try:
+        thread_id = tickets.thread_of_ticket(conn, ticket_id)
+        # reassign refuses while an attention is pending: the blocker that
+        # produced this card must be closed first.
+        attention.dismiss_for_ticket(
+            conn, store, tenant_id=tenant_id, thread_id=thread_id,
+            ticket_id=ticket_id, by=operator,
+        )
+        tickets.reassign(conn, store, ticket_id, by=operator, tenant_id=tenant_id)
+    except Exception as exc:  # noqa: BLE001 - report a readable toast
+        tlog.log(
+            logger, 30, "channel.retry_failed",
+            ticket_id=ticket_id, error=str(exc),
+        )
+        return {"toast": {"type": "error", "content": "重新运行失败，请到任务页处理"}}
+
+    return {
+        "toast": {"type": "success", "content": "已重新排队，任务将继续执行。"},
+        "card": {
+            "type": "raw",
+            "data": cardkit.result_card(
+                state="queued",
+                summary="已按你的操作重新排队。",
+                ticket_title=ticket_title,
+                ticket_url=_ticket_url(ticket_id),
+            ),
+        },
+    }
 
 
 def _handle_stop_action(
@@ -1146,14 +1217,20 @@ def _handle_card_action(
     operator = str(((event.get("operator") or {}).get("open_id")) or "unknown")
     raw_value = (event.get("action") or {}).get("value")
     value = raw_value if isinstance(raw_value, dict) else {}
-    if str(value.get("action") or "") == "stop":
+    action = str(value.get("action") or "")
+    if action == "stop":
         return _handle_stop_action(
+            conn, store, row,
+            tenant_id=tenant_id, channel_id=channel_id, event=event, value=value,
+        )
+    if action == "retry":
+        return _handle_retry_action(
             conn, store, row,
             tenant_id=tenant_id, channel_id=channel_id, event=event, value=value,
         )
     decision = str(value.get("decision") or "")
     attention_id = str(value.get("attentionId") or "")
-    if decision not in ("approved", "denied") or not attention_id:
+    if decision not in ("approved", "approved_session", "denied") or not attention_id:
         return {"toast": {"type": "error", "content": "无法识别的审批操作"}}
 
     attention = conn.execute(
@@ -1265,7 +1342,7 @@ def _handle_card_action(
 
     # A pending approval past its deadline resolves to `denied` even when the
     # button said approve; resume and report must follow the actual decision.
-    expired = effective == "denied" and decision == "approved"
+    expired = effective == "denied" and decision != "denied"
     db_path = _db_file(conn)
     if schedule is None:
         _resume_after_card(
@@ -1280,9 +1357,13 @@ def _handle_card_action(
         )
     if expired:
         return response("expired", "warning", "审批已过期，已按拒绝处理。")
-    state = "approved" if effective.startswith("approved") else "denied"
-    content = "已批准，任务继续。" if state == "approved" else "已拒绝，任务结束。"
-    return response(state, "success", content)
+    if effective == "approved_session":
+        return response(
+            "approved_session", "success", "已允许，本会话内不再询问该工具。",
+        )
+    if effective.startswith("approved"):
+        return response("approved", "success", "已批准，任务继续。")
+    return response("denied", "success", "已拒绝，任务结束。")
 
 
 def handle_event(

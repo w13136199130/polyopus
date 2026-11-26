@@ -501,7 +501,8 @@ def test_waiting_ticket_queues_approval_hint(
         ]
         assert card_items, payloads
         dump = json.dumps(card_items, ensure_ascii=False)
-        assert "需要你确认" in dump and "写入文件" in dump and "批准" in dump
+        assert "需要你确认" in dump and "写入文件" in dump
+        assert "本次允许" in dump and "本会话允许" in dump
         # raw tool keys and JSON args must not leak into the card
         assert "fs.write" not in dump and "args_preview" not in dump
 
@@ -705,6 +706,54 @@ def test_card_action_approves_and_resumes(
         conn.close()
 
 
+def test_card_action_session_approval_remembers_the_tool(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_session",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setattr(channels, "_workspace", lambda: ws)
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        attention_id = conn.execute(
+            "SELECT attention_id FROM attentions WHERE ticket_id = ?"
+            " AND status = 'pending'", (ticket_id,),
+        ).fetchone()[0]
+
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_card_body(attention_id, decision="approved_session"),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["toast"]["type"] == "success"
+        assert "本会话" in payload["toast"]["content"]
+        updated = json.dumps(payload["card"]["data"], ensure_ascii=False)
+        assert "本会话允许" in updated
+        assert (ws / "out.txt").is_file()
+        assert conn.execute(
+            "SELECT status FROM approvals WHERE approval_id ="
+            " (SELECT source_id FROM attentions WHERE attention_id = ?)",
+            (attention_id,),
+        ).fetchone()[0] == "approved_session"
+        thread_id = tickets.thread_of_ticket(conn, ticket_id)
+        settings = json.loads(conn.execute(
+            "SELECT settings_json FROM threads WHERE thread_id = ?", (thread_id,),
+        ).fetchone()[0] or "{}")
+        assert "fs.write" in settings.get("approvedTools", [])
+    finally:
+        conn.close()
+
+
 def test_card_action_denies_and_updates_card_in_place(
     env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -778,7 +827,10 @@ def test_blocked_result_card_offers_guarded_stop() -> None:
     )
     rows = [el for el in card["elements"] if el.get("tag") == "action"]
     assert rows
-    stop, open_task = rows[0]["actions"]
+    retry, stop, open_task = rows[0]["actions"]
+    assert retry["value"] == {"action": "retry", "ticketId": "tk_blocked"}
+    assert retry["type"] == "primary"
+    assert retry["confirm"]["title"]["content"]
     assert stop["value"] == {"action": "stop", "ticketId": "tk_blocked"}
     assert stop["type"] == "danger"
     # Feishu asks before the callback fires; title and text are both required
@@ -790,6 +842,51 @@ def test_blocked_result_card_offers_guarded_stop() -> None:
 def test_ready_result_card_has_no_stop_button() -> None:
     card = cards.result_card(state="ready", summary="完成", ticket_id="tk_done")
     assert not [el for el in card["elements"] if el.get("tag") == "action"]
+
+
+def test_expired_card_stays_concise() -> None:
+    long_answer = "刚才的写入被拒绝了，先跟你确认文件名。" * 30
+    card = cards.result_card(
+        state="expired",
+        summary=long_answer,
+        ticket_title="输出一个马上周五的txt文件",
+        ticket_url="https://poly.example/tasks?ticketId=tk_1",
+    )
+    dump = json.dumps(card, ensure_ascii=False)
+    assert "审批超时，已按拒绝处理" in dump
+    # the follow-up model answer and the redundant note stay out of terminal cards
+    assert "刚才的写入被拒绝了" not in dump
+    assert "在 PolyOpus 任务页" not in dump
+
+
+def test_approval_ttl_comes_from_settings(
+    env: tuple[Path, TestClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, client = env
+    monkeypatch.setenv("POLY_APPROVAL_TTL_SECONDS", "120")
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 保存结果到 out.txt", "om_ttl",
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    conn = m.connect(db)
+    store = EventStore(conn)
+    try:
+        assert tickets.run_assignment(
+            conn, store, ticket_id, content="/polyopus 保存结果到 out.txt",
+            engine_config=engine.EngineConfig(workspace=ws),
+        ) == "waiting"
+        row = conn.execute(
+            "SELECT created_at, expires_at FROM approvals WHERE turn_id ="
+            " (SELECT turn_id FROM attentions WHERE ticket_id = ?"
+            "  AND status = 'pending') ORDER BY id DESC LIMIT 1",
+            (ticket_id,),
+        ).fetchone()
+        assert row is not None
+        assert int(row["expires_at"]) - int(row["created_at"]) == 120
+    finally:
+        conn.close()
 
 
 def _expire_pending_approval(
@@ -933,6 +1030,101 @@ def test_stop_dismisses_pending_approval_and_late_click_is_inert(
         assert conn.execute(
             "SELECT state FROM tickets WHERE ticket_id = ?", (ticket_id,),
         ).fetchone()[0] == "ended"
+    finally:
+        conn.close()
+
+
+def _insert_blocked_attention(conn: sqlite3.Connection, ticket_id: str) -> str:
+    """Synthetic blocked attention (report tails need a full budget run)."""
+    attention_id = "at_blocked_" + ticket_id[-8:]
+    conn.execute(
+        "INSERT INTO attentions (tenant_id, attention_id, ticket_id, turn_id,"
+        " kind, source_type, source_id, payload_json, status, expires_at,"
+        " created_at) VALUES ('default', ?, ?, NULL, 'blocked', 'ticket', ?, ?,"
+        " 'pending', 4102444800, 1)",
+        (
+            attention_id, ticket_id, ticket_id,
+            json.dumps(
+                {"reason": "budget_exceeded", "next_action": "调整预算后重派",
+                 "summary": "预算超限，任务阻塞"},
+                ensure_ascii=False,
+            ),
+        ),
+    )
+    conn.commit()
+    return attention_id
+
+
+def test_card_action_retries_blocked_ticket(
+    env: tuple[Path, TestClient],
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 总结一下这次发布", "om_retry",
+    )
+    conn = m.connect(db)
+    try:
+        attention_id = _insert_blocked_attention(conn, ticket_id)
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_action_card_body({"action": "retry", "ticketId": ticket_id}),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["toast"]["type"] == "success"
+        assert "重新排队" in payload["toast"]["content"]
+        updated = json.dumps(payload["card"]["data"], ensure_ascii=False)
+        assert "任务已重新排队" in updated
+        assert '"action": "retry"' not in updated
+        assert conn.execute(
+            "SELECT status FROM attentions WHERE attention_id = ?", (attention_id,),
+        ).fetchone()[0] == "dismissed"
+        state, bucket = conn.execute(
+            "SELECT state, bucket FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()
+        assert state == "open" and bucket == "queued"
+        audit_row = conn.execute(
+            "SELECT result FROM audit_log WHERE action = 'ticket.reassign'"
+            " ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert audit_row is not None and audit_row[0] == "ok"
+    finally:
+        conn.close()
+
+
+def test_card_action_retry_rejects_non_creator(
+    env: tuple[Path, TestClient],
+) -> None:
+    db, client = env
+    created = _create(client)
+    ticket_id = _open_ticket(
+        client, created["channelId"], "/polyopus 总结一下这次发布", "om_retry_deny",
+    )
+    conn = m.connect(db)
+    try:
+        attention_id = _insert_blocked_attention(conn, ticket_id)
+        response = client.post(
+            f"/api/v1/channels/feishu/{created['channelId']}/events",
+            json=_action_card_body(
+                {"action": "retry", "ticketId": ticket_id}, operator="ou_mallory",
+            ),
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["toast"]["type"] == "error"
+        assert "权限" in payload["toast"]["content"]
+        assert conn.execute(
+            "SELECT status FROM attentions WHERE attention_id = ?", (attention_id,),
+        ).fetchone()[0] == "pending"
+        assert conn.execute(
+            "SELECT bucket FROM tickets WHERE ticket_id = ?", (ticket_id,),
+        ).fetchone()[0] == "queued"
+        audit_row = conn.execute(
+            "SELECT result FROM audit_log WHERE action = 'channel.retry_denied'"
+            " ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert audit_row is not None and audit_row[0] == "denied"
     finally:
         conn.close()
 
