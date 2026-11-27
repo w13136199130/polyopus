@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Empty, Loading } from "@/components/ui";
 import { workspace } from "@/lib/api/endpoints";
+import { summarizeTrace } from "../message-trace";
 import type { TraceEvent, WorkspaceEntry, WorkspaceTree } from "@/lib/api/wire";
 import styles from "./Dock.module.css";
 
@@ -210,6 +211,17 @@ export function Dock({
     || event.type === "tool.failed",
   );
 
+  // 文件 = this conversation's tool-produced files; 工作区 = the full tree.
+  const sessionFiles = useMemo(() => {
+    const seen = new Map<string, number | undefined>();
+    for (const turn of summarizeTrace(trace).values()) {
+      for (const file of turn.files) {
+        if (!seen.has(file.path)) seen.set(file.path, file.bytes);
+      }
+    }
+    return Array.from(seen.entries()).reverse();
+  }, [trace]);
+
   return (
     <aside className={styles.dock} aria-label="会话 Dock">
       <div className={styles.head}>
@@ -233,18 +245,48 @@ export function Dock({
       </div>
 
       <div className={styles.body}>
-        {tab === "files" || tab === "workspace" ? (
-          preview ? (
-            <FilePreview path={preview} onClose={() => setPreview(null)} />
-          ) : treeLoading ? (
+        {preview ? (
+          <FilePreview path={preview} onClose={() => setPreview(null)} />
+        ) : null}
+
+        {!preview && tab === "files" ? (
+          !threadId ? (
+            <p className={styles.hint}>先打开一个会话。</p>
+          ) : sessionFiles.length === 0 ? (
+            <Empty
+              title="本会话还没有文件改动"
+              hint="模型写入文件后会出现在这里；完整目录见「工作区」。"
+            />
+          ) : (
+            <>
+              <p className={styles.crumb}>本会话文件 · {sessionFiles.length}</p>
+              <div className={styles.fileList} data-testid="dock-session-files">
+                {sessionFiles.map(([path, bytes]) => (
+                  <button
+                    key={path}
+                    type="button"
+                    className={styles.fileRow}
+                    data-testid="dock-session-file"
+                    onClick={() => setPreview(path)}
+                  >
+                    <span className={styles.icon} aria-hidden="true">▤</span>
+                    <span className={styles.name}>{path}</span>
+                    {bytes ? <span className={styles.hint}>{formatSize(bytes)}</span> : null}
+                  </button>
+                ))}
+              </div>
+            </>
+          )
+        ) : null}
+
+        {!preview && tab === "workspace" ? (
+          treeLoading ? (
             <Loading label="读取工作区…" />
           ) : !tree?.items.length ? (
             <Empty title="工作区是空的" hint="模型用工具写文件后会出现在这里。" />
           ) : (
             <>
-              {tab === "workspace" ? (
-                <p className={styles.crumb}>工作区 / {tree?.root.split(/[\\/]/).pop()}</p>
-              ) : null}
+              <p className={styles.crumb}>工作区 / {tree?.root.split(/[\\/]/).pop()}</p>
               {fileTree(tree.items, setPreview)}
               {tree?.truncated ? <p className={styles.hint}>仅显示前 500 项。</p> : null}
             </>

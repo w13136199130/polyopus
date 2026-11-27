@@ -176,6 +176,15 @@ export function ChatPage() {
   }, [traceQuery.data]);
   const workspaceQuery = useWorkspaceTree(Boolean(threadId));
 
+  // Files written during this turn may land after the initial tree fetch;
+  // refresh when the user opens a file tab instead of showing a stale tree.
+  useEffect(() => {
+    if (!dockOpen) return;
+    if (dockTab === "workspace") void workspaceQuery.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dockOpen, dockTab]);
+
+
   useEffect(() => {
     try {
       localStorage.setItem(DOCK_KEY, dockOpen ? "1" : "0");

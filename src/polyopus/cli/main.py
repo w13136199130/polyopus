@@ -11,6 +11,7 @@ from pathlib import Path
 
 from polyopus import __version__
 from polyopus.config import load_settings
+from polyopus.domains.agents import workspace as agent_workspace
 from polyopus.platform.db.migrator import (
     Migration,
     MigratorError,
@@ -134,6 +135,41 @@ def _pending_migrations(db_path: Path) -> list[Migration]:
     conn = connect(db_path)
     try:
         return pending(conn, migrations)
+    finally:
+        conn.close()
+
+
+def cmd_agents_sync(_: argparse.Namespace) -> int:
+    """Backfill the per-expert workspace draft from the DB (phase 1)."""
+    settings = load_settings()
+    db_path = settings.resolved_db_path()
+    if not db_path.exists():
+        print(f"database not found: {db_path}")
+        return 1
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT tenant_id, agent_id FROM agents WHERE deleted_at IS NULL"
+            " ORDER BY id"
+        ).fetchall()
+        total = 0
+        failed = 0
+        for row in rows:
+            try:
+                total += agent_workspace.sync_agent_files(
+                    conn,
+                    tenant_id=str(row["tenant_id"]),
+                    agent_id=str(row["agent_id"]),
+                    workspace_root=settings.workspace_dir,
+                )
+            except Exception as exc:  # noqa: BLE001 - report and continue
+                failed += 1
+                print(f"skip {row['agent_id']}: {exc}")
+        print(
+            f"synced {len(rows) - failed} agent(s) / {total} file(s)"
+            f" -> {settings.workspace_dir / agent_workspace.SYSTEM_DIR}"
+        )
+        return 1 if failed else 0
     finally:
         conn.close()
 
@@ -481,6 +517,13 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--source", default=None, help="source id (src_...)")
     ev.add_argument("--hours", type=int, default=24, help="lookback window")
     ev.set_defaults(func=cmd_eval)
+
+    agents = sub.add_parser("agents", help="agent maintenance")
+    agents_sub = agents.add_subparsers(dest="agents_action", required=True)
+    agents_sync = agents_sub.add_parser(
+        "sync-workspace", help="mirror agent files into the workspace draft",
+    )
+    agents_sync.set_defaults(func=cmd_agents_sync)
 
     migrate = sub.add_parser("migrate", help="apply database migrations")
     migrate.add_argument("--sql", action="store_true", help="print SQL instead of applying")

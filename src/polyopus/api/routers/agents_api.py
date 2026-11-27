@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlite3 import Connection
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import AliasChoices, BaseModel, Field
 
 from polyopus.api.deps import get_db, get_store, require_permission
@@ -68,6 +68,7 @@ def list_agents(
 @router.post("", status_code=201)
 def create_agent(
     body: AgentCreateBody,
+    request: Request,
     user: User = Depends(require_permission("agent:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
@@ -75,6 +76,7 @@ def create_agent(
         conn, tenant_id=user.tenant_id, created_by=user.user_id,
         name=body.name, description=body.description, model=body.model,
         system_prompt=body.system_prompt,
+        workspace_root=request.app.state.settings.workspace_dir,
     )
 
 
@@ -104,10 +106,14 @@ def update_agent(
 @router.delete("/{agent_id}")
 def delete_agent(
     agent_id: str,
+    request: Request,
     user: User = Depends(require_permission("agent:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    service.delete_agent(conn, tenant_id=user.tenant_id, agent_id=agent_id)
+    service.delete_agent(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id,
+        workspace_root=request.app.state.settings.workspace_dir,
+    )
     return {"ok": True, "agentId": agent_id}
 
 
@@ -142,11 +148,13 @@ def set_subagents(
 @router.post("/{agent_id}/publish")
 def publish_agent(
     agent_id: str,
+    request: Request,
     user: User = Depends(require_permission("agent:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return service.publish_agent(
-        conn, tenant_id=user.tenant_id, agent_id=agent_id, by=user.user_id
+        conn, tenant_id=user.tenant_id, agent_id=agent_id, by=user.user_id,
+        workspace_root=request.app.state.settings.workspace_dir,
     )
 
 
@@ -210,12 +218,14 @@ def put_agent_file(
     agent_id: str,
     name: str,
     body: AgentFileWriteBody,
+    request: Request,
     user: User = Depends(require_permission("agent:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return files_service.put_file(
         conn, tenant_id=user.tenant_id, agent_id=agent_id,
         name=name, content=body.content, by=user.user_id,
+        workspace_root=request.app.state.settings.workspace_dir,
     )
 
 
@@ -223,12 +233,14 @@ def put_agent_file(
 def delete_agent_file(
     agent_id: str,
     name: str,
+    request: Request,
     user: User = Depends(require_permission("agent:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     files_service.delete_file(
         conn, tenant_id=user.tenant_id, agent_id=agent_id,
         name=name, by=user.user_id,
+        workspace_root=request.app.state.settings.workspace_dir,
     )
     return {"ok": True, "name": name}
 
@@ -260,10 +272,12 @@ def get_agent_version(
 def rollback_agent(
     agent_id: str,
     body: AgentRollbackBody,
+    request: Request,
     user: User = Depends(require_permission("agent:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
     return files_service.rollback_agent(
         conn, tenant_id=user.tenant_id, agent_id=agent_id,
         version=body.version, by=user.user_id,
+        workspace_root=request.app.state.settings.workspace_dir,
     )

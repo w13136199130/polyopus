@@ -3,27 +3,21 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 import time
+from pathlib import Path
 from typing import Any
 
+from polyopus.domains.agents import workspace as agent_workspace
 from polyopus.domains.agents.service import get_agent
 from polyopus.domains.audit import service as audit
 from polyopus.platform.errors import AppError
 
-_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+_check_file_name = agent_workspace.check_file_name
 
 
 def _now() -> int:
     return int(time.time())
-
-
-def _check_file_name(name: str) -> str:
-    clean = name.strip()
-    if not _FILE_NAME.match(clean):
-        raise AppError("VALIDATION_FAILED", details={"field": "name"})
-    return clean
 
 
 def list_files(
@@ -60,7 +54,7 @@ def get_file(
 
 def put_file(
     conn: sqlite3.Connection, *, tenant_id: str, agent_id: str,
-    name: str, content: str, by: str,
+    name: str, content: str, by: str, workspace_root: Path | None = None,
 ) -> dict[str, Any]:
     get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
     clean = _check_file_name(name)
@@ -84,11 +78,15 @@ def put_file(
         detail={"name": clean},
     )
     conn.commit()
+    agent_workspace.sync_best_effort(
+        conn, tenant_id=tenant_id, agent_id=agent_id, workspace_root=workspace_root,
+    )
     return get_file(conn, tenant_id=tenant_id, agent_id=agent_id, name=clean)
 
 
 def delete_file(
     conn: sqlite3.Connection, *, tenant_id: str, agent_id: str, name: str, by: str,
+    workspace_root: Path | None = None,
 ) -> None:
     get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
     clean = _check_file_name(name)
@@ -113,6 +111,9 @@ def delete_file(
         detail={"name": clean},
     )
     conn.commit()
+    agent_workspace.sync_best_effort(
+        conn, tenant_id=tenant_id, agent_id=agent_id, workspace_root=workspace_root,
+    )
 
 
 def list_versions(
@@ -168,7 +169,7 @@ def get_version(
 
 def rollback_agent(
     conn: sqlite3.Connection, *, tenant_id: str, agent_id: str,
-    version: int, by: str,
+    version: int, by: str, workspace_root: Path | None = None,
 ) -> dict[str, Any]:
     get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
     snapshot = get_version(
@@ -201,4 +202,7 @@ def rollback_agent(
         detail={"version": version, "draftOnly": True},
     )
     conn.commit()
+    agent_workspace.sync_best_effort(
+        conn, tenant_id=tenant_id, agent_id=agent_id, workspace_root=workspace_root,
+    )
     return get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)

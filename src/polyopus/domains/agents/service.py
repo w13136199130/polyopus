@@ -11,8 +11,10 @@ import json
 import secrets
 import sqlite3
 import time
+from pathlib import Path
 from typing import Any, cast
 
+from polyopus.domains.agents import workspace as agent_workspace
 from polyopus.domains.audit import service as audit
 from polyopus.platform.errors import AppError
 
@@ -132,6 +134,7 @@ def create_agent(
     description: str | None = None,
     model: str | None = None,
     system_prompt: str | None = None,
+    workspace_root: Path | None = None,
 ) -> dict[str, Any]:
     name = name.strip()
     if not name:
@@ -160,6 +163,9 @@ def create_agent(
         (tenant_id, agent_id, json.dumps(config, ensure_ascii=False), now),
     )
     conn.commit()
+    agent_workspace.sync_best_effort(
+        conn, tenant_id=tenant_id, agent_id=agent_id, workspace_root=workspace_root,
+    )
     return get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
 
 
@@ -226,6 +232,7 @@ def update_agent(
 
 def publish_agent(
     conn: sqlite3.Connection, *, tenant_id: str, agent_id: str, by: str,
+    workspace_root: Path | None = None,
 ) -> dict[str, Any]:
     row = conn.execute(
         "SELECT * FROM agents WHERE tenant_id = ? AND agent_id = ?"
@@ -260,11 +267,15 @@ def publish_agent(
         (next_version, next_version, now, agent_id),
     )
     conn.commit()
+    agent_workspace.sync_best_effort(
+        conn, tenant_id=tenant_id, agent_id=agent_id, workspace_root=workspace_root,
+    )
     return get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
 
 
 def delete_agent(
     conn: sqlite3.Connection, *, tenant_id: str, agent_id: str,
+    workspace_root: Path | None = None,
 ) -> None:
     get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
     conn.execute(
@@ -273,6 +284,9 @@ def delete_agent(
         (_now(), _now(), tenant_id, agent_id),
     )
     conn.commit()
+    agent_workspace.purge_best_effort(
+        workspace_root, tenant_id=tenant_id, agent_id=agent_id,
+    )
 
 
 def pin_version(conn: sqlite3.Connection, *, tenant_id: str, agent_id: str) -> str:

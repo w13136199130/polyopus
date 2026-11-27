@@ -28,6 +28,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     conn.close()
     settings = Settings(
         db_path=db,
+        workspace_dir=tmp_path / "workspace",
         secret_key="test-secret",
         access_ttl_seconds=3600,
         session_ttl_seconds=86400,
@@ -43,7 +44,9 @@ def login(client: TestClient) -> None:
     assert response.status_code == 200, response.text
 
 
-def test_agent_files_publish_versions_and_rollback(client: TestClient) -> None:
+def test_agent_files_publish_versions_and_rollback(
+    client: TestClient, tmp_path: Path,
+) -> None:
     login(client)
     created = client.post("/api/v1/agents", json={"name": "文件测试专家"})
     assert created.status_code == 201, created.text
@@ -59,6 +62,12 @@ def test_agent_files_publish_versions_and_rollback(client: TestClient) -> None:
     )
     assert put.status_code == 200
     assert put.json()["content"] == "v1 prompt"
+
+    draft = (
+        tmp_path / "workspace" / ".polyopus" / "tenants" / "default"
+        / "agents" / agent_id / "draft"
+    )
+    assert (draft / "USER.md").read_text(encoding="utf-8") == "v1 prompt"
 
     one = client.get(f"/api/v1/agents/{agent_id}/files/USER.md")
     assert one.json()["content"] == "v1 prompt"
@@ -94,6 +103,7 @@ def test_agent_files_publish_versions_and_rollback(client: TestClient) -> None:
     assert client.get(
         f"/api/v1/agents/{agent_id}/files/USER.md"
     ).status_code == 404
+    assert not (draft / "USER.md").exists()
 
 
 def test_agent_file_name_is_validated(client: TestClient) -> None:
@@ -104,3 +114,23 @@ def test_agent_file_name_is_validated(client: TestClient) -> None:
         json={"content": "x"},
     )
     assert response.status_code in (400, 422)
+
+
+def test_delete_agent_purges_workspace_draft(
+    client: TestClient, tmp_path: Path,
+) -> None:
+    login(client)
+    agent = client.post("/api/v1/agents", json={"name": "工作区清理"}).json()
+    agent_id = agent["agentId"]
+    assert client.put(
+        f"/api/v1/agents/{agent_id}/files/AGENTS.md",
+        json={"content": "guide"},
+    ).status_code == 200
+    draft = (
+        tmp_path / "workspace" / ".polyopus" / "tenants" / "default"
+        / "agents" / agent_id / "draft"
+    )
+    assert (draft / "AGENTS.md").exists()
+
+    assert client.delete(f"/api/v1/agents/{agent_id}").status_code == 200
+    assert not draft.exists()

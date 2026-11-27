@@ -76,6 +76,20 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
     timeout: 20_000,
   });
 
+  // 文件 lists only this conversation's files; 工作区 shows the full tree
+  await page.getByTestId("dock-toggle").click();
+  await expect(page.getByTestId("dock-files")).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByTestId("dock-session-file").filter({ hasText: "chat-e2e.txt" }),
+  ).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("dock-workspace").click();
+  await expect(page.getByText(/工作区 \//)).toBeVisible();
+  await page.getByTestId("dock-files").click();
+  await expect(
+    page.getByTestId("dock-session-file").filter({ hasText: "chat-e2e.txt" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "关闭 Dock" }).click();
+
   // --- reload: ?threadId restores the same conversation ---
   await page.reload();
   await page.waitForURL(/threadId=/);

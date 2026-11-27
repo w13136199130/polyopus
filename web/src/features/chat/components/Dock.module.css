@@ -59,6 +59,31 @@
   padding: 10px 8px 16px;
 }
 
+.fileList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileRow:hover { background: var(--surface-2); }
+
+.fileRow .name { flex: 1; }
+
 .crumb {
   margin: 0 0 8px;
   padding: 0 6px;
