@@ -92,3 +92,40 @@ test("inbox: batch approve two same-class approvals", async ({ page }) => {
   await expect(page.getByText(/已批准 [0-9]+ 项审批/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("inbox-select")).toHaveCount(0, { timeout: 20_000 });
 });
+
+test("inbox: mark read and snooze an approval", async ({ page }) => {
+  await login(page);
+  await clearPending(page);
+  const title = `已读稍后 ${Date.now()}`;
+  const created = await page.request.post("/api/v1/tickets", {
+    data: { title, content: "请用 fs.write 工具把内容 'read-e2e' 写入 read.txt" },
+  });
+  expect(created.status()).toBe(201);
+  const ticketId = (await created.json()).ticketId as string;
+
+  await expect.poll(async () => {
+    const response = await page.request.get("/api/v1/attentions");
+    if (!response.ok()) return 0;
+    const items = (await response.json()).items as Array<{
+      ticketId: string | null; status: string;
+    }>;
+    return items.filter((item) => item.ticketId === ticketId && item.status === "pending").length;
+  }, { timeout: 20_000 }).toBeGreaterThan(0);
+
+  await page.goto("/inbox");
+  const row = page.getByTestId("ticket-row").filter({ hasText: title });
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(row.getByTestId("attention-unread")).toBeVisible();
+
+  await page.getByTestId("inbox-read-all").click();
+  await expect(page.getByText(/已标记 [0-9]+ 条为已读/)).toBeVisible();
+  await expect(row.getByTestId("attention-unread")).toHaveCount(0);
+
+  await page.getByTestId("inbox-snooze").click();
+  const dialog = page.getByRole("dialog", { name: "稍后提醒" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId("inbox-snooze-3600").click();
+  await expect(page.getByText("已稍后提醒（1 小时后）")).toBeVisible();
+  await expect(page.getByTestId("ticket-row").filter({ hasText: title }))
+    .toHaveCount(0, { timeout: 15_000 });
+});

@@ -6,7 +6,15 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button, Chip, Dialog, Empty, ErrorState, FilterBar, Loading } from "@/components/ui";
-import { pendingInbox, useAnswerBatchAttention, useAttentions } from "@/lib/api/hooks";
+import {
+  pendingInbox,
+  useAnswerAttention,
+  useAnswerBatchAttention,
+  useAttentions,
+  useMarkAllAttentionsRead,
+  useMarkAttentionRead,
+  useSnoozeAttention,
+} from "@/lib/api/hooks";
 import { PageShell } from "@/layouts/PageShell";
 import { useTickets } from "@/features/tasks/api";
 import { TicketDetailPanel } from "@/features/tasks/components/TicketDetailPanel";
@@ -35,10 +43,15 @@ export function InboxPage() {
   const ticketsQuery = useTickets();
   const attentionsQuery = useAttentions();
   const batchAnswer = useAnswerBatchAttention();
+  const answer = useAnswerAttention();
+  const markRead = useMarkAttentionRead();
+  const markAllRead = useMarkAllAttentionsRead();
+  const snooze = useSnoozeAttention();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingDecision, setPendingDecision] = useState<"approve" | "deny" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
 
   const kindParam = params.get("kind");
   const kind: Kind = (KINDS.map(([key]) => key) as string[]).includes(kindParam ?? "")
@@ -102,6 +115,8 @@ export function InboxPage() {
   const selectedId = ticketId && rows.some((row) => row.ticketId === ticketId)
     ? ticketId
     : rows[0]?.ticketId ?? null;
+  const selectedAttention = selectedId ? attentionOf.get(selectedId) : undefined;
+  const unread = pending.filter((item) => !item.readAt).length;
 
 
   function setParam(key: string, value: string | null) {
@@ -118,6 +133,21 @@ export function InboxPage() {
     <PageShell
       title="收件箱"
       subtitle="已读与决策分离：审批、提问、受阻、失败都在这里处理。"
+      actions={
+        <Button
+          size="sm"
+          variant="secondary"
+          data-testid="inbox-read-all"
+          disabled={unread === 0 || markAllRead.isPending}
+          loading={markAllRead.isPending}
+          onClick={() => markAllRead.mutate(undefined, {
+            onSuccess: (result) => setNotice(`已标记 ${result.updated} 条为已读`),
+            onError: (err) => setBatchError(err instanceof Error ? err.message : "操作失败"),
+          })}
+        >
+          全部已读
+        </Button>
+      }
     >
       <div className={styles.page}>
         {notice ? <div className={styles.banner}>{notice}</div> : null}
@@ -145,6 +175,16 @@ export function InboxPage() {
                   <option value="newest">最新优先</option>
                   <option value="oldest">最早优先</option>
                 </select>
+                {selectedAttention ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid="inbox-snooze"
+                    onClick={() => setSnoozeOpen(true)}
+                  >
+                    稍后提醒
+                  </Button>
+                ) : null}
               </>
             }
           >
@@ -219,6 +259,8 @@ export function InboxPage() {
                 error={error}
                 selectedId={selectedId}
                 onOpen={(id) => {
+                  const attention = attentionOf.get(id);
+                  if (attention && !attention.readAt) markRead.mutate(attention.attentionId);
                   const next = new URLSearchParams(params);
                   next.set("ticketId", id);
                   setParams(next, { replace: true });
@@ -228,6 +270,14 @@ export function InboxPage() {
                 onRetry={() => void ticketsQuery.refetch()}
                 selectable
                 selectedAttentionIds={selected}
+                onAnswerQuestion={(attentionId, text) => answer.mutate(
+                  { attentionId, decision: "answer", answer: text },
+                  {
+                    onSuccess: () => setNotice("已回答提问"),
+                    onError: (err) => setBatchError(err instanceof Error ? err.message : "回答失败"),
+                  },
+                )}
+                questionBusy={answer.isPending}
                 onToggleSelect={(attentionId, checked) =>
                   setSelected((current) => {
                     const next = new Set(current);
@@ -298,6 +348,50 @@ export function InboxPage() {
         <p className={styles.formError}>
           未选中的审批不会被处理；已过期的审批会按拒绝处理。
         </p>
+      </Dialog>
+
+      <Dialog
+        open={snoozeOpen}
+        onOpenChange={setSnoozeOpen}
+        title="稍后提醒"
+        description={selectedAttention?.payload?.summary
+          ? String(selectedAttention.payload.summary)
+          : "把这条待决项暂时移出收件箱。"}
+        footer={<Button variant="ghost" onClick={() => setSnoozeOpen(false)}>取消</Button>}
+      >
+        <div className={styles.snoozeOptions}>
+          {([
+            ["1 小时后", 3600],
+            ["明天", 86400],
+            ["一周后", 7 * 86400],
+          ] as const).map(([label, seconds]) => (
+            <Button
+              key={label}
+              size="sm"
+              variant="outline"
+              data-testid={`inbox-snooze-${seconds}`}
+              loading={snooze.isPending}
+              onClick={() => {
+                if (!selectedAttention) return;
+                snooze.mutate(
+                  {
+                    attentionId: selectedAttention.attentionId,
+                    until: Math.floor(Date.now() / 1000) + seconds,
+                  },
+                  {
+                    onSuccess: () => {
+                      setSnoozeOpen(false);
+                      setNotice(`已稍后提醒（${label}）`);
+                    },
+                    onError: (err) => setBatchError(err instanceof Error ? err.message : "操作失败"),
+                  },
+                );
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
       </Dialog>
     </PageShell>
   );

@@ -61,6 +61,8 @@ MODELS: tuple[Model, ...] = (
         f("options", "arr:str", required=False),
         f("status", "enum:pending|answered|expired|dismissed"),
         f("expiresAt", "ts"), f("ticketId", "ref:tk"), f("ticketTitle", "str"),
+        f("readAt", "ts", required=False),
+        f("snoozedUntil", "ts", required=False),
     ), "A structured item that needs a human decision."),
     Model("Assignment", (
         f("id", "ref:as"), f("executor", "enum:builtin|codex|claude_code|dsh"),
@@ -120,6 +122,8 @@ MODELS: tuple[Model, ...] = (
         f("attentionId", "ref:at"), f("status", "str"), f("decision", "str"),
     )),
     Model("BatchAnswerResult", (f("items", "arr:ref:AnswerResult"), f("count", "int"))),
+    Model("AttentionSnoozeRequest", (f("until", "ts"),)),
+    Model("AttentionReadAll", (f("updated", "int"),)),
     Model("Counts", (f("attention", "int"), f("running", "int"), f("queued", "int"), f("done", "int"))),
     Model("StopRequest", (f("reason", "str", required=False),)),
     Model("AssignRequest", (
@@ -1515,7 +1519,17 @@ OPS: tuple[Op, ...] = (
            Param("status", "query", "enum:pending|answered|expired|dismissed"),
            Param("kind", "query", "enum:approval|question|blocked"),
            Param("cursor", "query", "str"), Param("limit", "query", "int"),
+           Param("includeSnoozed", "query", "bool"),
        )),
+    Op("POST", "/attentions/{attentionId}/read", "markAttentionRead", "Mark one attention read",
+       "attentions", "Attention",
+       params=(Param("attentionId", "path", "str", required=True),)),
+    Op("POST", "/attentions/read-all", "markAllAttentionsRead", "Mark all attentions read",
+       "attentions", "AttentionReadAll"),
+    Op("POST", "/attentions/{attentionId}/snooze", "snoozeAttention", "Snooze an attention",
+       "attentions", "Attention",
+       params=(Param("attentionId", "path", "str", required=True),),
+       body="AttentionSnoozeRequest"),
     Op("POST", "/attentions/{attentionId}/answer", "answerAttention", "Answer an attention", "attentions", "Attention",
        params=(Param("attentionId", "path", "str", required=True),), body="AnswerRequest"),
     Op("POST", "/attentions/answer-batch", "answerAttentionBatch",
@@ -1553,7 +1567,7 @@ def assert_valid_name(name: str, where: str) -> None:
 
 
 def validate_spec() -> None:
-    assert len(MODELS) == 240, len(MODELS)
+    assert len(MODELS) == 242, len(MODELS)
     names = {m.name for m in MODELS}
     for m in MODELS:
         assert_valid_name(m.name, "model name")

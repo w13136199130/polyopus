@@ -28,6 +28,8 @@ export interface Attention {
   expiresAt: string;
   ticketId: string;
   ticketTitle: string;
+  readAt?: string;
+  snoozedUntil?: string;
 }
 
 export interface Assignment {
@@ -144,6 +146,14 @@ export interface AnswerResult {
 export interface BatchAnswerResult {
   items: string[];
   count: number;
+}
+
+export interface AttentionSnoozeRequest {
+  until: string;
+}
+
+export interface AttentionReadAll {
+  updated: number;
 }
 
 export interface Counts {

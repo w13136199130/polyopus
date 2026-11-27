@@ -24,8 +24,9 @@ export function useAnswerAttention() {
   return useMutation({
     mutationFn: (input: {
       attentionId: string;
-      decision: "approve" | "approve_session" | "deny";
-    }) => attentions.answer(input.attentionId, input.decision),
+      decision?: "approve" | "approve_session" | "deny" | "answer";
+      answer?: string;
+    }) => attentions.answer(input.attentionId, input.decision, input.answer),
     onSuccess: () => invalidateDecisions(client),
   });
 }
@@ -38,6 +39,31 @@ export function useAnswerBatchAttention() {
       decision: "approve" | "approve_session" | "deny";
     }) => attentions.answerBatch(input.attentionIds, input.decision),
     onSuccess: () => invalidateDecisions(client),
+  });
+}
+
+export function useMarkAttentionRead() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (attentionId: string) => attentions.markRead(attentionId),
+    onSuccess: () => void client.invalidateQueries({ queryKey: attentionKeys.all }),
+  });
+}
+
+export function useMarkAllAttentionsRead() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => attentions.markAllRead(),
+    onSuccess: () => void client.invalidateQueries({ queryKey: attentionKeys.all }),
+  });
+}
+
+export function useSnoozeAttention() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { attentionId: string; until: number }) =>
+      attentions.snooze(input.attentionId, input.until),
+    onSuccess: () => void client.invalidateQueries({ queryKey: attentionKeys.all }),
   });
 }
 

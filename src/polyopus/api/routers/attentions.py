@@ -13,6 +13,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from polyopus.api.deps import get_db, get_store, require_permission
 from polyopus.domains.attention import service as attention
+from polyopus.domains.conversations import service as conversations
 from polyopus.domains.identity.service import User
 from polyopus.platform.errors import AppError
 from polyopus.platform.events.store import EventStore
@@ -22,7 +23,12 @@ router = APIRouter(prefix="/attentions", tags=["attentions"])
 
 
 class AnswerBody(BaseModel):
-    decision: str  # approve | approve_session | deny
+    decision: str | None = None  # approve | approve_session | deny | answer
+    answer: str | None = Field(default=None, max_length=4000)
+
+
+class SnoozeBody(BaseModel):
+    until: int = Field(gt=0)
 
 
 class BatchAnswerBody(BaseModel):
@@ -152,20 +158,26 @@ def _payload(row: sqlite3.Row) -> dict[str, object]:
         "turnId": row["turn_id"],
         "ticketId": row["ticket_id"],
         "expiresAt": row["expires_at"],
+        "readAt": row["read_at"],
+        "snoozedUntil": row["snoozed_until"],
         "createdAt": row["created_at"],
     }
 
 
 @router.get("")
 def list_attentions(
+    include_snoozed: int = 0,
     user: User = Depends(require_permission("attention:read")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    rows = conn.execute(
-        "SELECT * FROM attentions WHERE tenant_id = ? AND status = 'pending' "
-        "ORDER BY created_at LIMIT 100",
-        (user.tenant_id,),
-    ).fetchall()
+    now = int(__import__("time").time())
+    sql = ("SELECT * FROM attentions WHERE tenant_id = ? AND status = 'pending'")
+    params: list[object] = [user.tenant_id]
+    if not include_snoozed:
+        sql += " AND (snoozed_until IS NULL OR snoozed_until <= ?)"
+        params.append(now)
+    sql += " ORDER BY created_at LIMIT 100"
+    rows = conn.execute(sql, params).fetchall()
     return {"items": [_payload(r) for r in rows]}
 
 
@@ -178,7 +190,30 @@ def answer(
     conn: Connection = Depends(get_db),
     store: EventStore = Depends(get_store),
 ) -> dict[str, object]:
-    decision = _decision_of(body.decision)
+    row = conn.execute(
+        "SELECT * FROM attentions WHERE tenant_id = ? AND attention_id = ?",
+        (user.tenant_id, attention_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("ATTENTION_NOT_FOUND", details={"attentionId": attention_id})
+    if str(row["kind"]) == "question":
+        text = (body.answer or "").strip()
+        if not text:
+            raise AppError("VALIDATION_FAILED", details={"field": "answer"})
+        result = attention.answer_question(
+            conn, store, tenant_id=user.tenant_id, attention_id=attention_id,
+            answer=text, by=user.user_id,
+        )
+        turn = conn.execute(
+            "SELECT thread_id FROM turns WHERE turn_id = ?", (row["turn_id"],),
+        ).fetchone()
+        if turn is not None:
+            conversations.post_turn(
+                conn, store, tenant_id=user.tenant_id, owner_id=user.user_id,
+                thread_id=str(turn["thread_id"]), content=text,
+            )
+        return result
+    decision = _decision_of(body.decision or "")
     row = _pending_approval(conn, user.tenant_id, attention_id)
     actual, status = _resolve_and_resume(conn, store, request, user, row, decision)
     return {"attentionId": attention_id, "status": status, "decision": actual}
@@ -220,3 +255,45 @@ def answer_batch(
              "status": status, "decision": actual}
         )
     return {"items": items, "count": len(items)}
+
+
+@router.post("/{attention_id}/read")
+def mark_read(
+    attention_id: str,
+    user: User = Depends(require_permission("attention:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    attention.mark_read(
+        conn, tenant_id=user.tenant_id, attention_id=attention_id,
+    )
+    row = conn.execute(
+        "SELECT * FROM attentions WHERE tenant_id = ? AND attention_id = ?",
+        (user.tenant_id, attention_id),
+    ).fetchone()
+    return _payload(row)
+
+
+@router.post("/read-all")
+def mark_all_read(
+    user: User = Depends(require_permission("attention:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    updated = attention.mark_all_read(conn, tenant_id=user.tenant_id)
+    return {"updated": updated}
+
+
+@router.post("/{attention_id}/snooze")
+def snooze(
+    attention_id: str,
+    body: SnoozeBody,
+    user: User = Depends(require_permission("attention:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    attention.snooze(
+        conn, tenant_id=user.tenant_id, attention_id=attention_id, until=body.until,
+    )
+    row = conn.execute(
+        "SELECT * FROM attentions WHERE tenant_id = ? AND attention_id = ?",
+        (user.tenant_id, attention_id),
+    ).fetchone()
+    return _payload(row)

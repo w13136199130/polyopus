@@ -233,3 +233,19 @@
   .card { padding: 11px 12px; }
   .title { font-size: 14px; }
 }
+
+.unreadDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.answerInput {
+  flex: 1;
+  min-width: 100px;
+  height: 26px;
+  padding: 3px 7px;
+  font-size: 11.5px;
+}

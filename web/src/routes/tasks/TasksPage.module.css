@@ -115,3 +115,9 @@
     border: 0;
   }
 }
+
+.snoozeOptions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

@@ -163,6 +163,8 @@ export interface AttentionItem {
   turnId: string;
   ticketId: string | null;
   expiresAt: number;
+  readAt?: number | null;
+  snoozedUntil?: number | null;
   createdAt: number;
 }
 

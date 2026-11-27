@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import re
 import secrets
 import sqlite3
 import time
@@ -1821,6 +1822,11 @@ async def run_turn(
         ),
     )
     conn.commit()
+    if mode == "ask":
+        _open_ask_attention(
+            conn, store, tenant_id=tenant_id, thread_id=thread_id,
+            turn_id=turn_id, text=state.text,
+        )
     conn.execute("UPDATE runs SET last_step_idx = 0 WHERE run_id = ?", (run_id,))
     conn.commit()
 
@@ -2119,6 +2125,11 @@ def resume_after_approval(
         ),
     )
     conn.commit()
+    if mode == "ask":
+        _open_ask_attention(
+            conn, store, tenant_id=tenant_id, thread_id=thread_id,
+            turn_id=turn_id, text=state.text,
+        )
     _record_usage(
         conn, store,
         tenant_id=tenant_id, thread_id=thread_id, turn_id=turn_id,
@@ -2148,6 +2159,40 @@ def _agent_of(conn: sqlite3.Connection, thread_id: str) -> str:
         (thread_id,),
     ).fetchone()
     return str(row[0]) if row else "agent:default"
+
+
+_ASK_QUESTIONS = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
+
+
+def _open_ask_attention(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    turn_id: str,
+    text: str,
+) -> None:
+    """Ask-mode responses with a questions JSON block also enter the inbox."""
+    match = _ASK_QUESTIONS.search(text or "")
+    if not match:
+        return
+    try:
+        payload = json.loads(match.group(1))
+    except ValueError:
+        return
+    questions = payload.get("questions") if isinstance(payload, dict) else None
+    if not isinstance(questions, list) or not questions:
+        return
+    clean = [item for item in questions if isinstance(item, dict)]
+    if not clean:
+        return
+    from polyopus.domains.attention import service as attention_svc
+
+    attention_svc.request_question(
+        conn, store, tenant_id=tenant_id, thread_id=thread_id,
+        turn_id=turn_id, questions=clean,
+    )
 
 
 def _harvest_memory(

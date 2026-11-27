@@ -386,8 +386,11 @@
 | POST | `/tickets/{id}/merge` | 合并 |
 | GET | `/tickets/{id}/reports` | 报告 |
 | GET | `/tickets/{id}/timeline` | 时间线 |
-| GET | `/attentions` | 待决列表 |
-| POST | `/attentions/{id}/answer` | 回答/批准/拒绝 |
+| GET | `/attentions` | 待决列表（`includeSnoozed` 可选） |
+| POST | `/attentions/{id}/read` | 单条已读 |
+| POST | `/attentions/read-all` | 全部已读 |
+| POST | `/attentions/{id}/snooze` | 稍后提醒，`{until}` |
+| POST | `/attentions/{id}/answer` | 回答/批准/拒绝/提问回答 |
 | POST | `/attentions/answer-batch` | 批量批准/拒绝（仅同类 action；V05-16） |
 | GET | `/sources` | 来源列表 |
 | POST | `/sources` | 新建来源 |

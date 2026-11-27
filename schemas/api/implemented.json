@@ -1,5 +1,5 @@
 {
-  "count": 181,
+  "count": 184,
   "ops": [
     {
       "method": "DELETE",
@@ -491,7 +491,19 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/attentions/read-all"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/attentions/{attention_id}/answer"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/attentions/{attention_id}/read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/attentions/{attention_id}/snooze"
     },
     {
       "method": "POST",

@@ -42,6 +42,8 @@ class Attention(BaseModel):
     expiresAt: datetime
     ticketId: str
     ticketTitle: str
+    readAt: datetime | None = None
+    snoozedUntil: datetime | None = None
 
 class Assignment(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -159,6 +161,14 @@ class BatchAnswerResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     items: list[str]
     count: int
+
+class AttentionSnoozeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    until: datetime
+
+class AttentionReadAll(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    updated: int
 
 class Counts(BaseModel):
     model_config = ConfigDict(extra="forbid")

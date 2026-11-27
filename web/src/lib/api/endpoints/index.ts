@@ -207,12 +207,24 @@ export const attentions = {
   answer: op(
     "POST",
     "/attentions/{attention_id}/answer",
-    (attentionId: string, decision: "approve" | "approve_session" | "deny") =>
+    (attentionId: string, decision?: "approve" | "approve_session" | "deny" | "answer", answer?: string) =>
       apiFetch<AnswerResponse>(
         `/attentions/${encodeURIComponent(attentionId)}/answer`,
-        { method: "POST", body: JSON.stringify({ decision }) },
+        { method: "POST", body: JSON.stringify({ decision, answer }) },
       ),
   ),
+  markRead: op("POST", "/attentions/{attention_id}/read", (attentionId: string) =>
+    apiFetch<AttentionListResponse["items"][number]>(
+      `/attentions/${encodeURIComponent(attentionId)}/read`, { method: "POST" },
+    )),
+  markAllRead: op("POST", "/attentions/read-all", () =>
+    apiFetch<{ updated: number }>("/attentions/read-all", { method: "POST" })),
+  snooze: op("POST", "/attentions/{attention_id}/snooze", (
+    attentionId: string, until: number,
+  ) => apiFetch<AttentionListResponse["items"][number]>(
+    `/attentions/${encodeURIComponent(attentionId)}/snooze`,
+    { method: "POST", body: JSON.stringify({ until }) },
+  )),
   answerBatch: op(
     "POST",
     "/attentions/answer-batch",

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button, Empty, ErrorState, Loading } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import { pendingInbox, useAnswerAttention, useAttentions } from "@/lib/api/hooks";
@@ -18,6 +19,8 @@ interface Props {
   selectable?: boolean;
   selectedAttentionIds?: Set<string>;
   onToggleSelect?: (attentionId: string, checked: boolean) => void;
+  onAnswerQuestion?: (attentionId: string, answer: string) => void;
+  questionBusy?: boolean;
 }
 
 const SOURCE_TAG: Record<string, string> = {
@@ -52,6 +55,7 @@ function stateTag(bucket: string): [string, string] {
 function TicketCard({
   row, attention, selected, canWrite, busy, onAnswer, onOpen,
   selectable, selectedAttentionIds, onToggleSelect,
+  onAnswerQuestion, questionBusy,
 }: {
   row: TicketRow;
   attention: AttentionItem | undefined;
@@ -63,8 +67,11 @@ function TicketCard({
   selectable?: boolean;
   selectedAttentionIds?: Set<string>;
   onToggleSelect?: (attentionId: string, checked: boolean) => void;
+  onAnswerQuestion?: (attentionId: string, answer: string) => void;
+  questionBusy?: boolean;
 }) {
   const [label, tone] = stateTag(row.bucket);
+  const [answerDraft, setAnswerDraft] = useState("");
   const actor = row.actor?.name ?? "系统";
   return (
     <div
@@ -104,6 +111,9 @@ function TicketCard({
       ) : null}
       <div className={styles.top}>
         <span className={styles.source}>
+          {attention && !attention.readAt ? (
+            <span className={styles.unreadDot} data-testid="attention-unread" aria-label="未读" />
+          ) : null}
           <span className={styles.sourceTag}>{sourceTag(row.sourceKind)}</span>
           <span className={styles.ref} title={row.ticketId}>
             {shortRef(row.ticketId)}
@@ -155,6 +165,25 @@ function TicketCard({
                   onClick={() => onAnswer(attention.attentionId, "approve")}
                 >
                   允许
+                </Button>
+              </>
+            ) : attention.kind === "question" ? (
+              <>
+                <input
+                  className={styles.answerInput}
+                  aria-label="回答提问"
+                  placeholder="输入回答…"
+                  value={answerDraft}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => setAnswerDraft(event.target.value)}
+                />
+                <Button
+                  size="sm"
+                  data-testid="attention-answer-submit"
+                  disabled={!answerDraft.trim() || questionBusy}
+                  onClick={() => onAnswerQuestion?.(attention.attentionId, answerDraft.trim())}
+                >
+                  提交
                 </Button>
               </>
             ) : (
@@ -212,6 +241,7 @@ function TicketCard({
 export function TicketList({
   rows, loading, error, selectedId, onOpen, onCreate, creating, onRetry,
   selectable = false, selectedAttentionIds, onToggleSelect,
+  onAnswerQuestion, questionBusy,
 }: Props) {
   const canTicket = useCan("ticket:write");
   const canAttention = useCan("attention:write");
@@ -250,6 +280,8 @@ export function TicketList({
           selectable={selectable}
           selectedAttentionIds={selectedAttentionIds}
           onToggleSelect={onToggleSelect}
+          onAnswerQuestion={onAnswerQuestion}
+          questionBusy={questionBusy}
         />
       ))}
     </div>

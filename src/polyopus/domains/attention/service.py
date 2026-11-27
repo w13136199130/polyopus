@@ -459,3 +459,154 @@ def pending_for_run(conn: sqlite3.Connection, run_id: str) -> list[sqlite3.Row]:
             "SELECT * FROM approvals WHERE run_id = ? AND status = 'pending'", (run_id,)
         ).fetchall()
     )
+
+
+# ---- inbox: question / read / snooze ----------------------------------------
+
+
+def request_question(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    turn_id: str,
+    questions: list[dict[str, object]],
+    now: int | None = None,
+) -> str:
+    """Create an inbox question attention from an Ask-mode response."""
+    if not questions:
+        return ""
+    ts = now or int(time.time())
+    attention_id = "at_" + secrets.token_hex(8)
+    first = questions[0] if questions else {}
+    summary = str(first.get("question") or "需要你确认")
+    raw_options = first.get("options")
+    options = [str(item) for item in raw_options] if isinstance(raw_options, list) else []
+    payload = {
+        "summary": summary,
+        "questions": questions,
+        "options": options,
+    }
+    conn.execute(
+        """
+        INSERT INTO attentions
+          (tenant_id, attention_id, ticket_id, turn_id, kind, source_type,
+           source_id, payload_json, status, expires_at, created_at)
+        VALUES (?, ?, NULL, ?, 'question', 'run', ?, ?, 'pending', ?, ?)
+        """,
+        (tenant_id, attention_id, turn_id, turn_id,
+         json.dumps(payload, ensure_ascii=False), ts + 7 * 24 * 3600, ts),
+    )
+    conn.commit()
+    from polyopus.domains.notifications import service as notifications
+
+    notifications.notify_thread(
+        conn, tenant_id=tenant_id, thread_id=thread_id, kind="task",
+        title=f"需要你回答：{summary}",
+        body="提问已进入收件箱，回答后会继续对话。",
+        link="/inbox", dedupe_key=f"question:{attention_id}",
+    )
+    return attention_id
+
+
+def mark_read(
+    conn: sqlite3.Connection, *, tenant_id: str, attention_id: str,
+    now: int | None = None,
+) -> bool:
+    row = conn.execute(
+        "SELECT attention_id FROM attentions WHERE tenant_id = ? AND attention_id = ?",
+        (tenant_id, attention_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("ATTENTION_NOT_FOUND", details={"attentionId": attention_id})
+    conn.execute(
+        "UPDATE attentions SET read_at = COALESCE(read_at, ?) "
+        "WHERE tenant_id = ? AND attention_id = ?",
+        (now or int(time.time()), tenant_id, attention_id),
+    )
+    conn.commit()
+    return True
+
+
+def mark_all_read(
+    conn: sqlite3.Connection, *, tenant_id: str, now: int | None = None,
+) -> int:
+    cursor = conn.execute(
+        "UPDATE attentions SET read_at = ? WHERE tenant_id = ? "
+        "AND status = 'pending' AND read_at IS NULL",
+        (now or int(time.time()), tenant_id),
+    )
+    conn.commit()
+    return int(cursor.rowcount or 0)
+
+
+def snooze(
+    conn: sqlite3.Connection, *, tenant_id: str, attention_id: str,
+    until: int, now: int | None = None,
+) -> bool:
+    ts = now or int(time.time())
+    if until <= ts:
+        raise AppError("VALIDATION_FAILED", details={"field": "until"})
+    row = conn.execute(
+        "SELECT attention_id FROM attentions WHERE tenant_id = ? AND attention_id = ?",
+        (tenant_id, attention_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("ATTENTION_NOT_FOUND", details={"attentionId": attention_id})
+    conn.execute(
+        "UPDATE attentions SET snoozed_until = ? WHERE tenant_id = ? AND attention_id = ?",
+        (until, tenant_id, attention_id),
+    )
+    conn.commit()
+    return True
+
+
+def answer_question(
+    conn: sqlite3.Connection,
+    store: EventStore,
+    *,
+    tenant_id: str,
+    attention_id: str,
+    answer: str,
+    by: str,
+    now: int | None = None,
+) -> dict[str, object]:
+    ts = now or int(time.time())
+    row = conn.execute(
+        "SELECT * FROM attentions WHERE tenant_id = ? AND attention_id = ?",
+        (tenant_id, attention_id),
+    ).fetchone()
+    if row is None:
+        raise AppError("ATTENTION_NOT_FOUND", details={"attentionId": attention_id})
+    if str(row["status"]) != "pending":
+        raise AppError(
+            "ATTENTION_ALREADY_RESOLVED",
+            details={"attentionId": attention_id, "status": row["status"]},
+        )
+    thread_row = conn.execute(
+        "SELECT thread_id FROM turns WHERE turn_id = ?", (row["turn_id"],),
+    ).fetchone()
+    if thread_row is None:
+        raise AppError("TURN_NOT_FOUND", details={"turn_id": row["turn_id"]})
+    thread_id = str(thread_row["thread_id"])
+    try:
+        payload = json.loads(str(row["payload_json"] or "{}"))
+    except ValueError:
+        payload = {}
+    payload["answer"] = answer
+    conn.execute(
+        "UPDATE attentions SET status = 'answered', resolved_at = ?,"
+        " payload_json = ?, read_at = COALESCE(read_at, ?)"
+        " WHERE tenant_id = ? AND attention_id = ?",
+        (ts, json.dumps(payload, ensure_ascii=False), ts, tenant_id, attention_id),
+    )
+    conn.commit()
+    store.append(
+        thread_id,
+        "attention.resolved",
+        {"attention_id": attention_id, "status": "answered",
+         "answer": {"text": answer}, "by": by},
+        tenant_id=tenant_id, turn_id=row["turn_id"],
+    )
+    return {"attentionId": attention_id, "status": "answered", "decision": "answer"}
