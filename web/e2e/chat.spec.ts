@@ -34,6 +34,8 @@ test("chat: send, stream, approve a write, reload restores", async ({ page }) =>
   await expect(page.getByTestId("bubble-user").first()).toContainText("hello e2e chat");
   // duplicate SSE connections used to double every delta ("echo[echo[")
   expect(await assistant.first().textContent()).not.toContain("echo[echo[");
+  // the composer shows this thread's real usage.recorded totals
+  await expect(page.getByTestId("chat-usage")).toContainText("输入", { timeout: 10_000 });
 
   // streaming really streamed: >=2 deltas + terminal event in the log.
   // The projection can lag the live bubble for a beat -> poll, don't race.
@@ -252,4 +254,36 @@ test("chat: Plan card can turn into a ticket", async ({ page }) => {
   await page.getByTestId("mode-ticket").click();
   await page.waitForURL(/\/tasks\?ticketId=/);
   await expect(page.getByTestId("ticket-detail")).toBeVisible({ timeout: 15_000 });
+});
+
+test("chat: side-effect turn becomes a persisted task card", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  const box = page.getByLabel("消息输入框");
+  await box.fill("请用 fs.write 工具把内容 'task-card-e2e' 写入 task-card.txt");
+  await box.press("Enter");
+
+  const approval = page.getByTestId("approval-card");
+  await expect(approval).toBeVisible({ timeout: 20_000 });
+  await approval.getByRole("button", { name: "仅本次允许" }).click();
+  await expect(approval).toBeHidden({ timeout: 20_000 });
+
+  const suggest = page.getByTestId("chat-task-suggest");
+  await expect(suggest).toBeVisible({ timeout: 20_000 });
+  await suggest.getByTestId("chat-task-create").click();
+
+  const card = page.getByTestId("chat-task-card");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("任务卡");
+  const ticketId = await card.getAttribute("data-ticket-id");
+  expect(ticketId).toBeTruthy();
+
+  // mapping persists in thread settings, so reload restores the card
+  await page.reload();
+  await expect(page.getByTestId("chat-task-card")).toHaveAttribute("data-ticket-id", ticketId!);
+
+  await page.getByTestId("chat-task-open").click();
+  await page.waitForURL(new RegExp(`/tasks/${ticketId}`));
+  await expect(page.getByTestId("ticket-detail")).toBeVisible();
 });

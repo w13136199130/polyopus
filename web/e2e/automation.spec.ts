@@ -58,9 +58,8 @@ test("automation: create, pause, run now, edit and delete a job", async ({ page 
       .not.toMatch(/queued|running/);
   }
   await row.getByTestId("cron-history").click();
-  const history = page.getByRole("dialog", { name: "运行记录" });
+  const history = page.getByTestId("cron-recent");
   await expect(history).toContainText("成功", { timeout: 20_000 });
-  await page.keyboard.press("Escape");
 
   // edit name
   await row.getByTestId("cron-edit").click();

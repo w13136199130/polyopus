@@ -46,6 +46,8 @@ export interface ThreadSettings {
   approvalPolicy?: "ask" | "auto";
   /** Tool keys the user allowed for this whole conversation. */
   approvedTools?: string[];
+  /** turnId → ticketId for chat-side task cards (UI metadata). */
+  ticketCards?: Record<string, string>;
 }
 
 export interface Thread {
@@ -172,6 +174,11 @@ export interface AnswerResponse {
   attentionId: string;
   status: string;
   decision: string;
+}
+
+export interface BatchAnswerResponse {
+  items: AnswerResponse[];
+  count: number;
 }
 
 export interface CronJobView {
@@ -604,6 +611,13 @@ export interface TeamRow {
 
 export interface TeamListResponse {
   items: TeamRow[];
+}
+
+export interface TeamRunResult {
+  parentRunId: string;
+  roomThreadId: string;
+  task: string;
+  delegations: Array<Record<string, unknown>>;
 }
 
 export interface ToolRow {

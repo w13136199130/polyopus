@@ -46,7 +46,7 @@ type PendingDelete =
   | { kind: "cron"; id: string; name: string }
   | null;
 
-export function SourcesTab() {
+export function SourcesTab({ mode = "all" }: { mode?: "all" | "sources" }) {
   const sourcesQuery = useSources();
   const jobsQuery = useCronJobs();
   const createSource = useCreateSource();
@@ -297,6 +297,7 @@ export function SourcesTab() {
         {notice ? <div className={styles.notice}>{notice}</div> : null}
         {error ? <div className={styles.error}>{error}</div> : null}
 
+        {mode !== "sources" ? (
         <section className={styles.panel} data-testid="channel-panel">
           <div className={styles.panelHead}>
             <h2>飞书通道</h2>
@@ -397,10 +398,11 @@ export function SourcesTab() {
             </div>
           )}
         </section>
+        ) : null}
 
         <section className={styles.panel}>
           <div className={styles.panelHead}>
-            <h2>Webhook 通道</h2>
+            <h2>Webhook 来源</h2>
             <span className={styles.hint}>
               外部系统向此地址推送事件；Gate 通过后自动建单，密钥只在创建时显示一次。
             </span>

@@ -4,6 +4,7 @@ import { mergeHistory } from "../merge-history";
 import { summarizeTrace, traceFor, type TurnTrace } from "../message-trace";
 import type { AttentionItem, Message, TraceEvent } from "@/lib/api/wire";
 import { ApprovalCard } from "@/components/attention/ApprovalCard";
+import { ChatTaskCard } from "./ChatTaskCard";
 import { MarkdownView } from "@/components/markdown/MarkdownView";
 import icons, { type IconName } from "@/layouts/icons";
 import { formatAnswers, parseAskContent, type AskQuestion } from "../ask-format";
@@ -39,6 +40,10 @@ interface Props {
     action: "skip_ask" | "execute_plan" | "create_ticket" | "answer_ask",
     payload?: string,
   ) => void;
+  /** turnId → ticketId persisted in thread settings. */
+  taskCards?: Record<string, string>;
+  onCreateTask?: (turnId: string, title: string, content: string) => Promise<void>;
+  onOpenTicket?: (ticketId: string) => void;
 }
 
 const QUICK_PROMPTS: Array<[string, string, IconName]> = [
@@ -47,6 +52,10 @@ const QUICK_PROMPTS: Array<[string, string, IconName]> = [
   ["回答发布流程问题", "先查知识库运维手册再回答", "book"],
   ["写一个导出接口", "从一句话需求创建任务", "puzzle"],
 ];
+
+const SIDE_EFFECT_TOOLS = new Set([
+  "fs.write", "fs.delete", "shell.exec", "git.push", "http.post",
+]);
 
 interface Bubble {
   key: string;
@@ -522,7 +531,7 @@ const UserRow = memo(function UserRow({
 
 const AssistantRow = memo(function AssistantRow({
   bubble, trace, agentName, onNotice, onRegenerate, onBranch, turnActive,
-  latestTurnId, onModeAction,
+  latestTurnId, onModeAction, taskCard, onCreateTask, onOpenTicket,
 }: {
   bubble: Bubble;
   trace: TurnTrace;
@@ -536,6 +545,9 @@ const AssistantRow = memo(function AssistantRow({
     action: "skip_ask" | "execute_plan" | "create_ticket" | "answer_ask",
     payload?: string,
   ) => void;
+  taskCard?: { ticketId?: string; suggested: boolean; title: string; content: string };
+  onCreateTask?: (turnId: string, title: string, content: string) => Promise<void>;
+  onOpenTicket?: (ticketId: string) => void;
 }) {
   const ask = !bubble.streaming && trace.mode === "ask"
     ? parseAskContent(bubble.content)
@@ -591,6 +603,16 @@ const AssistantRow = memo(function AssistantRow({
         <ToolCard trace={trace} />
         <FileCard trace={trace} />
         <Citations trace={trace} />
+        {taskCard && bubble.turnId && onCreateTask && onOpenTicket ? (
+          <ChatTaskCard
+            ticketId={taskCard.ticketId}
+            suggested={taskCard.suggested}
+            title={taskCard.title}
+            content={taskCard.content}
+            onCreate={() => onCreateTask(bubble.turnId as string, taskCard.title, taskCard.content)}
+            onOpen={onOpenTicket}
+          />
+        ) : null}
         {!bubble.streaming ? (
           <div className={styles.msgTools}>
             <button
@@ -634,10 +656,19 @@ export function MessageList({
   messages, snapshot, onScrollRef, onQuickPrompt, trace, agentName,
   onFollowUp, onNotice, onRegenerate, onBranch, onEditMessage, turnActive,
   latestTurnId, approvals = [], approvalBusy = false, onApprovalAnswer,
-  onModeAction,
+  onModeAction, taskCards = {}, onCreateTask, onOpenTicket,
 }: Props) {
   const rawBubbles = buildBubbles(messages, snapshot);
   const byTurn = useMemo(() => summarizeTrace(trace), [trace]);
+  const userByTurn = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const bubble of rawBubbles) {
+      if (bubble.role === "user" && bubble.turnId && !map.has(bubble.turnId)) {
+        map.set(bubble.turnId, bubble.content);
+      }
+    }
+    return map;
+  }, [rawBubbles]);
   // One turn can project more than one assistant row (paused round + final).
   // Only the last row of a turn carries the steps/file cards.
   const lastAssistantOfTurn = new Map<string, string>();
@@ -731,6 +762,25 @@ export function MessageList({
                   turnActive={turnActive}
                   latestTurnId={latestTurnId}
                   onModeAction={onModeAction}
+                  taskCard={
+                    bubble.turnId
+                    && lastAssistantOfTurn.get(bubble.turnId) === bubble.key
+                      ? {
+                          ticketId: taskCards[bubble.turnId],
+                          suggested: traceFor(byTurn, bubble.turnId).steps
+                            .some((step) => SIDE_EFFECT_TOOLS.has(step.name)),
+                          title: (userByTurn.get(bubble.turnId) ?? bubble.content)
+                            .split("\n").map((line) => line.trim()).find(Boolean)
+                            ?.slice(0, 80) ?? "对话任务",
+                          content: [
+                            userByTurn.get(bubble.turnId) ?? "",
+                            bubble.content,
+                          ].join("\n\n").slice(0, 4000),
+                        }
+                      : undefined
+                  }
+                  onCreateTask={onCreateTask}
+                  onOpenTicket={onOpenTicket}
                 />
               );
             })}

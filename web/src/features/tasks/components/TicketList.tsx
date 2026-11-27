@@ -14,6 +14,10 @@ interface Props {
   onCreate: () => void;
   creating: boolean;
   onRetry: () => void;
+  /** Inbox bulk mode: approval rows get a checkbox. */
+  selectable?: boolean;
+  selectedAttentionIds?: Set<string>;
+  onToggleSelect?: (attentionId: string, checked: boolean) => void;
 }
 
 const SOURCE_TAG: Record<string, string> = {
@@ -47,6 +51,7 @@ function stateTag(bucket: string): [string, string] {
 
 function TicketCard({
   row, attention, selected, canWrite, busy, onAnswer, onOpen,
+  selectable, selectedAttentionIds, onToggleSelect,
 }: {
   row: TicketRow;
   attention: AttentionItem | undefined;
@@ -55,6 +60,9 @@ function TicketCard({
   busy: boolean;
   onAnswer: (attentionId: string, decision: "approve" | "deny") => void;
   onOpen: (ticketId: string) => void;
+  selectable?: boolean;
+  selectedAttentionIds?: Set<string>;
+  onToggleSelect?: (attentionId: string, checked: boolean) => void;
 }) {
   const [label, tone] = stateTag(row.bucket);
   const actor = row.actor?.name ?? "系统";
@@ -63,6 +71,7 @@ function TicketCard({
       className={[
         styles.card,
         styles[`card_${row.bucket}`] ?? "",
+        selectable && attention?.kind === "approval" ? styles.cardSelectable : "",
         selected ? styles.selected : "",
       ].filter(Boolean).join(" ")}
       data-testid="ticket-row"
@@ -78,6 +87,21 @@ function TicketCard({
         }
       }}
     >
+      {selectable && attention?.kind === "approval" ? (
+        <label
+          className={styles.selectBox}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            aria-label={`选择 ${row.title}`}
+            data-testid="inbox-select"
+            checked={selectedAttentionIds?.has(attention.attentionId) ?? false}
+            onChange={(event) => onToggleSelect?.(attention.attentionId, event.target.checked)}
+          />
+        </label>
+      ) : null}
       <div className={styles.top}>
         <span className={styles.source}>
           <span className={styles.sourceTag}>{sourceTag(row.sourceKind)}</span>
@@ -187,6 +211,7 @@ function TicketCard({
  */
 export function TicketList({
   rows, loading, error, selectedId, onOpen, onCreate, creating, onRetry,
+  selectable = false, selectedAttentionIds, onToggleSelect,
 }: Props) {
   const canTicket = useCan("ticket:write");
   const canAttention = useCan("attention:write");
@@ -222,6 +247,9 @@ export function TicketList({
           onAnswer={(attentionId, decision) =>
             answer.mutate({ attentionId, decision })}
           onOpen={onOpen}
+          selectable={selectable}
+          selectedAttentionIds={selectedAttentionIds}
+          onToggleSelect={onToggleSelect}
         />
       ))}
     </div>

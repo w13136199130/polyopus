@@ -9,6 +9,7 @@ import { ChatPage } from "@/routes/chat/ChatPage";
 import { AdminPage } from "@/routes/admin/AdminPage";
 import { ConnectionsPage } from "@/routes/connections/ConnectionsPage";
 import { ChannelsPage } from "@/routes/connections/ChannelsPage";
+import { SourcesPage } from "@/routes/connections/SourcesPage";
 import { ExtensionsPage } from "@/routes/extensions/ExtensionsPage";
 import { KnowledgePage } from "@/routes/knowledge/KnowledgePage";
 import { NotificationsPage } from "@/routes/notifications/NotificationsPage";
@@ -50,6 +51,7 @@ export const appRoutes: RouteObject[] = [
       { path: "knowledge", element: <RequirePermission permission="knowledge:read"><KnowledgePage /></RequirePermission> },
       { path: "connections", element: <RequirePermission permission="connector:read"><ConnectionsPage /></RequirePermission> },
       { path: "channels", element: <RequirePermission permission="source:read"><ChannelsPage /></RequirePermission> },
+      { path: "sources", element: <RequirePermission permission="source:read"><SourcesPage /></RequirePermission> },
       { path: "skills", element: <RequirePermission permission="extension:read"><ComingSoonPage title="技能包" milestone="v1.1" note="技能包的安装、创建与技能市场依赖技能域接口，随 v1.1 提供。" /></RequirePermission> },
       { path: "personalization", element: <RequirePermission permission="settings:read"><ComingSoonPage title="个性化" milestone="v1.1" note="技能、记忆、MBTI 与按专家启用插件需要新的后端域，随 v1.1 提供。" /></RequirePermission> },
       { path: "bridge", element: <ComingSoonPage title="云端协同" milestone="v1.1" note="跨实例共享专家与会话需要控制器和端到端鉴权，随 v1.1 提供。" /> },

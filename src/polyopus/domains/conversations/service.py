@@ -267,7 +267,7 @@ def list_trace(
     event_rows = conn.execute(
         "SELECT seq, type, ts, turn_id, run_id, payload_json FROM events "
         "WHERE thread_id = ? AND type NOT IN "
-        "('message.delta', 'message.reasoning', 'usage.recorded') "
+        "('message.delta', 'message.reasoning') "
         "ORDER BY seq DESC LIMIT ?",
         (thread_id, cap),
     ).fetchall()

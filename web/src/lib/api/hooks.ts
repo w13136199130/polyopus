@@ -26,13 +26,26 @@ export function useAnswerAttention() {
       attentionId: string;
       decision: "approve" | "approve_session" | "deny";
     }) => attentions.answer(input.attentionId, input.decision),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: attentionKeys.all });
-      void client.invalidateQueries({
-        predicate: (query) => ["tickets", "ticket-counts", "ticket", "ticket-timeline"]
-          .includes(String(query.queryKey[0])),
-      });
-    },
+    onSuccess: () => invalidateDecisions(client),
+  });
+}
+
+export function useAnswerBatchAttention() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      attentionIds: string[];
+      decision: "approve" | "approve_session" | "deny";
+    }) => attentions.answerBatch(input.attentionIds, input.decision),
+    onSuccess: () => invalidateDecisions(client),
+  });
+}
+
+function invalidateDecisions(client: ReturnType<typeof useQueryClient>) {
+  void client.invalidateQueries({ queryKey: attentionKeys.all });
+  void client.invalidateQueries({
+    predicate: (query) => ["tickets", "ticket-counts", "ticket", "ticket-timeline"]
+      .includes(String(query.queryKey[0])),
   });
 }
 

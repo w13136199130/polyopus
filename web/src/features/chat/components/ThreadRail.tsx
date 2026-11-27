@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { Button, Empty, Loading } from "@/components/ui";
 import type { AgentRow, Thread } from "@/lib/api/wire";
 import { SessionMenu } from "./SessionMenu";
@@ -12,6 +13,9 @@ interface Props {
   agents: AgentRow[];
   onSelect: (threadId: string) => void;
   onCreate: (agentId: string | null) => void;
+  /** Selected expert for the next chat; controlled by the URL (?agent=). */
+  selectedAgentId: string;
+  onSelectAgent: (agentId: string) => void;
   onRetry: () => void;
   onRename: (thread: Thread) => void;
   onPin: (thread: Thread) => void;
@@ -21,8 +25,6 @@ interface Props {
   /** Render inside the mobile session drawer (full width, not hidden). */
   embedded?: boolean;
 }
-
-const SELECTED_AGENT_KEY = "poly:new-chat-agent";
 
 function timeLabel(ts: number | null): string {
   if (!ts) return "";
@@ -61,30 +63,17 @@ function initials(name: string): string {
  */
 export function ThreadRail({
   threads, loading, activeId, error, agents, onSelect, onCreate, onRetry,
-  onRename, onPin, onBranch, onDelete, className, embedded,
+  onRename, onPin, onBranch, onDelete, selectedAgentId, onSelectAgent,
+  className, embedded,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [agentId, setAgentId] = useState(() => {
-    try {
-      return localStorage.getItem(SELECTED_AGENT_KEY) ?? "";
-    } catch {
-      return "";
-    }
-  });
+  const agentId = selectedAgentId;
   const stripRef = useRef<HTMLDivElement | null>(null);
 
   const published = useMemo(
     () => agents.filter((agent) => agent.status === "published"),
     [agents],
   );
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(SELECTED_AGENT_KEY, agentId);
-    } catch {
-      /* private mode: selection simply does not persist */
-    }
-  }, [agentId]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -161,7 +150,7 @@ export function ThreadRail({
             <button
               type="button"
               className={styles.clearExpert}
-              onClick={() => setAgentId("")}
+              onClick={() => onSelectAgent("")}
             >
               改用默认助手
             </button>
@@ -179,7 +168,7 @@ export function ThreadRail({
             data-testid="expert-pick"
             aria-pressed={agentId === ""}
             title="默认助手"
-            onClick={() => setAgentId("")}
+            onClick={() => onSelectAgent("")}
           >
             <span className={`${styles.expertAvatar} ${styles.avatarDefault}`}>P</span>
             <span className={styles.expertName}>默认</span>
@@ -192,7 +181,7 @@ export function ThreadRail({
               data-testid="expert-pick"
               aria-pressed={agentId === agent.agentId}
               title={agent.name}
-              onClick={() => setAgentId(agent.agentId)}
+              onClick={() => onSelectAgent(agent.agentId)}
             >
               <span className={styles.expertAvatar}>{initials(agent.name)}</span>
               <span className={styles.expertName}>{agent.name}</span>
@@ -206,6 +195,21 @@ export function ThreadRail({
         >
           ＋ {createLabel}
         </button>
+      </div>
+
+      <div className={styles.currentExpert} data-testid="current-expert">
+        <span className={styles.currentAvatar}>
+          {selectedAgent ? initials(selectedAgent.name) : "P"}
+        </span>
+        <span className={styles.currentMeta}>
+          <b>{selectedAgent ? selectedAgent.name : "默认助手"}</b>
+          <small>
+            {selectedAgent
+              ? selectedAgent.description || "已发布专家"
+              : "未选择专家，使用实例默认模型"}
+          </small>
+        </span>
+        <Link to="/agents" className={styles.currentLink}>创建专家</Link>
       </div>
 
       <div className={styles.list}>

@@ -10,6 +10,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -85,6 +86,7 @@ export function ChatPage() {
   const { threadId: pathThreadId } = useParams();
   const createTicket = useCreateTicket();
   const threadId = params.get("threadId") ?? pathThreadId ?? null;
+  const draftAgent = params.get("agent") ?? "";
 
   const threadsQuery = useThreads();
   const activeMode = threadsQuery.data?.items.find(
@@ -152,6 +154,21 @@ export function ChatPage() {
   // The transcript decorates messages with tool steps/citations, and the
   // Dock reuses the same tail; one poller for both.
   const traceQuery = useThreadTrace(threadId, threadId !== null);
+  const chatUsage = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    let cached = 0;
+    let costMicros = 0;
+    for (const event of traceQuery.data?.items ?? []) {
+      if (event.type !== "usage.recorded") continue;
+      const payload = event.payload;
+      input += Number(payload.input_tokens ?? 0) || 0;
+      output += Number(payload.output_tokens ?? 0) || 0;
+      cached += Number(payload.cached_tokens ?? 0) || 0;
+      costMicros += Number(payload.cost_micros ?? 0) || 0;
+    }
+    return { input, output, cached, costMicros };
+  }, [traceQuery.data]);
   const workspaceQuery = useWorkspaceTree(Boolean(threadId));
 
   useEffect(() => {
@@ -231,10 +248,26 @@ export function ChatPage() {
   const connectorIds = session.connectorIds ?? [];
   const subagentIds = session.subagentIds ?? [];
   const approvalPolicy = session.approvalPolicy ?? "ask";
+  const taskCards = session.ticketCards ?? {};
+
+  function selectDraftAgent(agentId: string) {
+    const next = new URLSearchParams(params);
+    if (agentId) next.set("agent", agentId);
+    else next.delete("agent");
+    setParams(next, { replace: true });
+  }
+
+  async function createTaskFromTurn(turnId: string, title: string, content: string) {
+    const ticket = await createTicket.mutateAsync({ title, content });
+    patchSession({
+      ticketCards: { ...(session.ticketCards ?? {}), [turnId]: ticket.ticketId },
+    });
+    setNotice(`已创建任务 ${ticket.ticketId}`);
+  }
 
   function handleCreate(agentId: string | null) {
     createThread.mutate(
-      { title: "新对话", agentId },
+      { title: "新对话", agentId: agentId ?? (draftAgent || null) },
       { onSuccess: (thread) => setParams({ threadId: thread.threadId }) },
     );
   }
@@ -257,7 +290,7 @@ export function ChatPage() {
       setPendingSend(content);
       setPendingMode(overrideMode ?? mode);
       createThread.mutate(
-        { title: content.slice(0, 24) || "新对话", agentId: null },
+        { title: content.slice(0, 24) || "新对话", agentId: draftAgent || null },
         {
           onSuccess: (thread) => setParams({ threadId: thread.threadId }),
           onError: () => {
@@ -478,6 +511,8 @@ export function ChatPage() {
         activeId={threadId}
         error={threadsQuery.isError}
         agents={agentsQuery.data?.items ?? []}
+        selectedAgentId={draftAgent}
+        onSelectAgent={selectDraftAgent}
         onSelect={(id) => setParams({ threadId: id })}
         onCreate={handleCreate}
         onRetry={() => void threadsQuery.refetch()}
@@ -574,6 +609,9 @@ export function ChatPage() {
                 }}
                 onApprovalAnswer={(attentionId, decision) =>
                   answerMutation.mutate({ attentionId, decision })}
+                taskCards={taskCards}
+                onCreateTask={createTaskFromTurn}
+                onOpenTicket={(ticketId) => navigate(`/tasks/${encodeURIComponent(ticketId)}`)}
               />
             )}
 
@@ -636,6 +674,7 @@ export function ChatPage() {
               onNotice={setNotice}
               streaming={composerBusy}
               onStop={handleStop}
+              usage={chatUsage}
               queued={queued}
               onQueue={(content) => setQueued((current) => [...current.slice(-4), content])}
               onRemoveQueued={(index) =>
@@ -673,6 +712,8 @@ export function ChatPage() {
           activeId={threadId}
           error={threadsQuery.isError}
           agents={agentsQuery.data?.items ?? []}
+          selectedAgentId={draftAgent}
+          onSelectAgent={selectDraftAgent}
           onSelect={(id) => {
             setParams({ threadId: id });
             setSessionsOpen(false);

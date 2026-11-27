@@ -31,6 +31,13 @@ interface Attachment {
   content: string;
 }
 
+export interface ChatUsage {
+  input: number;
+  output: number;
+  cached: number;
+  costMicros: number;
+}
+
 export interface ComposerProps {
   disabled: boolean;
   status: string;
@@ -65,6 +72,8 @@ export interface ComposerProps {
   queued?: string[];
   onQueue?: (content: string) => void;
   onRemoveQueued?: (index: number) => void;
+  /** Token usage for the current thread (trace usage.recorded sum). */
+  usage?: ChatUsage;
 }
 
 const MAX_HEIGHT = 180;
@@ -106,7 +115,7 @@ export function Composer({
   approvalPolicy, onApprovalPolicyChange,
   mode, onModeChange,
   mentionFiles = [], onNewThread, onExport, onNotice, streaming = false, onStop,
-  queued = [], onQueue, onRemoveQueued,
+  queued = [], onQueue, onRemoveQueued, usage,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -256,8 +265,22 @@ export function Composer({
   const modelText = modelValue || modelLabel || "默认模型";
   const busy = disabled;
 
+  const hasUsage = Boolean(usage && (usage.input > 0 || usage.output > 0));
+
   return (
     <div className={styles.wrap} ref={root}>
+      {hasUsage && usage ? (
+        <div className={styles.usageBar} data-testid="chat-usage">
+          <span>
+            本次对话 <b>{usage.input.toLocaleString()}</b> 输入 /{" "}
+            <b>{usage.output.toLocaleString()}</b> 输出
+          </span>
+          {usage.cached > 0 ? <span>缓存 {usage.cached.toLocaleString()}</span> : null}
+          {usage.costMicros > 0 ? (
+            <span>¥{(usage.costMicros / 1_000_000).toFixed(4)}</span>
+          ) : null}
+        </div>
+      ) : null}
       {queued.length ? (
         <div className={styles.queueRow} data-testid="composer-queue">
           <span className={styles.queueLabel}>队列 {queued.length}</span>

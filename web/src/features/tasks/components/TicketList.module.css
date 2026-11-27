@@ -26,6 +26,28 @@
 
 .card:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
+.cardSelectable {
+  position: relative;
+  padding-left: 38px;
+}
+
+.selectBox {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.selectBox input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
 .card_attention { border-left-color: var(--red); }
 .card_running { border-left-color: var(--green); }
 .card_queued { border-left-color: var(--line-2); }

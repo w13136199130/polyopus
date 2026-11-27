@@ -230,7 +230,7 @@ export function AgentsPage() {
           </>
         ) : null}
 
-        {tab === "team" ? <TeamPanel /> : null}
+        {tab === "team" ? <TeamPanel agents={agents} /> : null}
 
         {tab === "discover" ? (
           <Empty

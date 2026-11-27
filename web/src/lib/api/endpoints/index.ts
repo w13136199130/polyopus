@@ -15,6 +15,7 @@ import type {
   AgentSubagentRow,
   AgentToolBinding,
   AnswerResponse,
+  BatchAnswerResponse,
   ApiKeyRow,
   AuditRow,
   QuotaRow,
@@ -56,6 +57,8 @@ import type {
   ThreadListResponse,
   ThreadSettings,
   TeamListResponse,
+  TeamRow,
+  TeamRunResult,
   TicketCounts,
   TicketDetail,
   TicketListResponse,
@@ -200,6 +203,15 @@ export const attentions = {
         `/attentions/${encodeURIComponent(attentionId)}/answer`,
         { method: "POST", body: JSON.stringify({ decision }) },
       ),
+  ),
+  answerBatch: op(
+    "POST",
+    "/attentions/answer-batch",
+    (attentionIds: string[], decision: "approve" | "approve_session" | "deny") =>
+      apiFetch<BatchAnswerResponse>("/attentions/answer-batch", {
+        method: "POST",
+        body: JSON.stringify({ attention_ids: attentionIds, decision }),
+      }),
   ),
 };
 
@@ -920,6 +932,45 @@ export const teams = {
     const suffix = params?.q ? `?q=${encodeURIComponent(params.q)}` : "";
     return apiFetch<TeamListResponse>(`/teams${suffix}`);
   }),
+  create: op("POST", "/teams", (body: {
+    name: string; description?: string; leadId?: string; memberIds?: string[];
+  }) => apiFetch<TeamRow>("/teams", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  get: op("GET", "/teams/{team_id}", (teamId: string) =>
+    apiFetch<TeamRow>(`/teams/${encodeURIComponent(teamId)}`)),
+  update: op("PATCH", "/teams/{team_id}", (
+    teamId: string, body: { name?: string; description?: string },
+  ) => apiFetch<TeamRow>(`/teams/${encodeURIComponent(teamId)}`, {
+    method: "PATCH", body: JSON.stringify(body),
+  })),
+  remove: op("DELETE", "/teams/{team_id}", (teamId: string) =>
+    apiFetch<{ ok: boolean; teamId: string }>(
+      `/teams/${encodeURIComponent(teamId)}`, { method: "DELETE" },
+    )),
+  addMember: op("POST", "/teams/{team_id}/members", (
+    teamId: string, member: { agentId: string; role?: string },
+  ) => apiFetch<TeamRow>(`/teams/${encodeURIComponent(teamId)}/members`, {
+    method: "POST", body: JSON.stringify(member),
+  })),
+  removeMember: op("DELETE", "/teams/{team_id}/members/{agent_id}", (
+    teamId: string, agentId: string,
+  ) => apiFetch<TeamRow>(
+    `/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(agentId)}`,
+    { method: "DELETE" },
+  )),
+  run: op("POST", "/teams/{team_id}/runs", (
+    teamId: string, body: { task: string; memberIds?: string[] },
+  ) => apiFetch<TeamRunResult>(
+    `/teams/${encodeURIComponent(teamId)}/runs`,
+    { method: "POST", body: JSON.stringify(body) },
+  )),
+  stop: op("POST", "/teams/{team_id}/stop", (
+    teamId: string, body: { scope?: string } = {},
+  ) => apiFetch<{ stopped: number }>(
+    `/teams/${encodeURIComponent(teamId)}/stop`,
+    { method: "POST", body: JSON.stringify(body) },
+  )),
 };
 
 export const ENDPOINT_GROUPS = [
