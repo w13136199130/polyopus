@@ -9,9 +9,12 @@ export interface ChatTaskCardProps {
   ticketId?: string;
   /** Show the "建议创建任务" state for this turn. */
   suggested: boolean;
+  /** The user already ignored this suggestion (persisted in thread settings). */
+  dismissed?: boolean;
   title: string;
   content: string;
   onCreate: () => Promise<void>;
+  onDismiss?: () => void;
   onOpen: (ticketId: string) => void;
 }
 
@@ -38,12 +41,16 @@ function stateOf(ticket: { bucket: string; report?: { state: string } | null }):
 export function ChatTaskCard({
   ticketId,
   suggested,
+  dismissed = false,
   title,
   content,
   onCreate,
+  onDismiss,
   onOpen,
 }: ChatTaskCardProps) {
-  const [dismissed, setDismissed] = useState(false);
+  // Hide immediately on click; the persisted flag takes over after the
+  // thread-settings patch round-trips.
+  const [justDismissed, setJustDismissed] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const detail = useTicketDetail(ticketId ?? null);
@@ -52,7 +59,7 @@ export function ChatTaskCard({
   const stop = useStopTicket();
 
   if (!ticketId) {
-    if (!suggested || dismissed) return null;
+    if (!suggested || dismissed || justDismissed) return null;
     return (
       <div className={styles.card} data-testid="chat-task-suggest">
         <div className={styles.head}>
@@ -67,7 +74,11 @@ export function ChatTaskCard({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => setDismissed(true)}
+            data-testid="chat-task-dismiss"
+            onClick={() => {
+              setJustDismissed(true);
+              onDismiss?.();
+            }}
           >
             忽略
           </Button>

@@ -271,7 +271,12 @@ test("chat: side-effect turn becomes a persisted task card", async ({ page }) =>
 
   const suggest = page.getByTestId("chat-task-suggest");
   await expect(suggest).toBeVisible({ timeout: 20_000 });
+  const patched = page.waitForResponse(
+    (response) => response.url().includes("/api/v1/threads/")
+      && response.request().method() === "PATCH",
+  );
   await suggest.getByTestId("chat-task-create").click();
+  await patched;
 
   const card = page.getByTestId("chat-task-card");
   await expect(card).toBeVisible();
@@ -286,4 +291,40 @@ test("chat: side-effect turn becomes a persisted task card", async ({ page }) =>
   await page.getByTestId("chat-task-open").click();
   await page.waitForURL(new RegExp(`/tasks/${ticketId}`));
   await expect(page.getByTestId("ticket-detail")).toBeVisible();
+});
+
+test("chat: ignored task suggestion stays hidden after reload", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  const box = page.getByLabel("消息输入框");
+  await box.fill("请用 fs.write 工具把内容 'task-ignore-e2e' 写入 task-ignore.txt");
+  await box.press("Enter");
+
+  const approval = page.getByTestId("approval-card");
+  await expect(approval).toBeVisible({ timeout: 20_000 });
+  await approval.getByRole("button", { name: "仅本次允许" }).click();
+  await expect(approval).toBeHidden({ timeout: 20_000 });
+
+  const suggest = page.getByTestId("chat-task-suggest");
+  await expect(suggest).toBeVisible({ timeout: 20_000 });
+  const patched = page.waitForResponse(
+    (response) => response.url().includes("/api/v1/threads/")
+      && response.request().method() === "PATCH",
+  );
+  await suggest.getByTestId("chat-task-dismiss").click();
+  await patched;
+  await expect(suggest).toHaveCount(0);
+
+  // dismissal is written to thread settings, so a fresh load stays clean
+  const threadUrl = page.url();
+  await page.reload();
+  await expect(page.getByTestId("tool-card")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("chat-task-suggest")).toHaveCount(0);
+
+  // leaving and re-entering the conversation behaves the same
+  await page.goto("/chat");
+  await page.goto(threadUrl);
+  await expect(page.getByTestId("tool-card")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("chat-task-suggest")).toHaveCount(0);
 });

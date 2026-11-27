@@ -42,6 +42,9 @@ interface Props {
   ) => void;
   /** turnId → ticketId persisted in thread settings. */
   taskCards?: Record<string, string>;
+  /** Turns whose "建议创建任务" card the user ignored (thread settings). */
+  dismissedTaskTurns?: string[];
+  onDismissTaskCard?: (turnId: string) => void;
   onCreateTask?: (turnId: string, title: string, content: string) => Promise<void>;
   onOpenTicket?: (ticketId: string) => void;
 }
@@ -531,7 +534,7 @@ const UserRow = memo(function UserRow({
 
 const AssistantRow = memo(function AssistantRow({
   bubble, trace, agentName, onNotice, onRegenerate, onBranch, turnActive,
-  latestTurnId, onModeAction, taskCard, onCreateTask, onOpenTicket,
+  latestTurnId, onModeAction, taskCard, onCreateTask, onDismissTask, onOpenTicket,
 }: {
   bubble: Bubble;
   trace: TurnTrace;
@@ -545,8 +548,15 @@ const AssistantRow = memo(function AssistantRow({
     action: "skip_ask" | "execute_plan" | "create_ticket" | "answer_ask",
     payload?: string,
   ) => void;
-  taskCard?: { ticketId?: string; suggested: boolean; title: string; content: string };
+  taskCard?: {
+    ticketId?: string;
+    suggested: boolean;
+    dismissed?: boolean;
+    title: string;
+    content: string;
+  };
   onCreateTask?: (turnId: string, title: string, content: string) => Promise<void>;
+  onDismissTask?: () => void;
   onOpenTicket?: (ticketId: string) => void;
 }) {
   const ask = !bubble.streaming && trace.mode === "ask"
@@ -607,9 +617,11 @@ const AssistantRow = memo(function AssistantRow({
           <ChatTaskCard
             ticketId={taskCard.ticketId}
             suggested={taskCard.suggested}
+            dismissed={taskCard.dismissed}
             title={taskCard.title}
             content={taskCard.content}
             onCreate={() => onCreateTask(bubble.turnId as string, taskCard.title, taskCard.content)}
+            onDismiss={onDismissTask}
             onOpen={onOpenTicket}
           />
         ) : null}
@@ -656,9 +668,14 @@ export function MessageList({
   messages, snapshot, onScrollRef, onQuickPrompt, trace, agentName,
   onFollowUp, onNotice, onRegenerate, onBranch, onEditMessage, turnActive,
   latestTurnId, approvals = [], approvalBusy = false, onApprovalAnswer,
-  onModeAction, taskCards = {}, onCreateTask, onOpenTicket,
+  onModeAction, taskCards = {}, dismissedTaskTurns = [], onDismissTaskCard,
+  onCreateTask, onOpenTicket,
 }: Props) {
   const rawBubbles = buildBubbles(messages, snapshot);
+  const dismissedTurns = useMemo(
+    () => new Set(dismissedTaskTurns),
+    [dismissedTaskTurns],
+  );
   const byTurn = useMemo(() => summarizeTrace(trace), [trace]);
   const userByTurn = useMemo(() => {
     const map = new Map<string, string>();
@@ -769,6 +786,7 @@ export function MessageList({
                           ticketId: taskCards[bubble.turnId],
                           suggested: traceFor(byTurn, bubble.turnId).steps
                             .some((step) => SIDE_EFFECT_TOOLS.has(step.name)),
+                          dismissed: dismissedTurns.has(bubble.turnId),
                           title: (userByTurn.get(bubble.turnId) ?? bubble.content)
                             .split("\n").map((line) => line.trim()).find(Boolean)
                             ?.slice(0, 80) ?? "对话任务",
@@ -780,6 +798,11 @@ export function MessageList({
                       : undefined
                   }
                   onCreateTask={onCreateTask}
+                  onDismissTask={
+                    bubble.turnId
+                      ? () => onDismissTaskCard?.(bubble.turnId as string)
+                      : undefined
+                  }
                   onOpenTicket={onOpenTicket}
                 />
               );

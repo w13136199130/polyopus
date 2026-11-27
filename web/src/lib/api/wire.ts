@@ -48,6 +48,8 @@ export interface ThreadSettings {
   approvedTools?: string[];
   /** turnId → ticketId for chat-side task cards (UI metadata). */
   ticketCards?: Record<string, string>;
+  /** turnIds whose "建议创建任务" card was ignored (UI metadata). */
+  dismissedTaskTurns?: string[];
 }
 
 export interface Thread {

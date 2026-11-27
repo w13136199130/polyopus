@@ -610,6 +610,15 @@ export function ChatPage() {
                 onApprovalAnswer={(attentionId, decision) =>
                   answerMutation.mutate({ attentionId, decision })}
                 taskCards={taskCards}
+                dismissedTaskTurns={session.dismissedTaskTurns ?? []}
+                onDismissTaskCard={(turnId) => {
+                  const current = session.dismissedTaskTurns ?? [];
+                  if (current.includes(turnId)) return;
+                  patchSession({
+                    // Bounded: the settings blob is capped at 8KB server-side.
+                    dismissedTaskTurns: [...current, turnId].slice(-100),
+                  });
+                }}
                 onCreateTask={createTaskFromTurn}
                 onOpenTicket={(ticketId) => navigate(`/tasks/${encodeURIComponent(ticketId)}`)}
               />
