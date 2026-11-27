@@ -1,5 +1,5 @@
 {
-  "count": 174,
+  "count": 181,
   "ops": [
     {
       "method": "DELETE",
@@ -16,6 +16,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/agents/{agent_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/agents/{agent_id}/files/{name}"
     },
     {
       "method": "DELETE",
@@ -147,11 +151,27 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/files"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/files/{name}"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/agents/{agent_id}/subagents"
     },
     {
       "method": "GET",
       "path": "/api/v1/agents/{agent_id}/tools"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/versions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/versions/{version}"
     },
     {
       "method": "GET",
@@ -459,6 +479,10 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/agents/{agent_id}/rollback"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/agents/{agent_id}/test"
     },
     {
@@ -692,6 +716,10 @@
     {
       "method": "PUT",
       "path": "/api/v1/admin/security/policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/agents/{agent_id}/files/{name}"
     },
     {
       "method": "PUT",

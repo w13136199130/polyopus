@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import AliasChoices, BaseModel, Field
 
 from polyopus.api.deps import get_db, get_store, require_permission
+from polyopus.domains.agents import files as files_service
 from polyopus.domains.agents import service
 from polyopus.domains.conversations import service as conversations
 from polyopus.domains.identity.service import User
@@ -171,3 +172,98 @@ def test_agent(
         "messageId": message_id, "status": "queued",
         "input": {"content": body.message},
     }
+
+
+class AgentFileWriteBody(BaseModel):
+    content: str = Field(max_length=200_000)
+
+
+class AgentRollbackBody(BaseModel):
+    version: int = Field(ge=1)
+
+
+@router.get("/{agent_id}/files")
+def list_agent_files(
+    agent_id: str,
+    user: User = Depends(require_permission("agent:read")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return {"agentId": agent_id, "items": files_service.list_files(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id,
+    )}
+
+
+@router.get("/{agent_id}/files/{name}")
+def get_agent_file(
+    agent_id: str,
+    name: str,
+    user: User = Depends(require_permission("agent:read")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return files_service.get_file(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id, name=name,
+    )
+
+
+@router.put("/{agent_id}/files/{name}")
+def put_agent_file(
+    agent_id: str,
+    name: str,
+    body: AgentFileWriteBody,
+    user: User = Depends(require_permission("agent:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return files_service.put_file(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id,
+        name=name, content=body.content, by=user.user_id,
+    )
+
+
+@router.delete("/{agent_id}/files/{name}")
+def delete_agent_file(
+    agent_id: str,
+    name: str,
+    user: User = Depends(require_permission("agent:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    files_service.delete_file(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id,
+        name=name, by=user.user_id,
+    )
+    return {"ok": True, "name": name}
+
+
+@router.get("/{agent_id}/versions")
+def list_agent_versions(
+    agent_id: str,
+    user: User = Depends(require_permission("agent:read")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return {"items": files_service.list_versions(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id,
+    )}
+
+
+@router.get("/{agent_id}/versions/{version}")
+def get_agent_version(
+    agent_id: str,
+    version: int,
+    user: User = Depends(require_permission("agent:read")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return files_service.get_version(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id, version=version,
+    )
+
+
+@router.post("/{agent_id}/rollback")
+def rollback_agent(
+    agent_id: str,
+    body: AgentRollbackBody,
+    user: User = Depends(require_permission("agent:write")),
+    conn: Connection = Depends(get_db),
+) -> dict[str, object]:
+    return files_service.rollback_agent(
+        conn, tenant_id=user.tenant_id, agent_id=agent_id,
+        version=body.version, by=user.user_id,
+    )

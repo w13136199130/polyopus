@@ -289,6 +289,38 @@ export interface AgentTestRequest {
   message: string;
 }
 
+export interface AgentFile {
+  name: string;
+  content: string;
+  updatedAt: string;
+}
+
+export interface AgentFileList {
+  agentId: string;
+  items: AgentFile[];
+}
+
+export interface AgentFileWrite {
+  content: string;
+}
+
+export interface AgentVersion {
+  version: number;
+  publishedAt: string;
+  publishedBy?: string;
+  isCurrent: boolean;
+  config?: Record<string, unknown>;
+  files?: Record<string, unknown>;
+}
+
+export interface AgentVersionList {
+  items: AgentVersion[];
+}
+
+export interface AgentRollback {
+  version: number;
+}
+
 export interface Thread {
   id: string;
   agentId: string;

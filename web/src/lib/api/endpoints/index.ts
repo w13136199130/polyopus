@@ -9,7 +9,11 @@ import { apiFetch } from "../client";
 import type {
   AdminOverview,
   AdminSettings,
+  AgentFile,
+  AgentFileListResponse,
   AgentListResponse,
+  AgentVersion,
+  AgentVersionListResponse,
   BackupAutoSettings,
   AgentRow,
   AgentSubagentRow,
@@ -827,6 +831,41 @@ export const agents = {
   ) => apiFetch<{ items: AgentSubagentRow[] }>(
     `/agents/${encodeURIComponent(agentId)}/subagents`,
     { method: "PUT", body: JSON.stringify({ subagentIds }) },
+  )),
+  listFiles: op("GET", "/agents/{agent_id}/files", (agentId: string) =>
+    apiFetch<AgentFileListResponse>(
+      `/agents/${encodeURIComponent(agentId)}/files`,
+    )),
+  getFile: op("GET", "/agents/{agent_id}/files/{name}", (agentId: string, name: string) =>
+    apiFetch<AgentFile>(
+      `/agents/${encodeURIComponent(agentId)}/files/${encodeURIComponent(name)}`,
+    )),
+  putFile: op("PUT", "/agents/{agent_id}/files/{name}", (
+    agentId: string, name: string, content: string,
+  ) => apiFetch<AgentFile>(
+    `/agents/${encodeURIComponent(agentId)}/files/${encodeURIComponent(name)}`,
+    { method: "PUT", body: JSON.stringify({ content }) },
+  )),
+  deleteFile: op("DELETE", "/agents/{agent_id}/files/{name}", (
+    agentId: string, name: string,
+  ) => apiFetch<{ ok: boolean; name: string }>(
+    `/agents/${encodeURIComponent(agentId)}/files/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+  )),
+  listVersions: op("GET", "/agents/{agent_id}/versions", (agentId: string) =>
+    apiFetch<AgentVersionListResponse>(
+      `/agents/${encodeURIComponent(agentId)}/versions`,
+    )),
+  getVersion: op("GET", "/agents/{agent_id}/versions/{version}", (
+    agentId: string, version: number,
+  ) => apiFetch<AgentVersion>(
+    `/agents/${encodeURIComponent(agentId)}/versions/${version}`,
+  )),
+  rollback: op("POST", "/agents/{agent_id}/rollback", (
+    agentId: string, version: number,
+  ) => apiFetch<AgentRow>(
+    `/agents/${encodeURIComponent(agentId)}/rollback`,
+    { method: "POST", body: JSON.stringify({ version }) },
   )),
 };
 

@@ -837,3 +837,28 @@ export interface MemoryExport {
   format: "jsonl" | "json";
   items: MemoryAtom[];
 }
+
+
+export interface AgentFile {
+  name: string;
+  content: string;
+  updatedAt: number;
+}
+
+export interface AgentFileListResponse {
+  agentId: string;
+  items: AgentFile[];
+}
+
+export interface AgentVersion {
+  version: number;
+  publishedAt: number;
+  publishedBy?: string | null;
+  isCurrent: boolean;
+  config?: Record<string, unknown>;
+  files?: Record<string, string>;
+}
+
+export interface AgentVersionListResponse {
+  items: AgentVersion[];
+}

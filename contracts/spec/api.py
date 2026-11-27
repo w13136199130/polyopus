@@ -187,6 +187,18 @@ MODELS: tuple[Model, ...] = (
         f("status", "enum:draft|published|disabled", required=False),
     )),
     Model("AgentTestRequest", (f("message", "str"),)),
+    Model("AgentFile", (
+        f("name", "str"), f("content", "str"), f("updatedAt", "ts"),
+    )),
+    Model("AgentFileList", (f("agentId", "ref:ag"), f("items", "arr:obj:AgentFile"))),
+    Model("AgentFileWrite", (f("content", "str"),)),
+    Model("AgentVersion", (
+        f("version", "int"), f("publishedAt", "ts"),
+        f("publishedBy", "str", required=False), f("isCurrent", "bool"),
+        f("config", "json", required=False), f("files", "json", required=False),
+    )),
+    Model("AgentVersionList", (f("items", "arr:obj:AgentVersion"),)),
+    Model("AgentRollback", (f("version", "int"),)),
 
     # ---- M0/M1: conversations -------------------------------------------
     Model("Thread", (
@@ -928,6 +940,31 @@ OPS: tuple[Op, ...] = (
     Op("POST", "/agents/{agentId}/test", "testAgent", "Test the draft without publishing",
        "agents", "Turn",
        params=(Param("agentId", "path", "str", required=True),), body="AgentTestRequest"),
+    Op("GET", "/agents/{agentId}/files", "listAgentFiles", "List agent config files",
+       "agents", "AgentFileList",
+       params=(Param("agentId", "path", "str", required=True),)),
+    Op("GET", "/agents/{agentId}/files/{name}", "getAgentFile", "Read one config file",
+       "agents", "AgentFile",
+       params=(Param("agentId", "path", "str", required=True),
+               Param("name", "path", "str", required=True))),
+    Op("PUT", "/agents/{agentId}/files/{name}", "putAgentFile", "Create or save a config file",
+       "agents", "AgentFile",
+       params=(Param("agentId", "path", "str", required=True),
+               Param("name", "path", "str", required=True)), body="AgentFileWrite"),
+    Op("DELETE", "/agents/{agentId}/files/{name}", "deleteAgentFile", "Delete a config file",
+       "agents", "Ok",
+       params=(Param("agentId", "path", "str", required=True),
+               Param("name", "path", "str", required=True))),
+    Op("GET", "/agents/{agentId}/versions", "listAgentVersions", "List published versions",
+       "agents", "AgentVersionList",
+       params=(Param("agentId", "path", "str", required=True),)),
+    Op("GET", "/agents/{agentId}/versions/{version}", "getAgentVersion", "Read a version snapshot",
+       "agents", "AgentVersion",
+       params=(Param("agentId", "path", "str", required=True),
+               Param("version", "path", "int", required=True))),
+    Op("POST", "/agents/{agentId}/rollback", "rollbackAgent", "Restore a version into the draft",
+       "agents", "Agent",
+       params=(Param("agentId", "path", "str", required=True),), body="AgentRollback"),
 
     # ---- M0/M1: threads --------------------------------------------------
     Op("GET", "/threads", "listThreads", "List threads", "threads", "ThreadList",
@@ -1516,7 +1553,7 @@ def assert_valid_name(name: str, where: str) -> None:
 
 
 def validate_spec() -> None:
-    assert len(MODELS) == 234, len(MODELS)
+    assert len(MODELS) == 240, len(MODELS)
     names = {m.name for m in MODELS}
     for m in MODELS:
         assert_valid_name(m.name, "model name")

@@ -234,6 +234,11 @@ def publish_agent(
     if row is None:
         raise AppError("NOT_FOUND", details={"agentId": agent_id})
     config = _draft_config(conn, agent_id)
+    files = {str(item["name"]): str(item["content"])
+             for item in conn.execute(
+                 "SELECT name, content FROM agent_files WHERE tenant_id = ? "
+                 "AND agent_id = ? ORDER BY name", (tenant_id, agent_id),
+             ).fetchall()}
     next_version = int(row["published_version"] or 0) + 1
     now = _now()
     conn.execute(
@@ -242,9 +247,11 @@ def publish_agent(
     )
     conn.execute(
         "INSERT INTO agent_versions (tenant_id, agent_id, version, config_json,"
-        " published_by, published_at, is_current) VALUES (?, ?, ?, ?, ?, ?, 1)",
+        " files_json, published_by, published_at, is_current)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
         (tenant_id, agent_id, next_version,
-         json.dumps(config, ensure_ascii=False), by, now),
+         json.dumps(config, ensure_ascii=False),
+         json.dumps(files, ensure_ascii=False), by, now),
     )
     conn.execute(
         "UPDATE agents SET published_version = ?, draft_version = ?,"

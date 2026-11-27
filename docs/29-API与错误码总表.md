@@ -408,7 +408,8 @@
 | GET | `/agents/{id}` | 详情 |
 | PATCH | `/agents/{id}` | 更新草稿 |
 | DELETE | `/agents/{id}` | 删除 |
-| GET/PUT | `/agents/{id}/files/{name}` | 配置文件 |
+| GET | `/agents/{id}/files` | 配置文件列表 |
+| GET/PUT/DELETE | `/agents/{id}/files/{name}` | 配置文件读写删 |
 | GET/PUT | `/agents/{id}/skills` | 技能绑定 |
 | GET/PUT | `/agents/{id}/subagents` | 子智能体 |
 | GET | `/agents/{id}/workspace` | 文件列表 |
@@ -416,7 +417,9 @@
 | POST | `/agents/{id}/publish` | 发布版本 |
 | GET | `/experts` | 专家模板库 |
 | POST | `/agents/from-template` | 从模板创建 |
-| POST | `/agents/{id}/rollback` | 回滚 |
+| GET | `/agents/{id}/versions` | 版本列表 |
+| GET | `/agents/{id}/versions/{version}` | 版本快照 |
+| POST | `/agents/{id}/rollback` | 回滚到草稿 |
 | POST | `/agents/{id}/test` | 试运行 |
 
 ### 3.5 连接器 / 扩展

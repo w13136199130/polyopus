@@ -41,8 +41,15 @@ export function useUpdateAgent() {
 }
 
 export function usePublishAgent() {
-  const invalidate = useInvalidate();
-  return useMutation({ mutationFn: agents.publish, onSuccess: invalidate });
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: agents.publish,
+    onSuccess: (_agent, agentId) => {
+      void client.invalidateQueries({ queryKey: agentKeys.list });
+      void client.invalidateQueries({ queryKey: ["agent-versions", agentId] });
+      void client.invalidateQueries({ queryKey: ["agent-version", agentId] });
+    },
+  });
 }
 
 export function useDeleteAgent() {
@@ -75,5 +82,64 @@ export function useSetAgentSubagents(agentId: string) {
         queryKey: agentKeys.subagents(agentId),
       });
     },
+  });
+}
+
+export function useAgentFiles(agentId: string | null) {
+  return useQuery({
+    queryKey: ["agent-files", agentId ?? "none"],
+    queryFn: () => agents.listFiles(agentId as string),
+    enabled: agentId !== null,
+  });
+}
+
+export function useSaveAgentFile(agentId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; content: string }) =>
+      agents.putFile(agentId, input.name, input.content),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["agent-files", agentId] });
+      void client.invalidateQueries({ queryKey: agentKeys.list });
+    },
+  });
+}
+
+export function useDeleteAgentFile(agentId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => agents.deleteFile(agentId, name),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["agent-files", agentId] });
+      void client.invalidateQueries({ queryKey: agentKeys.list });
+    },
+  });
+}
+
+export function useAgentVersions(agentId: string | null) {
+  return useQuery({
+    queryKey: ["agent-versions", agentId ?? "none"],
+    queryFn: () => agents.listVersions(agentId as string),
+    enabled: agentId !== null,
+  });
+}
+
+export function useRollbackAgent(agentId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (version: number) => agents.rollback(agentId, version),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["agent-versions", agentId] });
+      void client.invalidateQueries({ queryKey: ["agent-files", agentId] });
+      void client.invalidateQueries({ queryKey: agentKeys.list });
+    },
+  });
+}
+
+export function useAgentVersion(agentId: string | null, version: number | null) {
+  return useQuery({
+    queryKey: ["agent-version", agentId ?? "none", version ?? 0],
+    queryFn: () => agents.getVersion(agentId as string, version as number),
+    enabled: agentId !== null && version !== null,
   });
 }

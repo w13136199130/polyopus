@@ -303,6 +303,38 @@ class AgentTestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str
 
+class AgentFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    content: str
+    updatedAt: datetime
+
+class AgentFileList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agentId: str
+    items: list[AgentFile]
+
+class AgentFileWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str
+
+class AgentVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int
+    publishedAt: datetime
+    publishedBy: str | None = None
+    isCurrent: bool
+    config: dict[str, Any] | None = None
+    files: dict[str, Any] | None = None
+
+class AgentVersionList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[AgentVersion]
+
+class AgentRollback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int
+
 class Thread(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str

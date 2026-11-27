@@ -9,8 +9,14 @@ import { Button, Dialog, Drawer } from "@/components/ui";
 import { useCan } from "@/lib/auth/permissions";
 import type { AgentRow, AgentToolBinding } from "@/lib/api/wire";
 import {
+  useAgentFiles,
   useAgentSubagents,
   useAgents,
+  useAgentVersion,
+  useAgentVersions,
+  useDeleteAgentFile,
+  useRollbackAgent,
+  useSaveAgentFile,
   useSetAgentSubagents,
   useTestAgent,
   useUpdateAgent,
@@ -23,6 +29,7 @@ type Section =
   | "model"
   | "prompt"
   | "tools"
+  | "files"
   | "subagents"
   | "versions"
   | "test";
@@ -48,6 +55,11 @@ export function AgentEditDrawer({
   const agentsQuery = useAgents();
   const subagentsQuery = useAgentSubagents(agent?.agentId ?? null);
   const saveSubagents = useSetAgentSubagents(agent?.agentId ?? "");
+  const filesQuery = useAgentFiles(agent?.agentId ?? null);
+  const saveFile = useSaveAgentFile(agent?.agentId ?? "");
+  const deleteFile = useDeleteAgentFile(agent?.agentId ?? "");
+  const versionsQuery = useAgentVersions(agent?.agentId ?? null);
+  const rollback = useRollbackAgent(agent?.agentId ?? "");
 
   const [section, setSection] = useState<Section>("basic");
   const [name, setName] = useState("");
@@ -59,6 +71,13 @@ export function AgentEditDrawer({
   const [testMessage, setTestMessage] = useState("你好，介绍一下你自己");
   const [baseline, setBaseline] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [activeFile, setActiveFile] = useState<string | null>(null);
+  const [fileDraft, setFileDraft] = useState("");
+  const [fileBaseline, setFileBaseline] = useState("");
+  const [newFile, setNewFile] = useState("");
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [pendingRollback, setPendingRollback] = useState<number | null>(null);
+  const versionQuery = useAgentVersion(agent?.agentId ?? null, selectedVersion);
 
   useEffect(() => {
     if (!agent) return;
@@ -77,7 +96,29 @@ export function AgentEditDrawer({
 
   useEffect(() => {
     if (open) setSection(initialSection ?? "basic");
+    setActiveFile(null);
+    setFileDraft("");
+    setFileBaseline("");
+    setSelectedVersion(null);
+    setPendingRollback(null);
   }, [open, initialSection, agent?.agentId]);
+
+  useEffect(() => {
+    const items = filesQuery.data?.items ?? [];
+    if (activeFile === null && items.length > 0) {
+      setActiveFile(items[0].name);
+      setFileDraft(items[0].content);
+      setFileBaseline(items[0].content);
+      return;
+    }
+    const current = items.find((item) => item.name === activeFile);
+    // Refresh the editor after an external change (rollback, another tab) when
+    // there are no unsaved edits.
+    if (current && fileDraft === fileBaseline && current.content !== fileBaseline) {
+      setFileDraft(current.content);
+      setFileBaseline(current.content);
+    }
+  }, [filesQuery.data, activeFile, fileDraft, fileBaseline]);
 
   const draft = JSON.stringify({ name, description, model, prompt });
   const savedSubagents = (subagentsQuery.data?.items ?? [])
@@ -85,7 +126,8 @@ export function AgentEditDrawer({
   const draftSubagentsKey = [...draftSubagents].sort().join("|");
   const subagentsDirty = subagentsQuery.data !== undefined
     && savedSubagents !== draftSubagentsKey;
-  const dirty = (baseline !== "" && draft !== baseline) || subagentsDirty;
+  const fileDirty = activeFile !== null && fileDraft !== fileBaseline;
+  const dirty = (baseline !== "" && draft !== baseline) || subagentsDirty || fileDirty;
 
   function handleOpenChange(next: boolean) {
     if (!next && dirty) {
@@ -143,6 +185,49 @@ export function AgentEditDrawer({
     }
   }
 
+  function selectFile(name: string, content: string) {
+    setActiveFile(name);
+    setFileDraft(content);
+    setFileBaseline(content);
+  }
+
+  async function saveFileNow() {
+    if (!activeFile) return;
+    try {
+      const saved = await saveFile.mutateAsync({ name: activeFile, content: fileDraft });
+      setFileBaseline(saved.content);
+      setFileDraft(saved.content);
+      onNotice(`已保存 ${activeFile}`);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "保存文件失败");
+    }
+  }
+
+  async function removeActiveFile() {
+    if (!activeFile) return;
+    try {
+      await deleteFile.mutateAsync(activeFile);
+      setActiveFile(null);
+      setFileDraft("");
+      setFileBaseline("");
+      onNotice(`已删除 ${activeFile}`);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "删除文件失败");
+    }
+  }
+
+  async function confirmRollback() {
+    if (pendingRollback === null) return;
+    try {
+      await rollback.mutateAsync(pendingRollback);
+      onNotice(`已回滚到 v${pendingRollback}（草稿），发布后生效`);
+      setPendingRollback(null);
+      setSelectedVersion(null);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "回滚失败");
+    }
+  }
+
   async function runTest() {
     if (!agent) return;
     try {
@@ -160,6 +245,7 @@ export function AgentEditDrawer({
     ["model", "模型与运行"],
     ["prompt", "系统提示词"],
     ["tools", "工具"],
+    ["files", "配置文件"],
     ["subagents", "子智能体"],
     ["versions", "版本"],
     ["test", "测试对话"],
@@ -189,6 +275,15 @@ export function AgentEditDrawer({
           >
             保存工具设置
           </Button>
+        ) : section === "files" ? (
+          <Button
+            data-testid="agent-save-file"
+            disabled={!canWrite || !activeFile}
+            loading={saveFile.isPending}
+            onClick={() => void saveFileNow()}
+          >
+            保存文件
+          </Button>
         ) : section === "subagents" ? (
           <Button
             data-testid="agent-save-subagents"
@@ -198,7 +293,7 @@ export function AgentEditDrawer({
           >
             保存子智能体
           </Button>
-        ) : section === "test" ? null : (
+        ) : section === "versions" || section === "test" ? null : (
           <Button
             data-testid="agent-save-draft"
             disabled={!canWrite}
@@ -324,6 +419,91 @@ export function AgentEditDrawer({
             )
           ) : null}
 
+          {section === "files" ? (
+            filesQuery.isLoading ? (
+              <p style={{ color: "var(--text-3)", fontSize: 12 }}>载入配置文件…</p>
+            ) : filesQuery.isError ? (
+              <p style={{ color: "var(--red)", fontSize: 12 }}>配置文件加载失败</p>
+            ) : (
+              <div className={styles.filePane}>
+                <div className={styles.fileList}>
+                  {(filesQuery.data?.items ?? []).map((file) => (
+                    <button
+                      key={file.name}
+                      type="button"
+                      className={`${styles.fileItem} ${
+                        activeFile === file.name ? styles.fileActive : ""
+                      }`}
+                      data-testid="agent-file-row"
+                      onClick={() => selectFile(file.name, file.content)}
+                    >
+                      {file.name}
+                    </button>
+                  ))}
+                  {(filesQuery.data?.items ?? []).length === 0 ? (
+                    <span className={styles.muted}>还没有配置文件</span>
+                  ) : null}
+                  <form
+                    className={styles.fileNew}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const name = newFile.trim();
+                      if (!name) return;
+                      selectFile(name, "");
+                      setNewFile("");
+                    }}
+                  >
+                    <input
+                      data-testid="agent-file-new-name"
+                      value={newFile}
+                      maxLength={100}
+                      placeholder="新文件名，如 USER.md"
+                      onChange={(event) => setNewFile(event.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      type="submit"
+                      data-testid="agent-file-create"
+                      disabled={!newFile.trim()}
+                    >
+                      新建
+                    </Button>
+                  </form>
+                </div>
+                <div className={styles.fileEditor}>
+                  {activeFile ? (
+                    <>
+                      <div className={styles.fileHeader}>
+                        <b>{activeFile}</b>
+                        <span className={styles.spacer} />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className={styles.danger}
+                          data-testid="agent-file-delete"
+                          disabled={!canWrite}
+                          onClick={() => void removeActiveFile()}
+                        >
+                          删除
+                        </Button>
+                      </div>
+                      <textarea
+                        className={styles.fileTextarea}
+                        data-testid="agent-file-content"
+                        value={fileDraft}
+                        disabled={!canWrite}
+                        onChange={(event) => setFileDraft(event.target.value)}
+                      />
+                    </>
+                  ) : (
+                    <p className={styles.muted}>选择左侧文件，或新建一个配置文件。</p>
+                  )}
+                </div>
+              </div>
+            )
+          ) : null}
+
           {section === "subagents" ? (
             subagentsQuery.isLoading ? (
               <p style={{ color: "var(--text-3)", fontSize: 12 }}>载入子智能体…</p>
@@ -382,9 +562,62 @@ export function AgentEditDrawer({
                 当前已发布版本：<b>v{agent.version}</b>
                 {agent.version === 0 ? "（尚未发布）" : ""}
                 <br />
-                已发布版本不可变；新会话创建时锁定当时的最新版本，
-                之后发布新版本不会影响已有会话（`agentVersionId` 不漂移）。
+                已发布版本不可变；回滚只更新草稿，发布后才影响新会话。
               </p>
+              {versionsQuery.isLoading ? (
+                <p className={styles.muted}>载入版本…</p>
+              ) : versionsQuery.isError ? (
+                <p className={styles.muted}>版本加载失败</p>
+              ) : (versionsQuery.data?.items ?? []).length === 0 ? (
+                <p className={styles.muted}>还没有已发布版本。</p>
+              ) : (
+                <div className={styles.versionList}>
+                  {(versionsQuery.data?.items ?? []).map((item) => (
+                    <button
+                      key={item.version}
+                      type="button"
+                      className={`${styles.versionRow} ${
+                        selectedVersion === item.version ? styles.versionActive : ""
+                      }`}
+                      data-testid="agent-version-row"
+                      onClick={() => setSelectedVersion(item.version)}
+                    >
+                      <b>v{item.version}</b>
+                      {item.isCurrent ? <span className={styles.tag}>当前</span> : null}
+                      <span className={styles.versionMeta}>
+                        {new Date(item.publishedAt * 1000).toLocaleString("zh-CN")}
+                        {item.publishedBy ? ` · ${item.publishedBy}` : ""}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedVersion !== null ? (
+                versionQuery.isLoading ? (
+                  <p className={styles.muted}>载入版本快照…</p>
+                ) : versionQuery.data ? (
+                  <div className={styles.versionNote}>
+                    <b>v{versionQuery.data.version} 快照</b>
+                    <br />
+                    提示词：{String(versionQuery.data.config?.systemPrompt ?? "（空）").slice(0, 160)}
+                    <br />
+                    配置文件：{Object.keys(versionQuery.data.files ?? {}).join("、") || "无"}
+                    <br />
+                    发布人：{versionQuery.data.publishedBy ?? "—"}
+                    <div className={styles.versionActions}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        data-testid="agent-rollback"
+                        disabled={!canWrite || versionQuery.data.isCurrent}
+                        onClick={() => setPendingRollback(versionQuery.data?.version ?? null)}
+                      >
+                        回滚到此版本（草稿）
+                      </Button>
+                    </div>
+                  </div>
+                ) : null
+              ) : null}
             </>
           ) : null}
 
@@ -440,6 +673,31 @@ export function AgentEditDrawer({
       >
         <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>
           已保存的版本不受影响；只丢弃当前未保存的草稿。
+        </p>
+      </Dialog>
+
+      <Dialog
+        open={pendingRollback !== null}
+        onOpenChange={(open) => { if (!open) setPendingRollback(null); }}
+        title="回滚版本"
+        description={pendingRollback !== null
+          ? `将 v${pendingRollback} 的提示词与配置文件恢复到草稿。`
+          : undefined}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingRollback(null)}>取消</Button>
+            <Button
+              data-testid="agent-rollback-confirm"
+              loading={rollback.isPending}
+              onClick={() => void confirmRollback()}
+            >
+              回滚到草稿
+            </Button>
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>
+          已发布版本不会被修改；回滚后需要再次发布，才会影响新会话。
         </p>
       </Dialog>
     </>

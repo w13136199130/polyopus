@@ -174,3 +174,57 @@ test("agents: card 试运行 opens the drawer on the test section", async ({ pag
   const drawer = page.getByRole("dialog", { name: /编辑专家/ });
   await expect(drawer.getByTestId("agent-drawer-test-message")).toBeVisible();
 });
+
+test("agents: config files publish snapshots and version rollback", async ({ page }) => {
+  await login(page);
+  await page.goto("/agents");
+  const name = `文件版本专家 ${Date.now()}`;
+  await page.getByTestId("agent-new").click();
+  await page.getByTestId("agent-name").fill(name);
+  await page.getByTestId("agent-create").click();
+  const card = page.getByTestId("agent-row").filter({ hasText: name });
+  await expect(card).toBeVisible();
+
+  await card.getByTestId("agent-open").click();
+  let drawer = page.getByRole("dialog", { name: new RegExp(`编辑专家 · ${name}`) });
+  await drawer.getByTestId("agent-section-files").click();
+  await drawer.getByTestId("agent-file-new-name").fill("USER.md");
+  await drawer.getByTestId("agent-file-create").click();
+  await drawer.getByTestId("agent-file-content").fill("v1 prompt");
+  await drawer.getByTestId("agent-save-file").click();
+  await expect(page.getByText("已保存 USER.md")).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭" }).click();
+  await expect(drawer).toBeHidden();
+
+  await card.getByTestId("agent-publish").click();
+  await page.getByRole("dialog", { name: "发布新版本" })
+    .getByRole("button", { name: "确认发布" }).click();
+  await expect(card.getByTestId("agent-status")).toHaveText("已发布 v1");
+
+  await card.getByTestId("agent-open").click();
+  drawer = page.getByRole("dialog", { name: new RegExp(`编辑专家 · ${name}`) });
+  await drawer.getByTestId("agent-section-files").click();
+  await drawer.getByTestId("agent-file-content").fill("v2 prompt");
+  await drawer.getByTestId("agent-save-file").click();
+  await expect(page.getByText("已保存 USER.md")).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭" }).click();
+
+  await card.getByTestId("agent-publish").click();
+  await page.getByRole("dialog", { name: "发布新版本" })
+    .getByRole("button", { name: "确认发布" }).click();
+  await expect(card.getByTestId("agent-status")).toHaveText("已发布 v2");
+
+  await card.getByTestId("agent-open").click();
+  drawer = page.getByRole("dialog", { name: new RegExp(`编辑专家 · ${name}`) });
+  await drawer.getByTestId("agent-section-versions").click();
+  const v1 = drawer.getByTestId("agent-version-row").filter({ hasText: "v1" });
+  await expect(v1).toBeVisible();
+  await v1.click();
+  await drawer.getByTestId("agent-rollback").click();
+  await page.getByRole("dialog", { name: "回滚版本" })
+    .getByTestId("agent-rollback-confirm").click();
+  await expect(page.getByText(/已回滚到 v1/)).toBeVisible();
+
+  await drawer.getByTestId("agent-section-files").click();
+  await expect(drawer.getByTestId("agent-file-content")).toHaveValue("v1 prompt");
+});
