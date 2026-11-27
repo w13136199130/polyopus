@@ -982,8 +982,12 @@ OPS: tuple[Op, ...] = (
        params=(Param("threadId", "path", "str", required=True),)),
     Op("PATCH", "/threads/{threadId}", "updateThread", "Rename / archive a thread", "threads", "Thread",
        params=(Param("threadId", "path", "str", required=True),), body="ThreadPatch"),
-    Op("DELETE", "/threads/{threadId}", "deleteThread", "Soft-delete a thread", "threads", "Ok",
-       params=(Param("threadId", "path", "str", required=True),)),
+    Op("DELETE", "/threads/{threadId}", "deleteThread",
+       "Delete a thread (soft; compact also purges content)", "threads", "Ok",
+       params=(
+           Param("threadId", "path", "str", required=True),
+           Param("compact", "query", "bool"),
+       )),
     Op("GET", "/threads/{threadId}/messages", "listMessages", "Page message history",
        "threads", "MessageList",
        params=(

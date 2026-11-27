@@ -123,7 +123,7 @@ export function AdminPage() {
         </Button>
       </>
     );
-  } else if (tab === "models") {
+  } else if (tab === "models" && (params.get("sub") ?? "chat") === "chat") {
     actions = (
       <Button
         size="sm"

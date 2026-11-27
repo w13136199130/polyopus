@@ -271,13 +271,16 @@ export function Composer({
     <div className={styles.wrap} ref={root}>
       {hasUsage && usage ? (
         <div className={styles.usageBar} data-testid="chat-usage">
-          <span>
+          <span className={styles.usageMain}>
             本次对话 <b>{usage.input.toLocaleString()}</b> 输入 /{" "}
             <b>{usage.output.toLocaleString()}</b> 输出
+            {usage.cached > 0 ? <i>缓存 {usage.cached.toLocaleString()}</i> : null}
           </span>
-          {usage.cached > 0 ? <span>缓存 {usage.cached.toLocaleString()}</span> : null}
+          <span className={styles.spacer} />
           {usage.costMicros > 0 ? (
-            <span>¥{(usage.costMicros / 1_000_000).toFixed(4)}</span>
+            <span className={styles.usageCost}>
+              ¥{(usage.costMicros / 1_000_000).toFixed(4)}
+            </span>
           ) : null}
         </div>
       ) : null}

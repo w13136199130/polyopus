@@ -356,7 +356,7 @@
 | POST | `/threads` | 新建会话 |
 | GET | `/threads/{id}` | 会话详情 |
 | PATCH | `/threads/{id}` | 重命名/置顶 |
-| DELETE | `/threads/{id}` | 删除（软删） |
+| DELETE | `/threads/{id}?compact=` | 删除；默认软删保留审计，`compact=true` 立即清理内容并 VACUUM |
 | POST | `/threads/{id}/read` | 清除未读（幂等） |
 | GET | `/threads/{id}/messages` | 历史消息，`before/after/limit` |
 | POST | `/threads/{id}/turns` | 发送消息，幂等键 |

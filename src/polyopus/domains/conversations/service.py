@@ -166,11 +166,74 @@ def update_thread(
     )
 
 
+def _purge_thread_content(
+    conn: sqlite3.Connection, *, tenant_id: str, thread_id: str,
+) -> dict[str, int]:
+    """Permanently remove a thread's transcript and execution rows.
+
+    Usage ledger, audit log and artifact rows stay: cost reporting and the
+    workspace file list must survive "delete + compact". Returns row counts
+    for the audit detail."""
+    turn_ids = [
+        str(row[0])
+        for row in conn.execute(
+            "SELECT turn_id FROM turns WHERE tenant_id = ? AND thread_id = ?",
+            (tenant_id, thread_id),
+        )
+    ]
+    counts: dict[str, int] = {}
+    if turn_ids:
+        marks = ",".join("?" for _ in turn_ids)
+        run_ids = [
+            str(row[0])
+            for row in conn.execute(
+                f"SELECT run_id FROM runs WHERE turn_id IN ({marks})", turn_ids,
+            )
+        ]
+        if run_ids:
+            run_marks = ",".join("?" for _ in run_ids)
+            counts["steps"] = conn.execute(
+                f"DELETE FROM steps WHERE run_id IN ({run_marks})", run_ids,
+            ).rowcount
+        for table, column in (
+            ("tool_calls", "turn_id"),
+            ("attentions", "turn_id"),
+            ("subagent_runs", "parent_turn_id"),
+            ("runs", "turn_id"),
+        ):
+            counts[table] = conn.execute(
+                f"DELETE FROM {table} WHERE {column} IN ({marks})", turn_ids,
+            ).rowcount
+    counts["messages"] = conn.execute(
+        "DELETE FROM messages WHERE tenant_id = ? AND thread_id = ?",
+        (tenant_id, thread_id),
+    ).rowcount
+    counts["turns"] = conn.execute(
+        "DELETE FROM turns WHERE tenant_id = ? AND thread_id = ?",
+        (tenant_id, thread_id),
+    ).rowcount
+    counts["events"] = conn.execute(
+        "DELETE FROM events WHERE tenant_id = ? AND thread_id = ?",
+        (tenant_id, thread_id),
+    ).rowcount
+    for table in ("subscriptions", "channel_messages"):
+        column = "event_thread_id" if table == "subscriptions" else "thread_id"
+        counts[table] = conn.execute(
+            f"DELETE FROM {table} WHERE tenant_id = ? AND {column} = ?",
+            (tenant_id, thread_id),
+        ).rowcount
+    return counts
+
+
 def delete_thread(
-    conn: sqlite3.Connection, *, tenant_id: str, owner_id: str, thread_id: str
-) -> None:
-    """Soft-delete: the row and its events stay for audit/replay; list and
-    get both filter `deleted_at`."""
+    conn: sqlite3.Connection, *, tenant_id: str, owner_id: str, thread_id: str,
+    compact: bool = False,
+) -> dict[str, Any]:
+    """Soft-delete by default; `compact` also purges content and VACUUMs.
+
+    Plain delete keeps the row, messages and events for audit/replay; list and
+    get filter `deleted_at`. Compact is the explicit "delete and tidy" path:
+    transcript/execution rows are removed and SQLite reclaims the pages."""
     get_thread(conn, tenant_id=tenant_id, owner_id=owner_id, thread_id=thread_id)
     now = int(time.time())
     conn.execute(
@@ -178,7 +241,34 @@ def delete_thread(
         "WHERE thread_id = ?",
         (now, now, thread_id),
     )
+    result: dict[str, Any] = {"ok": True, "threadId": thread_id, "compact": compact}
+    if not compact:
+        conn.commit()
+        return result
+
+    counts = _purge_thread_content(conn, tenant_id=tenant_id, thread_id=thread_id)
     conn.commit()
+    vacuumed = True
+    try:
+        conn.execute("VACUUM")
+    except sqlite3.Error:
+        # Another writer can hold the lock; the purge is already committed.
+        vacuumed = False
+    conn.execute(
+        "UPDATE threads SET settings_json = '{}' WHERE thread_id = ?", (thread_id,),
+    )
+    conn.commit()
+    from polyopus.domains.audit import service as audit
+
+    audit.record(
+        conn, tenant_id=tenant_id, action="thread.delete.compact", result="ok",
+        actor_id=owner_id, resource_type="thread", resource_id=thread_id,
+        detail={"rows": counts, "vacuumed": vacuumed},
+    )
+    conn.commit()
+    result["purged"] = counts
+    result["vacuumed"] = vacuumed
+    return result
 
 
 def branch_thread(

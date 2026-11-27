@@ -142,9 +142,12 @@ export const threads = {
       { method: "PATCH", body: JSON.stringify(body) },
     ),
   ),
-  remove: op("DELETE", "/threads/{thread_id}", (threadId: string) =>
-    apiFetch<{ ok: boolean; threadId: string }>(
-      `/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" },
+  remove: op("DELETE", "/threads/{thread_id}", (
+    threadId: string, compact = false,
+  ) =>
+    apiFetch<{ ok: boolean; threadId: string; compact?: boolean; vacuumed?: boolean }>(
+      `/threads/${encodeURIComponent(threadId)}${compact ? "?compact=true" : ""}`,
+      { method: "DELETE" },
     )),
   branch: op(
     "POST",

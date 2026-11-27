@@ -137,6 +137,12 @@
   flex-direction: column;
 }
 
+.dialogTop {
+  top: 15vh;
+  transform: translateX(-50%);
+  max-height: calc(85vh - 24px);
+}
+
 .drawer {
   position: fixed;
   top: 0;

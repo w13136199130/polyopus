@@ -97,8 +97,12 @@ export function useUpdateThread() {
 export function useDeleteThread() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (threadId: string) => threads.remove(threadId),
-    onMutate: async (threadId) => {
+    mutationFn: ({ threadId, compact = false }: {
+      threadId: string;
+      /** Also purge content and VACUUM immediately. */
+      compact?: boolean;
+    }) => threads.remove(threadId, compact),
+    onMutate: async ({ threadId }) => {
       await client.cancelQueries({ queryKey: chatKeys.threads });
       const previous = client.getQueryData<ThreadList>(chatKeys.threads);
       client.setQueryData<ThreadList>(chatKeys.threads, (old) =>

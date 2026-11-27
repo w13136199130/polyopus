@@ -4,7 +4,7 @@
  * respectively — no fake cloud scopes.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   Button,
@@ -72,6 +72,20 @@ export function AgentsPage() {
   const [editingSection, setEditingSection] = useState<"basic" | "test">("basic");
   const [pendingPublish, setPendingPublish] = useState<AgentRow | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AgentRow | null>(null);
+
+  // Deep links from the chat rail: ?new=1 opens the create drawer, ?agent=<id>
+  // opens that expert's edit drawer, then the params are consumed.
+  useEffect(() => {
+    const wantsCreate = params.get("new") === "1";
+    const editId = params.get("agent");
+    if (!wantsCreate && !editId) return;
+    const next = new URLSearchParams(params);
+    next.delete("new");
+    next.delete("agent");
+    setParams(next, { replace: true });
+    if (wantsCreate) setCreateOpen(true);
+    if (editId) setEditingId(editId);
+  }, [params, setParams]);
 
   const agents = useMemo(() => query.data?.items ?? [], [query.data]);
   const templates = query.data?.templates ?? [];

@@ -15,6 +15,7 @@ const paths = {
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   chev: "M9 18l6-6-6-6",
   plus: "M12 5v14M5 12h14",
+  edit: "M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z",
   grid: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z",
   table: "M3 4h18v16H3zM3 9h18M3 15h18M9 4v16M15 4v16",
   terminal: "M4 17l6-6-6-6M12 19h8",
@@ -28,6 +29,7 @@ const paths = {
   send: "M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z",
   package: "M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
   key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zM15.5 7.5 19 4l3 3-3.5 3.5",
+  sort: "M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4",
 } as const;
 
 export type IconName = keyof typeof paths;

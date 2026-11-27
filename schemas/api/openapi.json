@@ -1295,7 +1295,7 @@
       },
       "delete": {
         "operationId": "deleteThread",
-        "summary": "Soft-delete a thread",
+        "summary": "Delete a thread (soft; compact also purges content)",
         "tags": [
           "threads"
         ],
@@ -1336,6 +1336,14 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "compact",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ]

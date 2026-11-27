@@ -145,13 +145,14 @@ def patch_thread(
 @router.delete("/{thread_id}")
 def delete_thread(
     thread_id: str,
+    compact: bool = Query(False),
     user: User = Depends(require_permission("chat:write")),
     conn: Connection = Depends(get_db),
 ) -> dict[str, object]:
-    service.delete_thread(
-        conn, tenant_id=user.tenant_id, owner_id=user.user_id, thread_id=thread_id
+    return service.delete_thread(
+        conn, tenant_id=user.tenant_id, owner_id=user.user_id,
+        thread_id=thread_id, compact=compact,
     )
-    return {"ok": True, "threadId": thread_id}
 
 
 @router.post("/{thread_id}/branch", status_code=201)

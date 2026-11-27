@@ -18,6 +18,56 @@ async function newThread(page: import("@playwright/test").Page) {
   return new URL(page.url()).searchParams.get("threadId")!;
 }
 
+test("chat: rail groups conversations by expert and creates with the selection", async ({ page }) => {
+  await login(page);
+  const stamp = Date.now();
+  const nameA = `阿排序专家 ${stamp}`;
+  const nameZ = `周排序专家 ${stamp}`;
+  let agentZ = "";
+  for (const name of [nameA, nameZ]) {
+    const created = await page.request.post("/api/v1/agents", { data: { name } });
+    const agentId = (await created.json()).agentId as string;
+    await page.request.post(`/api/v1/agents/${agentId}/publish`);
+    if (name === nameZ) agentZ = agentId;
+  }
+  const threadTitle = `专家会话 ${stamp}`;
+  const thread = await page.request.post("/api/v1/threads", {
+    data: { title: threadTitle, agentId: agentZ },
+  });
+  expect(thread.status()).toBe(201);
+
+  await page.goto("/chat");
+  await expect(page.getByTestId("rail-tab-expert")).toBeVisible();
+  const picks = page.getByTestId("expert-pick");
+  const groupZ = picks.filter({ hasText: nameZ });
+  await expect(groupZ).toBeVisible();
+  // the expert's conversation is nested under its own group
+  const groupBox = page.getByTestId("new-chat-agent");
+  await expect(groupBox.getByText(threadTitle)).toBeVisible();
+
+  // A new conversation must not hoist that expert: order stays by name.
+  const labels = await picks.allTextContents();
+  const indexA = labels.findIndex((text) => text.includes(nameA));
+  const indexZ = labels.findIndex((text) => text.includes(nameZ));
+  expect(indexA).toBeGreaterThanOrEqual(0);
+  expect(indexZ).toBeGreaterThan(indexA);
+
+  await groupZ.click();
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  await expect(page.getByTestId("chat-agent-chip")).toHaveText(nameZ);
+
+  await page.getByTestId("rail-tab-team").click();
+  await expect(page.getByTestId("rail-team-open")).toBeVisible();
+  await page.getByTestId("rail-tab-cloud").click();
+  await expect(page.getByText("云端协同随 v1.1 提供")).toBeVisible();
+
+  // 创建专家 deep link opens the create drawer on the experts page
+  await page.getByTestId("rail-tab-expert").click();
+  await page.getByTestId("rail-create-expert").click();
+  await expect(page.getByRole("dialog", { name: "新建专家" })).toBeVisible();
+});
+
 test("chat: session menu renames, pins, branches and deletes", async ({ page }) => {
   await login(page);
   const threadId = await newThread(page);
@@ -62,8 +112,9 @@ test("chat: session menu renames, pins, branches and deletes", async ({ page }) 
   // delete: dialog confirm, URL clears, list drops it
   await header.getByTestId("thread-menu").click();
   await page.getByRole("menuitem", { name: "删除会话" }).click();
-  const confirm = page.getByRole("dialog", { name: "删除会话" });
-  await confirm.getByRole("button", { name: "删除" }).click();
+  const confirm = page.getByRole("dialog", { name: "删除这段会话？" });
+  await expect(confirm.getByRole("button", { name: "删除并整理" })).toBeVisible();
+  await confirm.getByRole("button", { name: "只删除" }).click();
   await expect(page).not.toHaveURL(/threadId=/);
   const after = await (await page.request.get("/api/v1/threads")).json();
   expect(after.items.some((item: { threadId: string }) => item.threadId === branchId))
@@ -264,4 +315,92 @@ test("chat: knowledge citations appear on the answer", async ({ page }) => {
   await expect(page.getByTestId("citations")).toContainText(name, {
     timeout: 30_000,
   });
+});
+
+test("chat: 新建 reuses a conversation that never sent a message", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("new-chat").click();
+  await page.waitForURL(/threadId=/);
+  const first = new URL(page.url()).searchParams.get("threadId")!;
+
+  await page.getByTestId("new-chat").click();
+  await expect(page.getByText("当前对话还没有发送消息，已沿用这个会话。")).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("threadId")).toBe(first);
+
+  const box = page.getByLabel("消息输入框");
+  await box.fill("你好");
+  await box.press("Enter");
+  await expect(page.getByTestId("bubble-assistant")).toBeVisible({ timeout: 20_000 });
+
+  await page.getByTestId("new-chat").click();
+  await expect.poll(
+    () => new URL(page.url()).searchParams.get("threadId"),
+  ).not.toBe(first);
+});
+
+test("chat: long expert groups collapse and expand", async ({ page }) => {
+  await login(page);
+  const name = `长列表专家 ${Date.now()}`;
+  const created = await page.request.post("/api/v1/agents", { data: { name } });
+  const agentId = (await created.json()).agentId as string;
+  await page.request.post(`/api/v1/agents/${agentId}/publish`);
+  for (let index = 1; index <= 10; index += 1) {
+    await page.request.post("/api/v1/threads", {
+      data: { title: `批量会话 ${index} ${Date.now()}`, agentId },
+    });
+  }
+
+  await page.goto("/chat");
+  const section = page.getByTestId("expert-group").filter({ hasText: name });
+  await expect(section).toBeVisible();
+  await expect(section.getByTestId("thread-row")).toHaveCount(8);
+  await section.getByTestId("expert-more").click();
+  await expect(section.getByTestId("thread-row")).toHaveCount(10);
+  await expect(section.getByRole("button", { name: "收起" })).toBeVisible();
+});
+
+test("chat: rail sort modes reorder conversations inside an expert", async ({ page }) => {
+  await login(page);
+  const stamp = Date.now();
+  const name = `排序专家 ${stamp}`;
+  const created = await page.request.post("/api/v1/agents", { data: { name } });
+  const agentId = (await created.json()).agentId as string;
+  await page.request.post(`/api/v1/agents/${agentId}/publish`);
+
+  async function createThread(title: string) {
+    const response = await page.request.post("/api/v1/threads", {
+      data: { title, agentId },
+    });
+    return (await response.json()).threadId as string;
+  }
+  await createThread(`最早会话 ${stamp}`);
+  await page.waitForTimeout(1_100);
+  const middle = await createThread(`中间会话 ${stamp}`);
+  await page.waitForTimeout(1_100);
+  await createThread(`最新会话 ${stamp}`);
+  // make the middle conversation the most recently active one
+  await page.request.post(`/api/v1/threads/${middle}/turns`, {
+    data: { content: "更新活跃时间" },
+    headers: { "Idempotency-Key": `sort-${stamp}` },
+  });
+
+  await page.goto("/chat");
+  const section = page.getByTestId("expert-group").filter({ hasText: name });
+  const rows = section.getByTestId("thread-row");
+  await expect(rows).toHaveCount(3);
+  const firstTitle = async () => (await rows.allTextContents())[0]?.trim() ?? "";
+
+  // default: 最近对话 (middle has the newest message)
+  await expect.poll(firstTitle).toContain("中间会话");
+  await page.getByTestId("rail-sort").click();
+  await page.getByTestId("rail-sort-created").click();
+  await expect.poll(firstTitle).toContain("最新会话");
+  await page.getByTestId("rail-sort").click();
+  await page.getByTestId("rail-sort-oldest").click();
+  await expect.poll(firstTitle).toContain("最早会话");
+
+  // choice survives reload (localStorage)
+  await page.reload();
+  await expect(rows).toHaveCount(3);
+  await expect.poll(firstTitle).toContain("最早会话");
 });

@@ -12,6 +12,8 @@ export interface DialogProps {
   footer?: ReactNode;
   /** Content width in px (default 480). */
   width?: number;
+  /** `top` keeps compact confirms near the header instead of mid-screen. */
+  align?: "center" | "top";
 }
 
 /**
@@ -26,13 +28,14 @@ export function Dialog({
   children,
   footer,
   width = 480,
+  align = "center",
 }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={styles.overlay} />
         <RadixDialog.Content
-          className={styles.dialog}
+          className={`${styles.dialog} ${align === "top" ? styles.dialogTop : ""}`}
           style={{ maxWidth: width }}
           aria-describedby={description ? undefined : undefined}
         >

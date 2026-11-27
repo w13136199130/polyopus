@@ -50,6 +50,26 @@ test("admin: provider create, probe failure, edit and delete", async ({ page }) 
     .toHaveCount(0);
 });
 
+test("admin: model config sub-tabs keep v1.1 families honest", async ({ page }) => {
+  await login(page);
+  await page.goto("/admin?tab=models");
+  await expect(page.getByTestId("model-pool")).toBeVisible();
+  await expect(page.getByTestId("provider-new")).toBeVisible();
+
+  await page.getByTestId("admin-model-sub-voice").click();
+  await expect(page).toHaveURL(/sub=voice/);
+  await expect(page.getByText("语音模型随 v1.1 提供")).toBeVisible();
+  await expect(page.getByTestId("provider-new")).toHaveCount(0);
+
+  // sub-tab is URL state and survives reload
+  await page.reload();
+  await expect(page.getByText("语音模型随 v1.1 提供")).toBeVisible();
+
+  await page.getByTestId("admin-model-sub-chat").click();
+  await expect(page.getByTestId("provider-new")).toBeVisible();
+  await expect(page.getByTestId("model-pool")).toBeVisible();
+});
+
 test("admin: storage backends and auto-backup settings", async ({ page }) => {
   await login(page);
   await page.goto("/admin");

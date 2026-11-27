@@ -122,6 +122,24 @@ def test_delete_hides_thread_from_list_and_detail(client: TestClient) -> None:
     assert client.get(f"/api/v1/threads/{thread_id}/messages").status_code == 404
 
 
+def test_delete_compact_purges_and_vacuums(client: TestClient) -> None:
+    thread_id = _create(client)
+    turn = client.post(
+        f"/api/v1/threads/{thread_id}/turns",
+        json={"content": "待清理"},
+        headers={"Idempotency-Key": "compact-1"},
+    )
+    assert turn.status_code == 202
+
+    response = client.delete(f"/api/v1/threads/{thread_id}?compact=true")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["compact"] is True
+    assert body["vacuumed"] is True
+    assert client.get("/api/v1/threads").json()["items"] == []
+    assert client.get(f"/api/v1/threads/{thread_id}/messages").status_code == 404
+
+
 def test_trace_tail_returns_queued_event(client: TestClient) -> None:
     thread_id = _create(client)
     client.post(f"/api/v1/threads/{thread_id}/turns", json={"content": "hello"})

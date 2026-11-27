@@ -21,6 +21,7 @@ import { useCan } from "@/lib/auth/permissions";
 import { useAgents } from "@/features/agents/api";
 import { useAdminSettings } from "@/features/settings/api";
 import { useCreateTicket } from "@/features/tasks/api";
+import { useTeams } from "@/features/teams/api";
 import { useKnowledgeBases } from "@/features/knowledge/api";
 import { useConnectorInstances } from "@/features/connectors/api";
 import {
@@ -94,6 +95,7 @@ export function ChatPage() {
   )?.settings?.mode;
   const mode: "act" | "ask" | "plan" = activeMode ?? "act";
   const agentsQuery = useAgents();
+  const teamsQuery = useTeams();
   const createThread = useCreateThread();
   const updateThread = useUpdateThread();
   const deleteThread = useDeleteThread();
@@ -127,6 +129,9 @@ export function ChatPage() {
   const { store, send, trackTurn } = useChatStream(threadId, onRollback);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Just-created thread that has not sent anything yet; covers the window
+  // before the threads list refetches (rapid 新建 clicks must not pile up).
+  const draftThreadRef = useRef<{ threadId: string; agentId: string | null } | null>(null);
   const canWrite = useCan("chat:write");
   const newRequested = params.get("new") === "1";
   const canReadSettings = useCan("settings:read");
@@ -266,9 +271,35 @@ export function ChatPage() {
   }
 
   function handleCreate(agentId: string | null) {
+    const target = agentId ?? (draftAgent || null);
+    // A conversation with no messages is still a draft: 新建 keeps it instead
+    // of piling up empty "新对话" rows. Once anything was sent, 新建 makes a
+    // fresh one.
+    const active = (threadsQuery.data?.items ?? []).find(
+      (thread) => thread.threadId === threadId,
+    );
+    const messages = messagesQuery.data?.items ?? [];
+    const sentSomething = messages.length > 0
+      || Boolean(active?.lastMessageAt)
+      || Boolean(active?.preview);
+    const draft = draftThreadRef.current;
+    const alreadyDraft = Boolean(threadId)
+      && !sentSomething
+      && (active
+        ? (active.agentId ?? null) === target
+        : draft?.threadId === threadId && draft.agentId === target);
+    if (alreadyDraft) {
+      setNotice("当前对话还没有发送消息，已沿用这个会话。");
+      return;
+    }
     createThread.mutate(
-      { title: "新对话", agentId: agentId ?? (draftAgent || null) },
-      { onSuccess: (thread) => setParams({ threadId: thread.threadId }) },
+      { title: "新对话", agentId: target },
+      {
+        onSuccess: (thread) => {
+          draftThreadRef.current = { threadId: thread.threadId, agentId: target };
+          setParams({ threadId: thread.threadId });
+        },
+      },
     );
   }
 
@@ -375,14 +406,14 @@ export function ChatPage() {
     });
   }
 
-  function confirmDelete() {
+  function confirmDelete(compact: boolean) {
     if (!deleteTarget) return;
     const target = deleteTarget;
-    deleteThread.mutate(target.threadId, {
+    deleteThread.mutate({ threadId: target.threadId, compact }, {
       onSuccess: () => {
         setDeleteTarget(null);
         if (threadId === target.threadId) setParams({});
-        setNotice("会话已删除。");
+        setNotice(compact ? "会话已删除并整理。" : "会话已删除。");
       },
       onError: () => setNotice("删除失败，请重试。"),
     });
@@ -511,10 +542,13 @@ export function ChatPage() {
         activeId={threadId}
         error={threadsQuery.isError}
         agents={agentsQuery.data?.items ?? []}
+        teams={teamsQuery.data?.items ?? []}
+        teamsLoading={teamsQuery.isLoading}
         selectedAgentId={draftAgent}
         onSelectAgent={selectDraftAgent}
         onSelect={(id) => setParams({ threadId: id })}
         onCreate={handleCreate}
+        onOpenTeam={() => navigate("/agents?tab=team")}
         onRetry={() => void threadsQuery.refetch()}
         onRename={openRename}
         onPin={togglePin}
@@ -721,6 +755,8 @@ export function ChatPage() {
           activeId={threadId}
           error={threadsQuery.isError}
           agents={agentsQuery.data?.items ?? []}
+          teams={teamsQuery.data?.items ?? []}
+          teamsLoading={teamsQuery.isLoading}
           selectedAgentId={draftAgent}
           onSelectAgent={selectDraftAgent}
           onSelect={(id) => {
@@ -730,6 +766,10 @@ export function ChatPage() {
           onCreate={(agentId) => {
             handleCreate(agentId);
             setSessionsOpen(false);
+          }}
+          onOpenTeam={() => {
+            setSessionsOpen(false);
+            navigate("/agents?tab=team");
           }}
           onRetry={() => void threadsQuery.refetch()}
           onRename={openRename}
@@ -797,25 +837,41 @@ export function ChatPage() {
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title="删除会话"
-        description="会话会从列表隐藏，事件与审计记录保留。此操作不可撤销。"
+        title="删除这段会话？"
+        width={400}
+        align="top"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
               取消
             </Button>
+            <span className={styles.dialogSpacer} />
+            <Button
+              variant="outline"
+              loading={deleteThread.isPending}
+              onClick={() => confirmDelete(false)}
+            >
+              只删除
+            </Button>
             <Button
               variant="danger"
+              data-testid="thread-delete-compact"
               loading={deleteThread.isPending}
-              onClick={confirmDelete}
+              onClick={() => confirmDelete(true)}
             >
-              删除
+              删除并整理
             </Button>
           </>
         }
       >
-        <p className={styles.dialogText}>
-          确定删除「{deleteTarget?.title || "未命名会话"}」？
+        <p className={styles.dialogParagraph}>
+          删除后无法恢复。会话会马上从列表里消失。
+        </p>
+        <p className={styles.dialogParagraph}>
+          <b>删除并整理：</b>立即清理该会话的消息与事件并压缩数据库，期间实例会有短暂写入停顿。
+        </p>
+        <p className={styles.dialogParagraph}>
+          <b>只删除：</b>先把会话从列表隐藏，审计记录保留；后续维护再回收空间。
         </p>
       </Dialog>
     </div>
