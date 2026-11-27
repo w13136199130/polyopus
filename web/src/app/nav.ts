@@ -114,7 +114,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
     milestone: "v1.1",
     group: "setup",
     permission: "settings:read",
-    soon: true,
   }),
   item({
     path: "/channels",

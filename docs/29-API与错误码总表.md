@@ -506,6 +506,7 @@
 | POST | `/memories` | 显式写入（白名单来源） |
 | GET | `/memories/search` | 检索，`q/limit` |
 | GET | `/memories/export` | 导出 JSONL/JSON |
+| GET | `/memories/pause` | 读取暂停写入状态 |
 | POST | `/memories/pause` | 暂停/恢复写入，`{paused,until}` |
 | GET | `/memories/{memoryId}` | 详情（含证据） |
 | PATCH | `/memories/{memoryId}` | 纠错/退休，生成新版本 |
@@ -711,7 +712,7 @@ data: {"seq":124,"type":"message.delta","threadId":"th_...","turnId":"tn_...","d
 | `admin` | 用户/模型/存储/安全/设置/审计 |
 | `audit:read` | 审计 |
 
-只读审计角色：`chat:read,ticket:read,knowledge:read,memory:read,usage:read,audit:read`，无 `write`。
+只读审计角色：`chat:read,ticket:read,knowledge:read,memory:read,memory:export,usage:read,audit:read`，无 `write`。
 
 ---
 

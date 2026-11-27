@@ -368,7 +368,8 @@ def recall(
     }
     scored: list[tuple[float, int, sqlite3.Row]] = []
     for row in conn.execute(
-        "SELECT * FROM memory_atoms WHERE tenant_id = ? AND agent_id = ? "
+        "SELECT * FROM memory_atoms WHERE tenant_id = ? "
+        "AND agent_id IN (?, '*') "
         "AND status = 'active' AND (valid_to IS NULL OR valid_to > ?)",
         (tenant_id, agent_id, _now()),
     ).fetchall():

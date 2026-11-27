@@ -63,7 +63,7 @@ describe("navigation model (four groups / 21 entries)", () => {
 
   it("marks only the v1.1 pages as planning placeholders", () => {
     expect(NAV_ITEMS.filter((item) => item.soon).map((item) => item.label)).toEqual([
-      "个性化", "技能包", "云端协同", "工作台", "远程桌面", "智能体协作",
+      "技能包", "云端协同", "工作台", "远程桌面", "智能体协作",
     ]);
   });
 });

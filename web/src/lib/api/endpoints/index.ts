@@ -33,6 +33,11 @@ import type {
   LoginRequest,
   LoginResponse,
   MessageListResponse,
+  MemoryAtom,
+  MemoryAtomListResponse,
+  MemoryExport,
+  MemoryPauseState,
+  MemorySearchResult,
   ModelListResponse,
   NotificationListResponse,
   NotificationRow,
@@ -973,9 +978,53 @@ export const teams = {
   )),
 };
 
+export const memories = {
+  list: op("GET", "/memories", (params?: {
+    kind?: string; status?: string; source?: string; cursor?: string; limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params ?? {})) {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    }
+    const suffix = query.toString();
+    return apiFetch<MemoryAtomListResponse>(`/memories${suffix ? `?${suffix}` : ""}`);
+  }),
+  create: op("POST", "/memories", (body: {
+    kind: string; text: string; confidence?: number;
+    evidence?: Record<string, unknown>;
+  }) => apiFetch<MemoryAtom>("/memories", {
+    method: "POST", body: JSON.stringify(body),
+  })),
+  search: op("GET", "/memories/search", (q: string, limit?: number) => {
+    const query = new URLSearchParams({ q });
+    if (limit) query.set("limit", String(limit));
+    return apiFetch<MemorySearchResult>(`/memories/search?${query.toString()}`);
+  }),
+  export: op("GET", "/memories/export", (format: "jsonl" | "json" = "json") =>
+    apiFetch<MemoryExport>(`/memories/export?format=${format}`)),
+  getPause: op("GET", "/memories/pause", () =>
+    apiFetch<MemoryPauseState>("/memories/pause")),
+  setPause: op("POST", "/memories/pause", (body: { paused: boolean; until?: string }) =>
+    apiFetch<MemoryPauseState>("/memories/pause", {
+      method: "POST", body: JSON.stringify(body),
+    })),
+  get: op("GET", "/memories/{memory_id}", (memoryId: string) =>
+    apiFetch<MemoryAtom>(`/memories/${encodeURIComponent(memoryId)}`)),
+  update: op("PATCH", "/memories/{memory_id}", (
+    memoryId: string,
+    body: { text?: string; status?: string; reason?: string },
+  ) => apiFetch<MemoryAtom>(`/memories/${encodeURIComponent(memoryId)}`, {
+    method: "PATCH", body: JSON.stringify(body),
+  })),
+  remove: op("DELETE", "/memories/{memory_id}", (memoryId: string) =>
+    apiFetch<{ ok: boolean; memoryId: string }>(
+      `/memories/${encodeURIComponent(memoryId)}`, { method: "DELETE" },
+    )),
+};
+
 export const ENDPOINT_GROUPS = [
   auth, threads, attentions, sources, channels, cronJobs, tickets, usage,
   users, roles, invites, notifications, agents, teams, tools, knowledge,
-  connectors, plugins, settings, adminOps, models, workspace,
+  connectors, plugins, settings, adminOps, models, workspace, memories,
   adminModels, adminStorage, adminSecurity, adminOverview,
 ];

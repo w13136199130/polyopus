@@ -1034,6 +1034,8 @@ OPS: tuple[Op, ...] = (
        "MemoryExport", params=(Param("format", "query", "enum:jsonl|json"),)),
     Op("POST", "/memories/pause", "pauseMemoryWrites", "Pause/resume memory writes", "memory",
        "MemoryPauseState", body="MemoryPauseRequest"),
+    Op("GET", "/memories/pause", "getMemoryPause", "Read memory pause state", "memory",
+       "MemoryPauseState"),
     Op("GET", "/memories/{memoryId}", "getMemory", "Get one memory atom", "memory",
        "MemoryAtom", params=(Param("memoryId", "path", "str", required=True),)),
     Op("PATCH", "/memories/{memoryId}", "updateMemory", "Correct or retire a memory", "memory",

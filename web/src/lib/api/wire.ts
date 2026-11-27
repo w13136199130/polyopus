@@ -792,3 +792,48 @@ export interface DataJobRow {
   createdAt: number;
   finishedAt: number | null;
 }
+
+
+export type MemoryKind = "fact" | "preference" | "episode" | "profile" | "skill";
+export type MemoryStatus = "active" | "retired" | "pending_review";
+
+export interface MemoryAtom {
+  id: string;
+  kind: MemoryKind;
+  text: string;
+  confidence: number;
+  status: MemoryStatus;
+  source: string;
+  validFrom?: string | null;
+  validTo?: string | null;
+  supersedes?: string | null;
+  evidence: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryAtomListResponse {
+  items: MemoryAtom[];
+  nextCursor?: string | null;
+}
+
+export interface MemoryHit {
+  atom: MemoryAtom;
+  score: number;
+}
+
+export interface MemorySearchResult {
+  query: string;
+  items: MemoryHit[];
+}
+
+export interface MemoryPauseState {
+  paused: boolean;
+  until?: string | null;
+  updatedAt: string;
+}
+
+export interface MemoryExport {
+  format: "jsonl" | "json";
+  items: MemoryAtom[];
+}

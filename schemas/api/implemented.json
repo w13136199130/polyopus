@@ -1,5 +1,5 @@
 {
-  "count": 165,
+  "count": 174,
   "ops": [
     {
       "method": "DELETE",
@@ -48,6 +48,10 @@
     {
       "method": "DELETE",
       "path": "/api/v1/me/api-keys/{api_key_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/memories/{memory_id}"
     },
     {
       "method": "DELETE",
@@ -235,6 +239,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/memories/export"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/memories/pause"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/memories/search"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/memories/{memory_id}"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/models"
     },
     {
@@ -364,6 +388,10 @@
     {
       "method": "PATCH",
       "path": "/api/v1/knowledge-bases/{kb_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/memories/{memory_id}"
     },
     {
       "method": "PATCH",
@@ -540,6 +568,14 @@
     {
       "method": "POST",
       "path": "/api/v1/me/export"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/memories"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/memories/pause"
     },
     {
       "method": "POST",

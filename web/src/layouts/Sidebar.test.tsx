@@ -75,7 +75,7 @@ describe("Sidebar", () => {
 
   it("tags planned v1.1 pages", () => {
     renderAt("/chat");
-    expect(screen.getAllByText("规划中").length).toBeGreaterThanOrEqual(6);
+    expect(screen.getAllByText("规划中").length).toBeGreaterThanOrEqual(5);
   });
 
   it("shows the pending-attention count on 收件箱", async () => {

@@ -21,9 +21,9 @@ describe("endpoint whitelist (P0-2: contract types != implementation)", () => {
         routed.push(wrapper.route);
       }
     }
-    // 147 typed wrappers; admin/audit, backup, outbox and webhook ops are
+    // 156 typed wrappers; admin/audit, backup, outbox and webhook ops are
     // intentionally not wrapped by the client.
-    expect(routed.length).toBe(147);
+    expect(routed.length).toBe(156);
 
     for (const [method, path] of routed) {
       const full = path.startsWith("/api/") || path === "/healthz"

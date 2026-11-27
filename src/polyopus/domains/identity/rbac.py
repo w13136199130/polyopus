@@ -31,6 +31,7 @@ MEMBER_PERMISSIONS = (
     "agent:read", "agent:write",
     "team:read", "team:write",
     "knowledge:read", "knowledge:write",
+    "memory:read", "memory:write", "memory:export",
     "extension:read", "extension:write",
     "connector:read", "connector:write",
     "settings:read",
@@ -38,7 +39,7 @@ MEMBER_PERMISSIONS = (
 AUDITOR_PERMISSIONS = (
     "chat:read", "ticket:read", "attention:read", "usage:read",
     "audit:read", "settings:read", "user:read", "invite:read", "role:read",
-    "knowledge:read",
+    "knowledge:read", "memory:read", "memory:export",
 )
 BUILTIN: dict[str, tuple[str, ...]] = {
     "admin": ("*",),

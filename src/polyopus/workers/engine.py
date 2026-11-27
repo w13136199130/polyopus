@@ -2155,7 +2155,10 @@ def _harvest_memory(
 ) -> None:
     """docs/13 §4.1 write path, rule-based tier: raw -> candidate -> atom."""
     from polyopus.domains import memory as memory_svc
+    from polyopus.domains.memory import api as memory_api
 
+    if memory_api.writes_paused(conn, tenant_id, thread_id):
+        return
     memory_svc.capture_raw(conn, tenant_id, thread_id, turn_id)
     raw = memory_svc.load_raw(conn, tenant_id)
     candidates = memory_svc.extract_candidates(raw)

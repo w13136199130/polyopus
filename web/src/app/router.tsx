@@ -13,6 +13,7 @@ import { SourcesPage } from "@/routes/connections/SourcesPage";
 import { ExtensionsPage } from "@/routes/extensions/ExtensionsPage";
 import { KnowledgePage } from "@/routes/knowledge/KnowledgePage";
 import { NotificationsPage } from "@/routes/notifications/NotificationsPage";
+import { PersonalizationPage } from "@/routes/personalization/PersonalizationPage";
 import { SettingsPage } from "@/routes/settings/SettingsPage";
 import { KitPage } from "@/routes/kit/KitPage";
 import { TasksPage } from "@/routes/tasks/TasksPage";
@@ -53,7 +54,7 @@ export const appRoutes: RouteObject[] = [
       { path: "channels", element: <RequirePermission permission="source:read"><ChannelsPage /></RequirePermission> },
       { path: "sources", element: <RequirePermission permission="source:read"><SourcesPage /></RequirePermission> },
       { path: "skills", element: <RequirePermission permission="extension:read"><ComingSoonPage title="技能包" milestone="v1.1" note="技能包的安装、创建与技能市场依赖技能域接口，随 v1.1 提供。" /></RequirePermission> },
-      { path: "personalization", element: <RequirePermission permission="settings:read"><ComingSoonPage title="个性化" milestone="v1.1" note="技能、记忆、MBTI 与按专家启用插件需要新的后端域，随 v1.1 提供。" /></RequirePermission> },
+      { path: "personalization", element: <RequirePermission permission="settings:read"><PersonalizationPage /></RequirePermission> },
       { path: "bridge", element: <ComingSoonPage title="云端协同" milestone="v1.1" note="跨实例共享专家与会话需要控制器和端到端鉴权，随 v1.1 提供。" /> },
       { path: "remote", element: <ComingSoonPage title="远程桌面" milestone="v1.1" note="服务器/手机远程控制需要配对与串流通道，随 v1.1 提供。" /> },
       { path: "acp", element: <ComingSoonPage title="智能体协作" milestone="v1.1" note="外部 ACP Runner 的注册、权限与委派随 v1.1 提供。" /> },
