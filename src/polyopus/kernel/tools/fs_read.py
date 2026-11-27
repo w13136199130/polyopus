@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from polyopus.kernel.models.gateway import ToolSpec
@@ -40,6 +40,16 @@ class ToolResult:
     output: dict[str, Any]
 
 
+SYSTEM_DIR = ".polyopus"
+
+
+def ensure_not_system_path(rel_path: str) -> None:
+    """Agent config lives in a shared system dir: tenant A must not read B."""
+    parts = PurePosixPath(rel_path.replace("\\", "/")).parts
+    if parts and parts[0].lower() == SYSTEM_DIR:
+        raise ToolError("TOOL_PATH_DENIED", "system workspace is not accessible")
+
+
 def _resolve_jailed(root: Path, rel_path: str) -> Path:
     root = root.resolve()
     candidate = (root / rel_path).resolve()
@@ -52,6 +62,7 @@ def _resolve_jailed(root: Path, rel_path: str) -> Path:
 
 def fs_read(root: Path, rel_path: str) -> ToolResult:
     """Read one workspace file, numbered lines, byte-capped."""
+    ensure_not_system_path(rel_path)
     target = _resolve_jailed(root, rel_path)
     data = target.read_bytes()
     if len(data) > FS_READ_MAX_BYTES:

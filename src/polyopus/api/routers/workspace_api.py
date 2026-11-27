@@ -8,7 +8,7 @@ file manager — writes go through the policy-gated `fs.write` tool.
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, Query, Request
 
@@ -20,7 +20,9 @@ router = APIRouter(prefix="/workspace", tags=["workspace"])
 
 MAX_ENTRIES = 500
 MAX_DEPTH = 3
+MAX_SYSTEM_DEPTH = 6
 MAX_PREVIEW_BYTES = 200_000
+SYSTEM_DIR = ".polyopus"
 
 
 def _root(request: Request) -> Path:
@@ -46,8 +48,11 @@ def _entry(root: Path, path: Path) -> dict[str, object]:
     }
 
 
-def _walk(root: Path, current: Path, depth: int, budget: list[int]) -> list[dict[str, object]]:
-    if depth > MAX_DEPTH or budget[0] <= 0:
+def _walk(
+    root: Path, current: Path, depth: int, budget: list[int],
+    *, max_depth: int = MAX_DEPTH,
+) -> list[dict[str, object]]:
+    if depth > max_depth or budget[0] <= 0:
         return []
     try:
         children = sorted(
@@ -72,9 +77,46 @@ def _walk(root: Path, current: Path, depth: int, budget: list[int]) -> list[dict
             continue
         budget[0] -= 1
         if item["type"] == "dir":
-            item["children"] = _walk(root, child, depth + 1, budget)
+            item["children"] = _walk(
+                root, child, depth + 1, budget, max_depth=max_depth,
+            )
         out.append(item)
     return out
+
+
+def _system_tree(
+    root: Path, *, tenant_id: str, budget: list[int],
+) -> list[dict[str, object]]:
+    """Expose only the current tenant's expert workspace under `.polyopus`."""
+    base = root / SYSTEM_DIR
+    tenant_root = base / "tenants" / tenant_id
+    agents_dir = tenant_root / "agents"
+    if not agents_dir.is_dir():
+        return []
+    agents = _entry(root, agents_dir)
+    agents["children"] = _walk(
+        root, agents_dir, 1, budget, max_depth=MAX_SYSTEM_DEPTH,
+    )
+    tenant = _entry(root, tenant_root)
+    tenant["children"] = [agents]
+    tenants = _entry(root, base / "tenants")
+    tenants["children"] = [tenant]
+    system = _entry(root, base)
+    system["children"] = [tenants]
+    return [system]
+
+
+def _check_system_preview(rel: str, *, tenant_id: str, root: Path) -> None:
+    normalized = rel.replace("\\", "/")
+    parts = PurePosixPath(normalized).parts
+    if not parts or parts[0] != SYSTEM_DIR:
+        return
+    if ".." in parts or len(parts) < 4 or parts[1] != "tenants" or parts[2] != tenant_id:
+        raise AppError("FORBIDDEN", details={"reason": "outside_tenant_workspace"})
+    allowed = (root / SYSTEM_DIR / "tenants" / tenant_id).resolve()
+    target = (root / normalized).resolve()
+    if target != allowed and allowed not in target.parents:
+        raise AppError("FORBIDDEN", details={"reason": "outside_tenant_workspace"})
 
 
 @router.get("/tree")
@@ -85,14 +127,19 @@ def workspace_tree(
 ) -> dict[str, object]:
     root = _root(request)
     root.mkdir(parents=True, exist_ok=True)
+    if path.replace("\\", "/").startswith(SYSTEM_DIR):
+        raise AppError("FORBIDDEN", details={"reason": "system_tree_not_browsable"})
     start = _resolve(request, path)
     if not start.is_dir():
         raise AppError("NOT_FOUND", details={"reason": "not_a_directory"})
     budget = [MAX_ENTRIES]
+    items = _walk(root, start, 1, budget)
+    if start == root:
+        items.extend(_system_tree(root, tenant_id=_user.tenant_id, budget=budget))
     return {
         "root": str(root),
         "path": start.relative_to(root).as_posix() if start != root else "",
-        "items": _walk(root, start, 1, budget),
+        "items": items,
         "truncated": budget[0] <= 0,
     }
 
@@ -104,6 +151,7 @@ def workspace_file(
     _user: User = Depends(require_permission("chat:read")),
 ) -> dict[str, object]:
     root = _root(request)
+    _check_system_preview(path, tenant_id=_user.tenant_id, root=root)
     target = _resolve(request, path)
     if not target.is_file():
         raise AppError("NOT_FOUND", details={"reason": "not_a_file"})

@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from polyopus.kernel.models.gateway import ToolSpec
-from polyopus.kernel.tools.fs_read import ToolError, ToolResult, _resolve_jailed
+from polyopus.kernel.tools.fs_read import (
+    ToolError,
+    ToolResult,
+    _resolve_jailed,
+    ensure_not_system_path,
+)
 
 FS_WRITE_MAX_BYTES = 64 * 1024
 
@@ -26,6 +31,7 @@ FS_WRITE_SPEC = ToolSpec(
 
 
 def fs_write(root: Path, rel_path: str, content: str) -> ToolResult:
+    ensure_not_system_path(rel_path)
     if len(content.encode("utf-8")) > FS_WRITE_MAX_BYTES:
         raise ToolError(
             "TOOL_OUTPUT_TOO_LARGE",

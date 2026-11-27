@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 
+from polyopus.domains.agents import workspace as agent_workspace
 from polyopus.kernel.models.gateway import ChatMessage
 
 DEFAULT_HISTORY_LIMIT = 60
@@ -41,8 +43,36 @@ class AgentContext:
     name: str | None = None
 
 
+PROMPT_FILES = ("SOUL.md", "IDENTITY.md", "AGENTS.md", "TOOLS.md")
+MAX_FILE_PROMPT_CHARS = 32_000
+
+
+def _compose_prompt(base: str, files: dict[str, str]) -> str:
+    """Legacy systemPrompt first, then the expert's prompt files.
+
+    Only agent-scoped files are injected: USER.md / MEMORY.md belong to the
+    user and are handled by the memory pipeline, not by a shared agent dir."""
+    parts = [base.strip()] if base.strip() else []
+    for name in PROMPT_FILES:
+        content = str(files.get(name) or "").strip()
+        if content:
+            parts.append(f"## {name}\n\n{content}")
+    return "\n\n".join(parts)[:MAX_FILE_PROMPT_CHARS]
+
+
+def _draft_files(
+    conn: sqlite3.Connection, *, tenant_id: str, agent_id: str,
+) -> dict[str, str]:
+    rows = conn.execute(
+        "SELECT name, content FROM agent_files WHERE tenant_id = ? AND agent_id = ?",
+        (tenant_id, agent_id),
+    ).fetchall()
+    return {str(row["name"]): str(row["content"]) for row in rows}
+
+
 def agent_context(
-    conn: sqlite3.Connection, *, tenant_id: str, thread_id: str
+    conn: sqlite3.Connection, *, tenant_id: str, thread_id: str,
+    workspace_root: Path | None = None,
 ) -> AgentContext:
     """The expert config pinned at thread creation (never the live draft)."""
     row = conn.execute(
@@ -59,7 +89,7 @@ def agent_context(
     agent_id = str(row["agent_id"])
     version = conn.execute(
         """
-        SELECT config_json FROM agent_versions
+        SELECT config_json, files_json, version FROM agent_versions
         WHERE tenant_id = ? AND agent_id = ?
           AND (? IS NULL OR CAST(id AS TEXT) = ?)
         ORDER BY is_current DESC, version DESC LIMIT 1
@@ -67,15 +97,40 @@ def agent_context(
         (tenant_id, agent_id, row["agent_version_id"], row["agent_version_id"]),
     ).fetchone()
     config: dict[str, object] = {}
-    if version is not None and version["config_json"]:
-        try:
-            parsed = json.loads(str(version["config_json"]))
-        except ValueError:
-            parsed = {}
-        if isinstance(parsed, dict):
-            config = parsed
+    files: dict[str, str] = {}
+    version_no = 0
+    if version is not None:
+        version_no = int(version["version"] or 0)
+        if version["config_json"]:
+            try:
+                parsed = json.loads(str(version["config_json"]))
+            except ValueError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                config = parsed
+        if version["files_json"]:
+            try:
+                parsed_files = json.loads(str(version["files_json"]))
+            except ValueError:
+                parsed_files = {}
+            if isinstance(parsed_files, dict):
+                files = {str(key): str(value) for key, value in parsed_files.items()}
+
+    # Draft threads (version 0) read the live expert files; published threads
+    # read the immutable version snapshot (workspace dir, DB fallback).
+    if version_no == 0:
+        files = _draft_files(conn, tenant_id=tenant_id, agent_id=agent_id)
+    elif workspace_root is not None:
+        on_disk = agent_workspace.read_version_files(
+            workspace_root, tenant_id=tenant_id, agent_id=agent_id,
+            version=version_no,
+        )
+        if on_disk:
+            files = on_disk
+
+    base_prompt = str(config.get("systemPrompt") or "")
     return AgentContext(
-        system_prompt=str(config.get("systemPrompt") or "").strip(),
+        system_prompt=_compose_prompt(base_prompt, files),
         model=str(config.get("model") or "").strip() or None,
         name=str(row["name"]) if row["name"] else None,
     )

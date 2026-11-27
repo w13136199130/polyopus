@@ -270,6 +270,10 @@ def publish_agent(
     agent_workspace.sync_best_effort(
         conn, tenant_id=tenant_id, agent_id=agent_id, workspace_root=workspace_root,
     )
+    agent_workspace.publish_version_best_effort(
+        workspace_root, tenant_id=tenant_id, agent_id=agent_id,
+        version=next_version, files=files,
+    )
     return get_agent(conn, tenant_id=tenant_id, agent_id=agent_id)
 
 

@@ -189,6 +189,17 @@ test("chat: composer KB/approval/attachment/@// menus work and persist", async (
 
 test("chat: Dock opens files/trace/terminal and persists its state", async ({ page }) => {
   await login(page);
+  const stamp = Date.now();
+  const uniqueFile = `WORKSPACE-E2E-${stamp}.md`;
+  const agent = await page.request.post("/api/v1/agents", {
+    data: { name: `工作区专家 ${stamp}` },
+  });
+  const agentId = (await agent.json()).agentId as string;
+  await page.request.post(`/api/v1/agents/${agentId}/publish`);
+  expect((await page.request.put(
+    `/api/v1/agents/${agentId}/files/${uniqueFile}`,
+    { data: { content: "workspace e2e" } },
+  )).status()).toBe(200);
   await newThread(page);
 
   const box = page.getByLabel("消息输入框");
@@ -201,6 +212,14 @@ test("chat: Dock opens files/trace/terminal and persists its state", async ({ pa
 
   await page.getByTestId("dock-toggle").click();
   await expect(page.getByTestId("dock-files")).toHaveAttribute("aria-selected", "true");
+
+  // 工作区 exposes the tenant-scoped expert system dir, and files preview
+  await page.getByTestId("dock-workspace").click();
+  await expect(page.getByText(".polyopus")).toBeVisible();
+  await page.getByRole("button", { name: uniqueFile }).click();
+  await expect(page.getByText("workspace e2e")).toBeVisible();
+  await page.getByRole("button", { name: "关闭预览" }).click();
+
   await page.getByTestId("dock-trace").click();
   await expect(page.getByTestId("dock-trace")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("trace-row").first()).toBeVisible();

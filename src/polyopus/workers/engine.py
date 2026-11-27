@@ -1455,10 +1455,12 @@ async def run_turn(
     # A thread pins its expert version at creation; that version's prompt and
     # model are the agent's identity for this conversation. Explicit config
     # and per-session model choices stay stronger than the agent default.
+    from polyopus.config import load_settings
     from polyopus.domains.conversations import context as context_svc
 
     agent_ctx = context_svc.agent_context(
-        conn, tenant_id=tenant_id, thread_id=thread_id
+        conn, tenant_id=tenant_id, thread_id=thread_id,
+        workspace_root=load_settings().workspace_dir,
     )
     model_hint = cfg.model_hint or (
         str(session["model"]) if session.get("model") else None
@@ -1867,10 +1869,12 @@ def resume_after_approval(
     if mode not in ("act", "ask", "plan"):
         mode = "act"
     session = _thread_settings(conn, thread_id)
+    from polyopus.config import load_settings
     from polyopus.domains.conversations import context as context_svc
 
     agent_ctx = context_svc.agent_context(
-        conn, tenant_id=tenant_id, thread_id=thread_id
+        conn, tenant_id=tenant_id, thread_id=thread_id,
+        workspace_root=load_settings().workspace_dir,
     )
     resolved = registry.resolve(
         cfg.model_hint

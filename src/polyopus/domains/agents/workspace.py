@@ -171,3 +171,80 @@ def purge_best_effort(
             "agent workspace purge skipped tenant=%s agent=%s", tenant_id, agent_id,
             exc_info=True,
         )
+
+
+def version_dir(
+    workspace_root: Path, *, tenant_id: str, agent_id: str, version: int,
+) -> Path:
+    return (
+        agent_dir(workspace_root, tenant_id=tenant_id, agent_id=agent_id)
+        / "versions"
+        / f"v{int(version)}"
+    )
+
+
+def publish_version(
+    workspace_root: Path, *,
+    tenant_id: str, agent_id: str, version: int, files: dict[str, str],
+) -> Path | None:
+    """Materialise one immutable version directory from the DB snapshot."""
+    target = version_dir(
+        workspace_root, tenant_id=tenant_id, agent_id=agent_id, version=version,
+    )
+    if target.exists():
+        return target
+    parent = target.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(dir=parent, prefix=f".tmp-v{version}-"))
+    try:
+        for name, content in files.items():
+            clean = check_file_name(name)
+            data = str(content).encode("utf-8")
+            if len(data) > MAX_FILE_BYTES:
+                continue
+            (staging / clean).write_bytes(data)
+        os.replace(staging, target)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return target
+
+
+def read_version_files(
+    workspace_root: Path, *, tenant_id: str, agent_id: str, version: int,
+) -> dict[str, str]:
+    """Files of one published version; empty when the snapshot is not on disk."""
+    directory = version_dir(
+        workspace_root, tenant_id=tenant_id, agent_id=agent_id, version=version,
+    )
+    if not directory.is_dir():
+        return {}
+    files: dict[str, str] = {}
+    for path in directory.iterdir():
+        if not path.is_file() or not _FILE_NAME.match(path.name):
+            continue
+        try:
+            if path.stat().st_size > MAX_FILE_BYTES:
+                continue
+            files[path.name] = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+    return files
+
+
+def publish_version_best_effort(
+    workspace_root: Path | None, *,
+    tenant_id: str, agent_id: str, version: int, files: dict[str, str],
+) -> None:
+    if workspace_root is None:
+        return
+    try:
+        publish_version(
+            workspace_root, tenant_id=tenant_id, agent_id=agent_id,
+            version=version, files=files,
+        )
+    except (OSError, AppError):
+        logger.warning(
+            "agent version snapshot failed tenant=%s agent=%s version=%s",
+            tenant_id, agent_id, version, exc_info=True,
+        )

@@ -14,6 +14,7 @@ from polyopus.kernel.models import gateway as gt
 from polyopus.kernel.models.fake import FakeModel
 from polyopus.kernel.models.openai_compat import OpenAICompatProvider, ProviderConfig
 from polyopus.kernel.tools import ToolError, execute_fs_read, fs_read
+from polyopus.kernel.tools.fs_write import fs_write
 
 # ---------- fs.read jail ----------
 
@@ -199,3 +200,17 @@ def test_engine_tool_loop_reads_and_answers(tmp_path: Path) -> None:
 def test_fake_model_still_works_without_workspace(tmp_path: Path) -> None:
     """No workspace -> no tools advertised -> single-round streaming."""
     assert FakeModel(chunk_words=2).capabilities("fake").supports_tools is False
+
+
+def test_tools_cannot_touch_the_system_workspace(tmp_path: Path) -> None:
+    system = tmp_path / ".polyopus" / "tenants" / "default"
+    system.mkdir(parents=True)
+    (system / "AGENTS.md").write_text("secret", encoding="utf-8")
+
+    with pytest.raises(ToolError) as read_exc:
+        fs_read(tmp_path, ".polyopus/tenants/default/AGENTS.md")
+    assert read_exc.value.code == "TOOL_PATH_DENIED"
+
+    with pytest.raises(ToolError) as write_exc:
+        fs_write(tmp_path, ".polyopus/tenants/default/AGENTS.md", "x")
+    assert write_exc.value.code == "TOOL_PATH_DENIED"
